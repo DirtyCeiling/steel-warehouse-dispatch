@@ -240,7 +240,7 @@
     <div class="logo">🤖</div>
     <div>
       <h1>钢厂棒材库区 · 机器狗扫码调度仿真沙盘</h1>
-      <p>长 300m × 宽 90m · 三跨（A/B/C，每跨 30m）· 3 条竖向车辆进出通道 · 91 库位 · 3 台机器狗（扫码核验）+ 6 台天车（每跨 2 台）· 一车 6-10 吊（单跨装卸）· 流程：车辆进场停靠 -> 天车吊运装卸 -> 机器狗扫码确认 -> 状态回传 -> 库存更新</p>
+      <p>长 300m × 宽 90m · 三跨（A/B/C，每跨 30m）· 3 条竖向车辆进出通道 · 91 库位（每库位 8 垛 × 20 捆）· 3 台机器狗（扫码核验）+ 6 台天车（每跨 2 台）· 一车 6-10 吊（单跨装卸）· 流程：货车进场停靠 -> 跨上立柱摄像头识别车牌 -> 物流系统吊取运单 -> 天车吊运装卸 -> 机器狗扫码确认 -> 库存更新</p>
     </div>
   </div>
   <div class="clock"><span id="clock">08:00:00</span><small>仿真时间</small></div>
@@ -279,8 +279,10 @@
       <span class="li"><span class="sw" style="border-color:#a78bfa;background:rgba(167,139,250,.35)"></span>方钢</span>
       <span class="li"><span class="sw" style="border-color:#34d399;background:rgba(52,211,153,.15)"></span>车辆进出通道 ×3</span>
       <span class="li"><span class="sw" style="border-color:#a3e635;background:rgba(163,230,53,.2)"></span>货车</span>
+      <span class="li"><span class="sw" style="border-color:#94a3b8;background:rgba(148,163,184,.3)"></span>跨上立柱摄像头</span>
       <span class="li"><span class="sw" style="border-color:#f472b6;background:rgba(244,114,182,.2)"></span>天车(架空)</span>
       <span class="li hint">横置布局：左 = 南端（1 号区 · 铁姆肯区）-> 右 = 北端（33 号区）；货车由通道北端入口进场，停靠目标跨，离场顺路前行驶出南端出口</span>
+      <span class="li hint">货车停靠后：跨上立柱摄像头识别车牌 -> 凭车牌从物流系统吊取运单（该车送的捆/规格）-> 天车开始吊运</span>
       <span class="li hint">机器狗不搬运钢材：天车负责吊运装卸，机器狗前往库位扫码确认入/出库</span>
       <span class="li hint">货车一车 6-10 吊（同跨装卸）：凑满一车发车，低峰期超时按现有吊数放行</span>
       <span class="li hint">点击空闲库位 -> 入库上架 · 点击有料库位 -> 下发出库</span>
@@ -294,7 +296,7 @@
       <div class="kpi"><div class="kl">吞吐量 (捆/仿真时)</div><div class="kv c2" id="kpiThru">–</div><div class="ks">累计完成 ÷ 仿真时长</div></div>
       <div class="kpi"><div class="kl">平均任务时长</div><div class="kv c3" id="kpiAvg">–</div><div class="ks">下发 -> 完成回传</div></div>
       <div class="kpi"><div class="kl">集群利用率</div><div class="kv c4" id="kpiUtil">–</div><div class="ks">3 台机器狗作业占比</div></div>
-      <div class="kpi"><div class="kl">当前库存</div><div class="kv c5" id="kpiInv">0/91</div><div class="ks" id="kpiInvSub">库位利用率 0%</div></div>
+      <div class="kpi"><div class="kl">当前库存</div><div class="kv c5" id="kpiInv">0/14560</div><div class="ks" id="kpiInvSub">库容利用率 0%</div></div>
       <div class="kpi"><div class="kl">待处理任务</div><div class="kv c6" id="kpiQueue">0</div><div class="ks" id="kpiQueueSub">执行中 0</div></div>
     </div>
 
@@ -344,8 +346,10 @@ window.__dbg = {
   get storageStates() { return storages.map(s => ({ code: s.code, state: s.state, goalR: s.goalR, goalC: s.goalC })); },
   get mapOK() { return tiles.length === M.ROWS && tiles[0].length === M.COLS; },
   get layout() { return { ox, oy, scale }; },
-  get trucks() { return trucks.map(t => ({ taskId: t.taskId, kind: t.kind, lane: t.lane, state: t.state, loaded: t.loaded, loads: t.batch ? t.batch.tasks.length : 0, remaining: t.remaining })); },
-  get batches() { return batches.map(b => ({ id: b.id, kind: b.kind, span: b.span, loads: b.tasks.length, dispatched: !!b.truck, createdAt: b.created })); },
+  get trucks() { return trucks.map(t => ({ taskId: t.taskId, kind: t.kind, lane: t.lane, state: t.state, loaded: t.loaded, plate: t.plate, plateScanned: !!(t.batch && t.batch.plateScanned), manifestFetched: !!(t.batch && t.batch.manifestFetched), loads: t.batch ? t.batch.tasks.length : 0, remaining: t.remaining })); },
+  get batches() { return batches.map(b => ({ id: b.id, kind: b.kind, span: b.span, loads: b.tasks.length, dispatched: !!b.truck, plateScanned: !!b.plateScanned, manifestFetched: !!b.manifestFetched, createdAt: b.created })); },
+  get columns() { return columns.map(c => ({ span: c.span, active: c.active })); },
+  get activeCams() { return columns.filter(c => c.active).length; },
   get batchLoads() { return window.__batchLoads || []; },
   get trucksDone() { return trucksDone; },
   get craneStates() { return cranes.map(c => ({ name: c.name, span: c.span, state: c.state, jobsDone: c.jobsDone })); },
@@ -357,11 +361,14 @@ window.__dbg = {
  * 业务模型（与实际作业一致）：
  *   · 机器狗不转运钢材——它只负责扫码：钢材捆上贴二维码，入库/出库均由
  *     机器狗到库位扫码核验，回传 WMS 后库存入账/核销。
- *   · 钢材由货车经 3 条竖向（横贯三跨）车辆通道送入库区，货车停靠在
- *     目标库位所在的跨；该跨天车（架空桥式，每跨 2 台）把钢材从车上
- *     吊运到目标库位；天车吊放就位后机器狗前往扫码，确认入库。
- *   · 出库对称：机器狗先到库位扫码核验 -> 货车进场停靠对应跨 ->
- *     天车把钢材从库位吊到车上 -> 货车离场。
+ *   · 钢材由货车经 3 条竖向（横贯三跨）车辆通道送入库区。货车停靠后，
+ *     所在跨立柱顶端的摄像头识别车牌号，系统凭车牌从物流系统（WMS）
+ *     吊取该车的运单信息（这一车送的哪些捆钢材、规格），运单确认后
+ *     该跨天车（架空桥式，每跨 2 台）才逐一吊运。
+ *   · 入库：货车进场停靠 -> 立柱摄像头识别车牌 -> 吊取运单 ->
+ *     天车把钢材从车上吊到目标库位 -> 机器狗扫码确认入账。
+ *   · 出库对称：机器狗先到库位扫码核验 -> 货车进场停靠 -> 识别车牌吊取
+ *     装车计划 -> 天车把钢材从库位吊到车上 -> 货车载料离场。
  *
  * 库区布局（与库区平面图一致，横置：长 300m 横向、宽 90m 纵向）：
  *   宽 90m = 三跨：A跨/一跨(上) · B跨/二跨(中) · C跨/三跨(下)，每跨 30m
@@ -372,7 +379,8 @@ window.__dbg = {
  *         | 中棒区域 17~33 号
  *   库位：三跨分列编号 N-1/N-2/N-3（对应 A/B/C 跨）；1、2 号区 B 跨为车辆通道，
  *         故只有 N-1（A 跨）与 N-2（C 跨）；14~16 号整跨合并，无后缀
- *         共 51 + 24 + 3 + 13 = 91 库位
+ *         共 51 + 24 + 3 + 13 = 91 库位 · 每库位 8 垛（沿跨向纵深排列）× 每垛 20 捆
+ *         -> 全库总库容 91 × 160 = 14,560 捆
  *   通道：3 条竖向车辆进出通道（28|27 号间、17|16 号间、6|5 号间，横贯三跨，
  *         北端开口为车辆入口、南端开口为车辆出口，单向直行不原路倒回）
  *         + 4 条 2m 横向通道（机器狗主廊道）
@@ -408,6 +416,8 @@ const CFG = {
     speed: 8.0,                     // 货车场内行驶速度（m/s）
     minLoads: 6, maxLoads: 10,      // 一车 6-10 吊（单跨装卸）
     maxWait: 150,                   // 凑不满 6 吊时，等待该时长后按现有吊数放行（秒）
+    plateScanTime: 2.0,             // 跨上立柱摄像头识别车牌耗时（秒）
+    manifestTime: 1.2,              // 凭车牌从物流系统吊取运单耗时（秒）
   },
   task: { minInterval: 7, maxInterval: 13, inboundRatio: 0.55, maxPending: 48 },
   initInventory: 30,                   // 初始库存捆数
@@ -450,10 +460,13 @@ const PARAM_DEFS = [
   { sec: 'crane', key: 'speed',      label: '行进速度',     min: 0.5, max: 10, step: 0.1, unit: 'm/s' },
   { sec: 'crane', key: 'hoistTime',  label: '吊取时间',     min: 0.5, max: 10, step: 0.1, unit: '秒' },
   { sec: 'crane', key: 'lowerTime',  label: '放下时间',     min: 0.5, max: 10, step: 0.1, unit: '秒' },
+  { sec: 'truck', key: 'plateScanTime', label: '车牌识别时间', min: 0.5, max: 8,  step: 0.1, unit: '秒' },
+  { sec: 'truck', key: 'manifestTime',  label: '运单吊取时间', min: 0.3, max: 6,  step: 0.1, unit: '秒' },
 ];
 const DEFAULT_PARAMS = {
   robot: { ...CFG.robot },
   crane: { ...CFG.crane },
+  truck: { ...CFG.truck },
 };
 const paramId = d => `param-${d.sec}-${d.key}`;
 const fmtParam = (d, v) => `${(+v).toFixed(1)} ${d.unit}`;
@@ -468,7 +481,9 @@ function buildSettingsUI() {
   const rows = [];
   let lastGroup = '';
   for (const d of PARAM_DEFS) {
-    const gname = d.sec === 'robot' ? '机器狗（3 台 · D-01 ~ D-03 · 扫码核验）' : '天车（6 台 · 每跨 2 台 · TC-A1~TC-C2 · 吊运装卸）';
+    const gname = d.sec === 'robot' ? '机器狗（3 台 · D-01 ~ D-03 · 扫码核验）'
+      : d.sec === 'crane' ? '天车（6 台 · 每跨 2 台 · TC-A1~TC-C2 · 吊运装卸）'
+      : '货车（3 条竖向通道 · 立柱摄像头识别车牌 / 物流系统吊取运单）';
     if (gname !== lastGroup) { rows.push(`<div class="pgroup">${gname}</div>`); lastGroup = gname; }
     rows.push(`<div class="prow">
       <span class="pl">${d.label}</span>
@@ -548,7 +563,7 @@ const isChannelCol = c => LANE_COLS.includes(c);
 
 /* ---------------- 运行时状态 ---------------- */
 let tiles = [], storages = [], robots = [], tasks = [], trucks = [];
-let craneJobs = [], cranes = [];
+let craneJobs = [], cranes = [], columns = [];
 let batches = [], batchSeq = 0, trucksDone = 0;   // 车次（一车 6-10 吊）分组层
 let simTime = 0, speed = 1, paused = false, autoTaskOn = true;
 let taskSeq = 0, nextTaskAt = 4, occupiedCount = 0;
@@ -611,6 +626,41 @@ function rr(c, x, y, w, h, r) { // 圆角矩形路径
 }
 const FONT = px => `${px}px "Segoe UI", "Microsoft YaHei", sans-serif`;
 const FONTM = px => `600 ${px}px "Cascadia Mono", Consolas, monospace`;
+
+/* ---------------- 货车车牌（跨上立柱摄像头识别） ---------------- */
+const PLATE_HEADS = ['京', '津', '冀', '鲁', '晋', '豫', '辽', '蒙'];
+const PLATE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+function genPlate() { // 生成蓝牌式车牌号（省份汉字 + 发牌机关字母 + 4 位数字）
+  const head = pick(PLATE_HEADS);
+  const letter = PLATE_LETTERS[Math.floor(Math.random() * PLATE_LETTERS.length)];
+  const n = () => String(Math.floor(Math.random() * 10));
+  return `${head}${letter}·${n()}${n()}${n()}${n()}`;
+}
+
+/* ---------------- 跨上立柱摄像头 ----------------
+ * 每跨（A/B/C）上、下边缘各布置立柱（厂房承重柱），柱顶装摄像头；
+ * 货车停靠该跨后，距其最近的立柱摄像头识别车牌（识别中高亮 + 扫描线）。
+ * 立柱沿长向每 2 个库位列一根，避开竖向车辆通道列。 */
+function buildColumns() {
+  columns = [];
+  for (let si = 0; si < 3; si++) {
+    const band = spanBand(si);
+    for (let c = 3; c < M.COLS - 1; c += 2) {
+      if (isChannelCol(c)) continue;
+      columns.push({ span: si, x: cellCX(c), y: band.y0 + 0.4, active: false, cam: null });
+      columns.push({ span: si, x: cellCX(c), y: band.y1 - 0.4, active: false, cam: null });
+    }
+  }
+}
+function nearestCam(tk) { // 距货车最近的同跨立柱摄像头
+  let best = null, bd = Infinity;
+  for (const col of columns) {
+    if (col.span !== tk.batch.span) continue;
+    const d = Math.hypot(col.x - tk.x, col.y - tk.y);
+    if (d < bd) { bd = d; best = col; }
+  }
+  return best;
+}
 
 /* ---------------- 垛位（每库位 8 垛 · 每垛 20 捆）辅助 ---------------- */
 function newStack() { return { spec: null, count: 0, pending: 0, inTime: 0 }; }
@@ -999,47 +1049,86 @@ function summonTruck(batch) {
   // 车道取车次内各吊库位列的中位数最近车道；货车停靠目标跨行中心，单跨装卸
   const cols = batch.tasks.map(t => t.slot.goalC).sort((a, b) => a - b);
   const lane = nearestLane(cols[cols.length >> 1]);
+  batch.plateScanned = false;                            // 车牌识别 / 运单吊取标志（车次级）
+  batch.manifestFetched = false;
   const truck = {
     taskId: batch.id, kind: batch.kind, batch,
     spec: batch.tasks[0].spec, lane,
+    plate: genPlate(),                                   // 车牌号（跨上立柱摄像头识别）
     x: cellCX(lane), y: TRUCK_ENTER_Y, targetY: cellCY(SPAN_ROWS[batch.span]),
     state: 'QUEUE', loaded: batch.kind === 'in',
     remaining: batch.tasks.length,                        // 待吊运吊数，吊完离场
+    scanT: 0,                                             // 车牌识别 / 运单吊取计时
   };
   trucks.push(truck);
   batch.truck = truck;
   for (const t of batch.tasks) t.truck = truck;
   window.__batchLoads = window.__batchLoads || [];
   window.__batchLoads.push(batch.tasks.length);          // 统计车次吊数（自检/调试）
-  logEvent('truck', `货车调度：车次 ${batch.id} ${batch.kind === 'in' ? '载料' : '空车'} ${batch.tasks.length} 吊派往 ${laneNo(lane)} 号通道（目标 ${SPANS[batch.span]}）`);
+  logEvent('truck', `货车调度：车次 ${batch.id} ${batch.kind === 'in' ? '载料' : '空车'} ${batch.tasks.length} 吊（${truck.plate}）派往 ${laneNo(lane)} 号通道（目标 ${SPANS[batch.span]}）`);
   return truck;
 }
 function updateTrucks(dt) {
+  // 每帧复位立柱摄像头激活态（识别中的摄像头由货车 PLATE_SCAN 状态点亮）
+  for (const col of columns) { col.active = false; col.cam = null; }
   for (let i = trucks.length - 1; i >= 0; i--) {
     const tk = trucks[i];
     const batch = tk.batch;
-    if (tk.state === 'QUEUE') {
-      const laneBusy = trucks.some(o => o !== tk && o.lane === tk.lane);
-      if (!laneBusy) {
-        tk.state = 'ENTER';
-        logEvent('truck', `货车进场：${tk.taskId} ${tk.kind === 'in' ? '载料' : '空车'}经 ${laneNo(tk.lane)} 号通道前往 ${SPANS[batch.span]}`);
+    switch (tk.state) {
+      case 'QUEUE': {
+        // 通道占用仅算已进场货车（含进场/识别/吊取/装卸），排队货车之间不互锁
+        const laneBusy = trucks.some(o => o !== tk && o.lane === tk.lane && o.state !== 'QUEUE');
+        if (!laneBusy) {
+          tk.state = 'ENTER';
+          logEvent('truck', `货车进场：${tk.taskId} ${tk.plate} ${tk.kind === 'in' ? '载料' : '空车'}经 ${laneNo(tk.lane)} 号通道前往 ${SPANS[batch.span]}`);
+        }
+        break;
       }
-    } else if (tk.state === 'ENTER') {
-      tk.y += CFG.truck.speed * dt;
-      if (tk.y >= tk.targetY) {
-        tk.y = tk.targetY;
-        tk.state = 'PARKED';
-        logEvent('truck', `货车就位：${tk.taskId} ${batch.tasks.length} 吊停靠 ${SPANS[batch.span]} ${laneNo(tk.lane)} 号通道，天车逐一吊运`);
-        for (const t of batch.tasks) { t.truckParked = true; maybePushCraneJob(t); }
+      case 'ENTER':
+        tk.y += CFG.truck.speed * dt;
+        if (tk.y >= tk.targetY) {
+          tk.y = tk.targetY;
+          tk.state = 'PLATE_SCAN';
+          tk.scanT = 0;
+          for (const t of batch.tasks) t.truckParked = true;
+          logEvent('truck', `货车就位：${tk.taskId} ${tk.plate} ${batch.tasks.length} 吊停靠 ${SPANS[batch.span]} ${laneNo(tk.lane)} 号通道，立柱摄像头识别车牌`);
+        }
+        break;
+      case 'PLATE_SCAN': { // 跨上立柱摄像头识别车牌
+        const cam = nearestCam(tk);
+        if (cam) { cam.active = true; cam.cam = tk; }
+        tk.scanT += dt;
+        if (tk.scanT >= CFG.truck.plateScanTime) {
+          batch.plateScanned = true;
+          tk.state = 'MANIFEST';
+          tk.scanT = 0;
+          logEvent('truck', `立柱摄像头识别车牌：${tk.plate}（${SPANS[batch.span]} · ${tk.taskId}）`);
+        }
+        break;
       }
-    } else if (tk.state === 'LEAVE') {
-      tk.y -= CFG.truck.speed * dt;
-      if (tk.y <= TRUCK_ENTER_Y) {
-        logEvent('truck', `货车离场：${tk.taskId} ${batch.tasks.length} 吊${tk.kind === 'in' ? '卸毕' : '装毕'}经 ${laneNo(tk.lane)} 号通道驶离库区`);
-        trucksDone++;
-        batches = batches.filter(b => b !== batch);
-        trucks.splice(i, 1);
-      }
+      case 'MANIFEST': // 凭车牌从物流系统吊取该车运单（这一车送的哪些捆/规格）
+        tk.scanT += dt;
+        if (tk.scanT >= CFG.truck.manifestTime) {
+          batch.manifestFetched = true;
+          tk.state = 'WORKING';
+          const cnt = {};
+          for (const t of batch.tasks) cnt[t.spec.name] = (cnt[t.spec.name] || 0) + 1;
+          const list = Object.entries(cnt).map(([n, c]) => `${n}×${c}`).join('、');
+          logEvent('truck', `运单吊取：${tk.taskId}（${tk.plate}）该车 ${batch.tasks.length} 吊：${list}，天车开始吊运`);
+          for (const t of batch.tasks) maybePushCraneJob(t);
+        }
+        break;
+      case 'WORKING': // 天车逐一吊运中（吊完由天车置 LEAVE）
+        break;
+      case 'LEAVE':
+        tk.y -= CFG.truck.speed * dt;
+        if (tk.y <= TRUCK_ENTER_Y) {
+          logEvent('truck', `货车离场：${tk.taskId} ${tk.plate} ${batch.tasks.length} 吊${tk.kind === 'in' ? '卸毕' : '装毕'}经 ${laneNo(tk.lane)} 号通道驶离库区`);
+          trucksDone++;
+          batches = batches.filter(b => b !== batch);
+          trucks.splice(i, 1);
+        }
+        break;
     }
   }
 }
@@ -1074,8 +1163,10 @@ function jobDesc(j) {
     ? `${j.taskId} 入库吊运：货车 -> 库位 ${j.slot.code}${si ? ' 第' + si + '垛' : ''}`
     : `${j.taskId} 出库装车：库位 ${j.slot.code}${si ? ' 第' + si + '垛' : ''} -> 货车`;
 }
-function maybePushCraneJob(task) { // 天车作业条件：入库=货车就位；出库=货车就位 + 机器狗扫码核验通过
-  if (task.cranePushed || !task.truckParked) return;
+function maybePushCraneJob(task) { // 天车作业条件：货车就位 + 车牌识别 + 运单吊取确认；出库还需机器狗扫码核验通过
+  if (task.cranePushed) return;
+  const tk = task.batch && task.batch.truck;
+  if (!tk || tk.state !== 'WORKING') return;           // 货车须已停靠且完成车牌识别 + 运单吊取
   if (task.type === 'out' && !task.dogDone) return;
   task.cranePushed = true;
   const st = task.slot;
@@ -1388,6 +1479,7 @@ function render() {
   ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
   ctx.clearRect(0, 0, cssW, cssH);
   drawBase();
+  drawColumns();   // 跨上立柱 + 摄像头（识别车牌时高亮）
   drawStorages();
   drawTrucks();
   drawPaths();
@@ -1553,6 +1645,33 @@ function drawBase() {
   ctx.font = FONT(9);
   ctx.fillText('　总面积 27,000 ㎡ · 机器狗图示放大 · 库位列宽 8.33m', mx(M.X_MIN + 36), yB);
 }
+function drawColumns() { // 跨上立柱摄像头：每跨上/下边缘立柱，柱顶摄像头识别车牌时高亮 + 扫描线
+  const cs = Math.max(2.2, scale * 0.65);
+  for (const col of columns) {
+    // 立柱（厂房承重柱截面）
+    ctx.fillStyle = 'rgba(120,140,170,.55)';
+    rr(ctx, mx(col.x) - cs, my(col.y) - cs, cs * 2, cs * 2, 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(148,163,184,.7)'; ctx.lineWidth = 1; ctx.stroke();
+    // 柱顶摄像头（识别中高亮闪烁）
+    const a = col.active ? 0.55 + 0.4 * Math.sin(simTime * 8) : 0.3;
+    ctx.fillStyle = col.active ? `rgba(56,189,248,${a})` : 'rgba(100,116,139,.5)';
+    rr(ctx, mx(col.x) - cs * 0.7, my(col.y) - cs * 2.4, cs * 1.4, cs, 1.5); ctx.fill();
+    ctx.strokeStyle = col.active ? 'rgba(125,211,252,.95)' : 'rgba(148,163,184,.55)';
+    ctx.lineWidth = 1; ctx.stroke();
+    // 扫描线：摄像头 -> 正在识别的货车
+    if (col.active && col.cam) {
+      const cx2 = mx(col.cam.x), cy2 = my(col.cam.y);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(56,189,248,.55)';
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([4, 3]);
+      ctx.lineDashOffset = -(simTime * 14) % 7;
+      ctx.beginPath(); ctx.moveTo(mx(col.x), my(col.y) - cs * 1.4); ctx.lineTo(cx2, cy2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+  }
+}
 function dimH(x1, x2, y, label) {
   ctx.strokeStyle = 'rgba(114,136,179,.55)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
@@ -1679,16 +1798,29 @@ function drawTrucks() { // 竖向通道内的货车（含入口外排队车辆�
     if (tk.loaded && tk.spec) {
       drawBundle(px + 2.5, py + 3, W - 5, H * 0.55, tk.spec, 0.95);
     }
+    // 车牌（蓝底白字，位于车身中部）
+    const fs = Math.max(5.5, scale * 1.35);
+    ctx.font = FONTM(fs);
+    const pw = ctx.measureText(tk.plate).width + 6, ph = fs + 3;
+    rr(ctx, px + (W - pw) / 2, py + H * 0.2, pw, ph, 2);
+    ctx.fillStyle = 'rgba(21,66,189,.95)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(219,234,254,.8)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = '#eef4ff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(tk.plate, px + W / 2, py + H * 0.2 + ph / 2);
     // 车次号 + 吊数（横排小字）
     ctx.font = FONTM(Math.max(6, scale * 1.4));
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillStyle = `rgba(${col},.95)`;
     ctx.fillText(`${tk.taskId} · ${tk.batch ? tk.batch.tasks.length : 0}吊`, px + W / 2, py + H * 0.8);
-    // 排队/离场标记
-    if (tk.state === 'QUEUE') {
+    // 状态标记（车牌识别 / 运单吊取 / 装卸中 / 排队）
+    let flag = '';
+    if (tk.state === 'QUEUE') flag = '排队进场';
+    else if (tk.state === 'PLATE_SCAN') flag = '识别车牌…';
+    else if (tk.state === 'MANIFEST') flag = '吊取运单…';
+    else if (tk.state === 'WORKING') flag = '装卸中';
+    if (flag) {
       ctx.font = FONT(Math.max(6, scale * 1.3));
-      ctx.fillStyle = 'rgba(163,230,53,.85)';
-      ctx.fillText('排队进场', px + W / 2, py - 5);
+      ctx.fillStyle = flag === '装卸中' ? 'rgba(52,211,153,.95)' : 'rgba(56,189,248,.95)';
+      ctx.fillText(flag, px + W / 2, py - 5);
     }
   }
 }
@@ -1889,19 +2021,26 @@ function hexToRgb(hex) {
 }
 
 /* ---------------- 侧栏面板刷新（5Hz） ---------------- */
-function taskPhaseText(t) { // 任务卡片子状态（车辆/天车/机器狗协同阶段）
+function taskPhaseText(t) { // 任务卡片子状态（车辆/摄像头/天车/机器狗协同阶段）
+  const tk = t.truck;                       // 车次派车后才有货车
   if (t.type === 'in') {
-    if (!t.truck) return '等待组车（凑满一车 6-10 吊）';
+    if (!tk) return '等待组车（凑满一车 6-10 吊）';
     if (!t.truckParked) return '货车进场中';
+    if (!tk.batch.plateScanned) return '停靠 · 立柱摄像头识别车牌';
+    if (!tk.batch.manifestFetched) return '物流系统吊取运单中';
     if (!t.materialReady) return t.cranePushed ? '天车吊运中（车 -> 库位）' : '等待天车分配';
     if (!t.robot) return '落料就位 · 待机器狗扫码';
     return null;
   }
   if (t.state === 'crane') {
+    if (!tk || tk.state !== 'WORKING') return '待运单确认后装车';
     if (!t.cranePushed) return '等待天车分配';
     return '天车装车中（库位 -> 车）';
   }
-  if (!t.truck) return '等待组车（凑满一车 6-10 吊）';
+  if (!tk) return '等待组车（凑满一车 6-10 吊）';
+  if (!t.truckParked) return '货车进场中';
+  if (!tk.batch.plateScanned) return '停靠 · 立柱摄像头识别车牌';
+  if (!tk.batch.manifestFetched) return '物流系统吊取运单中';
   if (!t.robot) return '待机器狗扫码核验';
   return null;
 }
@@ -2066,11 +2205,12 @@ function updateTooltip(e) {
             <div class="tt-dim">${size} · ${STACKS_PER_SLOT} 垛 × ${BUNDLES_PER_STACK} 捆 · 状态：${stateTxt}</div>${mat}
             <div class="tt-dim">${clickHint}</div>`;
   } else if (t.type === 'channel' && isChannelCol(c)) {
-    const tk = trucks.find(x => x.lane === c && x.state === 'PARKED');
+    const tk = trucks.find(x => x.lane === c && ['PLATE_SCAN', 'MANIFEST', 'WORKING'].includes(x.state));
     const spanTxt = SPAN_ROWS.includes(r) ? SPANS[SPAN_ROWS.indexOf(r)] : '';
+    const stTxt = tk ? (tk.state === 'PLATE_SCAN' ? '识别车牌中' : tk.state === 'MANIFEST' ? '吊取运单中' : '装卸中') : '';
     html = `<div><b>${laneNo(c)} 号车辆进出通道</b>${spanTxt ? `（${spanTxt}）` : ''}</div>
             <div class="tt-dim">宽 8.3m · 货车经北端入口进场，停靠目标跨由天车装卸</div>
-            ${tk ? `<div>停靠货车：<b>${tk.taskId}</b>（${tk.kind === 'in' ? '入库载料' : '出库空车'} · ${tk.batch ? tk.batch.tasks.length : 0} 吊${tk.loaded ? ' · 有载' : ''}）</div>` : '<div class="tt-dim">当前无货车停靠</div>'}`;
+            ${tk ? `<div>停靠货车：<b>${tk.taskId}</b>（${tk.plate} · ${tk.kind === 'in' ? '入库载料' : '出库空车'} · ${tk.batch ? tk.batch.tasks.length : 0} 吊${stTxt ? ` · ${stTxt}` : ''}）</div>` : '<div class="tt-dim">当前无货车停靠</div>'}`;
   } else if (t.type === 'charger') {
     const rb = robots.find(x => x.state === 'CHARGING' && x.atCharger() && x.cell().r === r && x.cell().c === c);
     html = `<div><b>充电桩 #${t.no}</b></div>${rb ? `<div class="tt-dim">${rb.name} 充电中 · ${rb.battery | 0}%</div>` : '<div class="tt-dim">当前空闲</div>'}`;
@@ -2156,13 +2296,15 @@ function init() {
   batches = []; batchSeq = 0; trucksDone = 0;
   window.__batchLoads = [];
   buildMap();
+  buildColumns();
   resetCranes();
   // 初始库存（预置随机库存，均已扫码入账，出库任务可立即触发）
   occupiedCount = 0;
-  const shuffled = [...storages].sort(() => Math.random() - 0.5).slice(0, CFG.initInventory);
-  for (const st of shuffled) {
-    const spec = pick(SPECS);
-    st.material = { spec, inTime: -rand(600, 7200), scanned: true };
+  for (let n = 0; n < CFG.initInventory; n++) {
+    const st = pick(storages);
+    const k = pick(st.stacks);
+    if (k.count === 0) { k.spec = pick(SPECS); k.inTime = -rand(600, 7200); } // 垛内首捆记入库时间
+    k.count++; k.pending = 0;
     st.state = 'occupied';
     occupiedCount++;
   }
@@ -2176,10 +2318,10 @@ function init() {
   $('autoTask').checked = true;
   document.querySelectorAll('#speedSeg button').forEach(b => b.classList.toggle('on', +b.dataset.speed === 1));
   elLogList.innerHTML = '';
-  logEvent('system', `仿真沙盘启动：300m × 90m 三跨库区（+4 条 2m 横向通道）· 3 台机器狗（扫码）+ 6 台天车（每跨 2 台）· 91 库位 · 初始库存 ${occupiedCount} 捆`);
+  logEvent('system', `仿真沙盘启动：300m × 90m 三跨库区（+4 条 2m 横向通道）· 3 台机器狗（扫码）+ 6 台天车（每跨 2 台）· 91 库位（每库位 8 垛 × 20 捆 = 160 捆）· 初始库存 ${occupiedCount} 捆`);
   logEvent('system', '布局：铁姆肯区(1-2) · 大棒区域(3-13) · 大棒单支和长钢(14-16 整跨) · 中棒区域(17-33) · 竖向车辆通道 3 条（北端入口）· 横向通道 4×2m · 充电服务带×3 桩');
-  logEvent('system', '作业流程：入库 = 货车进场停靠目标跨 -> 天车吊运落料 -> 机器狗扫码确认入账；出库 = 机器狗扫码核验 -> 天车装车 -> 货车离场');
-  logEvent('system', '调度规则：机器狗就近分配 + 电量约束 + 先到先服务（出库先进先出）；天车限本跨作业，同跨双车区间互让');
+  logEvent('system', '作业流程：入库 = 货车进场停靠 -> 立柱摄像头识别车牌 -> 吊取运单 -> 天车吊运落料 -> 机器狗扫码入账；出库 = 机器狗扫码核验 -> 货车进场 -> 识别车牌吊取装车计划 -> 天车装车 -> 货车离场');
+  logEvent('system', '调度规则：机器狗就近分配 + 电量约束 + 先到先服务（出库先进先出）；天车限本跨作业，同跨双车区间互让；天车须待货车运单确认后才开工');
   logEvent('system', '车次规则：一车 6-10 吊（同跨装卸），凑满一车或超时按现有吊数放行；任务按吊计数，货车全部吊完才离场');
   logEvent('system', '通行规则：机器狗只沿通道（4 条 2m 横向廊道 + 3 条竖向车辆通道 + 服务带）与垛位间隙行走，不进入库位内部，扫码时从通道边进入目标库位');
   buildSettingsUI();

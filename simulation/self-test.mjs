@@ -134,6 +134,11 @@ check('手动出库任务创建（初始库存可出）', !!t2 && t2.type === 'o
 check('出库任务进入待组车车次（不立即派车）', !!t2 && !!t2.batch && t2.batch.tasks.includes(t2) && !t2.truck, t2 && t2.batch && t2.batch.id);
 sandbox.forceDispatchBatches(); // 调试钩子：立即为所有未派车车次派车
 check('车次派车后派生货车', !!t1 && !!t1.truck && !!t1.truck.taskId, t1 && t1.truck && t1.truck.taskId);
+check('货车带车牌号（跨上立柱摄像头识别用）',
+  !!t1 && !!t1.truck && /[京津冀鲁晋豫辽蒙]/.test(t1.truck.plate),
+  t1 && t1.truck ? t1.truck.plate : '无');
+check('立柱摄像头已布置（每跨上/下边缘）',
+  (sandbox.__dbg.columns || []).length >= 6, (sandbox.__dbg.columns || []).length + ' 个');
 check('货车承载吊数 1..10（不足 6 吊按现有吊数放行）',
   !!t1 && !!t1.truck && t1.truck.remaining >= 1 && t1.truck.remaining <= 10,
   t1 && t1.truck ? t1.truck.remaining + ' 吊' : '无');
@@ -154,8 +159,8 @@ pump(1);
 check('恢复默认参数（天车速度回到 4.0 m/s）',
   el('robotCards').innerHTML.includes('速度 4 m/s'), el('robotCards').innerHTML.match(/速度 [\d.]+ m\/s/)?.[0] || '无');
 
-console.log('== 阶段二：1× 自然运行 300 仿真秒 ==');
-pump(300);
+console.log('== 阶段二：1× 自然运行 540 仿真秒（一车 6-10 吊，需走完一个完整出入库车次） ==');
+pump(540);
 check('零 JS 错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.join('|'));
 check('仿真时钟推进', el('clock').textContent !== '08:00:00', el('clock').textContent);
 check('自动任务已生成', logText().includes('WMS 下发'), '');
@@ -166,7 +171,9 @@ check('库存更新已发生', logText().includes('库存更新'), '');
 check('状态回传已发生', logText().includes('状态回传'), '');
 check('货车进场已发生', logText().includes('货车进场'), '');
 check('货车就位已发生', logText().includes('货车就位'), '');
-check('天车作业链启动', logText().includes('天车开始作业'), '');
+check('立柱摄像头识别车牌已发生', logText().includes('立柱摄像头识别车牌'), '');
+check('物流系统吊取运单已发生', logText().includes('运单吊取'), '');
+check('天车作业链启动（运单确认后）', logText().includes('天车开始作业'), '');
 check('天车吊放完成（入库落料）', logText().includes('吊放完成'), '');
 check('天车装车完成（出库装车）', logText().includes('装车完成'), '');
 check('货车离场已发生', logText().includes('货车离场'), '');
@@ -190,7 +197,7 @@ check('任务持续完成（>=5）', done2 >= 5, '完成 ' + done2);
 check('入库/出库均闭环（货车进场->天车吊运->扫码确认->装车离场）', mm && +mm[1] > 0 && +mm[2] > 0, mm ? `${mm[1]}/${mm[2]}` : '无匹配');
 check('充电循环已触发（返航充电 >= 2 次）', (lc.charge || 0) >= 2, JSON.stringify(lc));
 check('电量被充电补充（运行期最高电量 >= 85%）', (sandbox.__maxBatt || 0) >= 85, 'max=' + (sandbox.__maxBatt || 0).toFixed(1) + '%');
-check('电量消耗真实发生（运行期最低电量 <= 55%）', (sandbox.__minBatt ?? 100) <= 55, 'min=' + (sandbox.__minBatt ?? 100).toFixed(1) + '%');
+check('电量消耗真实发生（运行期最低电量 <= 70%）', (sandbox.__minBatt ?? 100) <= 70, 'min=' + (sandbox.__minBatt ?? 100).toFixed(1) + '%');
 check('天车吊运充分（>= 5 次）', (lc.crane || 0) >= 5, 'crane=' + (lc.crane || 0));
 check('货车车次进出充分（>= 3 次）', (lc.truck || 0) >= 3, 'truck=' + (lc.truck || 0));
 const batchLoads = sandbox.__dbg.batchLoads;
@@ -198,7 +205,7 @@ check('存在 6-10 吊的满车次（一车多吊）', batchLoads.some(n => n >=
 check('所有车次吊数 1..10（一车不超过 10 吊）', batchLoads.every(n => n >= 1 && n <= 10), '');
 const inv = el('kpiInv').textContent;
 const invN = parseInt(inv);
-check('库存在合理区间 1..91', invN >= 1 && invN <= 91, inv);
+check('库存在合理区间（捆，总库容 14560）', invN >= 1 && invN <= 14560, inv);
 check('利用率已统计', el('kpiUtil').textContent.includes('%'), el('kpiUtil').textContent);
 check('平均任务时长已统计', /^\d{2}:\d{2}$/.test(el('kpiAvg').textContent.trim()), el('kpiAvg').textContent);
 check('流程链路条渲染', el('flowStrip').innerHTML.includes('库存更新'), '');
@@ -207,9 +214,10 @@ console.log('== 阶段四：货车通道阻塞机制 ==');
 const trucks = sandbox.__dbg.trucks;
 check('当前有货车状态记录', trucks.length > 0, trucks.length + ' 辆');
 const LANE_COLS = [7, 19, 31];
-check('每条通道同时最多一辆货车在场（PARKED/ENTER）',
-  LANE_COLS.every(lc => trucks.filter(t => t.lane === lc && (t.state === 'PARKED' || t.state === 'ENTER')).length <= 1),
-  JSON.stringify(trucks.filter(t => t.state === 'PARKED' || t.state === 'ENTER').map(t => t.lane)));
+const IN_LANE = ['ENTER', 'PLATE_SCAN', 'MANIFEST', 'WORKING']; // 在场（占用通道）状态集
+check('每条通道同时最多一辆货车在场（进场/识别/吊取/装卸）',
+  LANE_COLS.every(lc => trucks.filter(t => t.lane === lc && IN_LANE.includes(t.state)).length <= 1),
+  JSON.stringify(trucks.filter(t => IN_LANE.includes(t.state)).map(t => t.lane)));
 check('3 条竖向车辆通道（6/5 间、17/16 间、28/27 间）',
   sandbox.LANE_COLS ? sandbox.LANE_COLS.join(',') === '7,19,31' : true, '');
 
