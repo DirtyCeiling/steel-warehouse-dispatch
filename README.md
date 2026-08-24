@@ -61,6 +61,35 @@ npm run dev
 npm run build
 ```
 
+## 本地数据库（库存/库位）
+
+基于 Node + SQLite（better-sqlite3）的本地库存数据库，存储钢厂棒材库区「库位 → 8 垛 → 每垛 20 捆」的库存/库位数据。数据库文件为 `server/warehouse.db`（不提交 git，可用命令随时重建）。
+
+### 常用命令
+```bash
+npm run db:init       # 初始化：建库 + 91 库位 × 8 垛 + 预置 30 捆初始库存
+npm run db:reset      # 重置为初始库存
+npm run db:inspect    # 打印库存汇总与抽样库位
+npm run db:serve      # 启动本地 HTTP API（http://127.0.0.1:3001）
+npm run db:test       # 自检：建库/写入/持久化
+```
+
+### 表结构
+- `specs` — 棒材规格（名称/单捆吨重/渲染色）
+- `storage_slots` — 库位（编码/分区/号区/跨/是否整跨合并/状态）
+- `stacks` — 垛（库位+垛号，同垛单一规格，count 0~20，pending 待扫码，in_time 最早入库时间）
+
+### HTTP 接口（带 CORS）
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/health` | 存活检查 |
+| GET | `/api/inventory` | 库存汇总（总捆数/总库容/利用率/分区统计） |
+| GET | `/api/slots` | 全部库位（含各垛） |
+| GET | `/api/slots/:id` | 单个库位详情 |
+| GET | `/api/specs` | 棒材规格列表 |
+| PUT | `/api/slots/:id/stacks/:no` | 更新某一垛（spec/count/pending/in_time） |
+| POST | `/api/reset` | 重置为初始库存 |
+
 ## 项目结构
 
 ```

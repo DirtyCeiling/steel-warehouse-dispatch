@@ -124,31 +124,40 @@
     padding: 0 4px; font-family: var(--mono); font-size: 10px; color: var(--text);
   }
   /* ============ 侧栏 ============ */
-  aside { width: 442px; flex: none; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  aside { width: 442px; flex: none; display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; }
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .kpi {
     background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-    padding: 8px 10px; min-height: 62px;
+    padding: 6px 8px; min-height: 52px;
   }
-  .kpi .kl { font-size: 10.5px; color: var(--dim); }
-  .kpi .kv { font-size: 20px; font-weight: 700; margin-top: 3px; font-family: var(--mono); }
-  .kpi .ks { font-size: 10px; color: var(--dim); margin-top: 2px; }
+  .kpi .kl { font-size: 10px; color: var(--dim); }
+  .kpi .kv { font-size: 17px; font-weight: 700; margin-top: 2px; font-family: var(--mono); }
+  .kpi .ks { font-size: 9.5px; color: var(--dim); margin-top: 2px; }
   .kpi .kv.c1 { color: var(--cyan); } .kpi .kv.c2 { color: var(--teal); }
   .kpi .kv.c3 { color: var(--violet); } .kpi .kv.c4 { color: var(--amber); }
   .kpi .kv.c5 { color: var(--green); } .kpi .kv.c6 { color: var(--orange); }
   .panel {
     background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-    padding: 9px 11px; display: flex; flex-direction: column; min-height: 0;
+    padding: 8px 10px; display: flex; flex-direction: column; min-height: 0;
   }
   .panel h2 {
     font-size: 12px; color: var(--dim); font-weight: 600; letter-spacing: 1px;
-    margin-bottom: 7px; display: flex; align-items: center; gap: 8px;
+    margin-bottom: 6px; display: flex; align-items: center; gap: 8px;
   }
   .panel h2::before { content: ""; width: 3px; height: 12px; background: var(--cyan); border-radius: 2px; }
   .panel h2 .cnt { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--cyan); }
-  .panel.devp { max-height: 300px; }
-  .panel.tasks { flex: 1.15; } .panel.logp { flex: 1; }
+  .panel.devp { max-height: 260px; flex: none; }
+  .panel.devp .scroll { max-height: 200px; }
+  .panel.tasks { flex: 1.15; min-height: 150px; } .panel.logp { flex: 1; min-height: 130px; }
   .panel .scroll { overflow-y: auto; min-height: 0; flex: 1; }
+  /* 设备集群折叠（矮屏默认收起，优先保证任务队列/事件日志可见） */
+  #devpHead { cursor: pointer; user-select: none; }
+  #devpHead .chev { font-size: 10px; color: var(--dim); transition: transform .2s; }
+  #devp.collapsed .scroll, #devp.collapsed .devseg { display: none; }
+  #devp.collapsed #devpHead .chev { transform: rotate(-90deg); }
+  /* 设备集群页签切换 */
+  .panel .seg.devseg { margin: 0 0 8px; }
+  .panel .seg.devseg button { padding: 4px 11px; font-size: 11px; }
   /* 机器狗/天车卡片 */
   .rcard { border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; background: var(--panel2); }
   .rcard + .rcard { margin-top: 6px; }
@@ -217,6 +226,34 @@
   .phead h3 { font-size: 15px; }
   .phead button { padding: 5px 11px; font-size: 12px; }
   .pnote { font-size: 11px; color: var(--dim); margin: 10px 0 2px; line-height: 1.7; }
+  /* ============ 车辆作业进度面板 ============ */
+  .panel.vehp { flex: none; max-height: 360px; }
+  .panel.vehp .scroll { max-height: 300px; }
+  #vehSelect {
+    width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line2);
+    border-radius: 8px; padding: 6px 8px; font-size: 12px; font-family: inherit; margin-bottom: 8px;
+    cursor: pointer;
+  }
+  #vehSelect:focus { outline: none; border-color: var(--cyan); }
+  #vehSelect option { background: var(--panel2); color: var(--text); }
+  .vehsum { border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; background: var(--panel2); }
+  .vrow1 { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .vrow1 .vplate { font-family: var(--mono); font-weight: 700; color: #a3e635; }
+  .vrow2 { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .vmeta { font-size: 10.5px; color: var(--dim); padding: 1px 7px; border: 1px solid var(--line2); border-radius: 999px; }
+  .vbar { height: 9px; background: #0a1730; border-radius: 999px; margin: 7px 0 3px; overflow: hidden; border: 1px solid var(--line); }
+  .vbar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--teal), var(--cyan)); transition: width .2s linear; }
+  .vbar i.out { background: linear-gradient(90deg, var(--amber), var(--orange)); }
+  .vbarlbl { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--dim); font-family: var(--mono); }
+  .vrows { margin-top: 4px; }
+  .vrow { display: flex; align-items: center; gap: 7px; font-size: 11px; padding: 3px 4px; border-bottom: 1px dashed rgba(22,41,79,.5); }
+  .vrow:last-child { border-bottom: none; }
+  .vrow .vspec { flex: 1; color: var(--text); min-width: 0; }
+  .vrow .vslot { color: var(--dim); font-family: var(--mono); font-size: 10px; flex: none; }
+  .vchip { font-size: 10px; padding: 0 7px; border-radius: 999px; border: 1px solid var(--line2); color: var(--dim); white-space: nowrap; flex: none; }
+  .vchip.done { color: var(--green); border-color: rgba(52,211,153,.45); background: rgba(52,211,153,.1); }
+  .vchip.run { color: var(--cyan); border-color: rgba(56,189,248,.45); background: rgba(56,189,248,.1); }
+  .vchip.wait { color: var(--amber); border-color: rgba(251,191,36,.4); background: rgba(251,191,36,.08); }
   .pgroup {
     font-size: 12px; color: var(--cyan); letter-spacing: 1px; margin: 14px 0 4px;
     display: flex; align-items: center; gap: 10px;
@@ -231,6 +268,111 @@
   ::-webkit-scrollbar-thumb { background: #1b3260; border-radius: 99px; }
   ::-webkit-scrollbar-thumb:hover { background: #28498a; }
   ::-webkit-scrollbar-track { background: transparent; }
+  /* ============ 库存三维视图（标签页切换，实时读取仿真库存） ============ */
+  #invRoot { display: none; flex: 1; gap: 12px; padding: 12px 14px; min-height: 0; }
+  #invRoot.on { display: flex; }
+  #invStage { flex: 1; display: flex; min-width: 0; }
+  #invCvWrap { flex: 1; position: relative; min-height: 0; border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden; background: var(--bg2); }
+  #invCv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #invTooltip {
+    display: none; position: absolute; z-index: 10; pointer-events: none;
+    background: rgba(11, 23, 48, .96); border: 1px solid var(--line2); border-radius: 8px;
+    padding: 8px 11px; font-size: 11.5px; line-height: 1.75; max-width: 260px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  }
+  #invTooltip b { color: var(--cyan); }
+  #invTooltip .tt-dim { color: var(--dim); }
+  #invHint {
+    position: absolute; top: 10px; left: 12px; z-index: 5;
+    font-size: 11px; color: #8fa7d6; background: rgba(11,23,48,.72);
+    border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; pointer-events: none;
+  }
+  #invHint kbd {
+    background: #122448; border: 1px solid var(--line2); border-radius: 4px;
+    padding: 0 4px; font-family: var(--mono); font-size: 10px; color: var(--text);
+  }
+  #invCrumb { position: absolute; top: 10px; right: 12px; z-index: 5; display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
+  #invCrumb .cseg {
+    padding: 4px 11px; border: 1px solid var(--line2); border-radius: 8px;
+    background: rgba(14,29,58,.85); cursor: pointer; transition: all .15s; color: var(--dim);
+  }
+  #invCrumb .cseg:hover { border-color: var(--cyan); color: var(--text); }
+  #invCrumb .cseg.on { background: rgba(56,189,248,.16); border-color: var(--cyan); color: var(--cyan); font-weight: 700; }
+  #invCrumb .csep { color: #33507f; font-size: 11px; }
+  #invDetail {
+    position: absolute; left: 12px; bottom: 12px; z-index: 6; width: 330px;
+    background: rgba(11, 23, 48, .94); border: 1px solid var(--line2); border-radius: 10px;
+    padding: 11px 13px; font-size: 12px; display: none; box-shadow: 0 10px 30px rgba(0,0,0,.5);
+  }
+  #invDetail h3 { font-size: 14px; color: var(--cyan); margin-bottom: 7px; display: flex; align-items: center; gap: 8px; }
+  #invDetail h3 .tag { font-size: 10px; color: var(--green); border: 1px solid rgba(52,211,153,.45); border-radius: 999px; padding: 1px 8px; font-weight: 400; }
+  #invDetail h3 .tag.pend { color: var(--amber); border-color: rgba(251,191,36,.45); }
+  #invDetail .dgrid { display: grid; grid-template-columns: 64px 1fr; row-gap: 4px; font-size: 12px; }
+  #invDetail .dl { color: var(--dim); }
+  #invDetail .dv { font-family: var(--mono); }
+  #invDetail .dv i { color: var(--dim); font-style: normal; font-size: 11px; }
+  #invDetail .sub { margin-top: 7px; padding-top: 7px; border-top: 1px dashed var(--line2); color: var(--dim); font-size: 11px; line-height: 1.7; }
+  #invDetail .ops { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
+  #invDetail button { background: var(--panel2); color: var(--text); border: 1px solid var(--line2); border-radius: 7px; padding: 5px 10px; font-size: 11.5px; }
+  #invDetail button:hover { border-color: var(--cyan); }
+  #invLegend {
+    position: absolute; right: 12px; bottom: 12px; z-index: 5;
+    display: flex; flex-direction: column; gap: 4px;
+    background: rgba(11,23,48,.72); border: 1px solid var(--line); border-radius: 8px;
+    padding: 7px 10px; font-size: 11px; color: var(--dim);
+  }
+  #invLegend .li { display: flex; align-items: center; gap: 6px; }
+  #invLegend .sw { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  #invGlErr {
+    position: absolute; inset: 0; z-index: 30; display: none;
+    background: rgba(5, 11, 26, .94); color: var(--text);
+    align-items: center; justify-content: center; flex-direction: column; gap: 10px;
+    font-size: 14px; text-align: center; line-height: 2;
+  }
+  #invRoot .sbar { display: grid; grid-template-columns: 108px 1fr 76px; gap: 8px; align-items: center;
+    padding: 3px 4px; border-radius: 6px; cursor: pointer; font-size: 11.5px; }
+  #invRoot .sbar:hover { background: rgba(56,189,248,.07); }
+  #invRoot .sbar.on { background: rgba(56,189,248,.13); outline: 1px solid rgba(56,189,248,.35); }
+  #invRoot .sbar .sn { display: flex; align-items: center; gap: 6px; color: var(--text); white-space: nowrap; }
+  #invRoot .sbar .dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  #invRoot .sbar .tr { height: 8px; background: #0d1b36; border-radius: 999px; overflow: hidden; }
+  #invRoot .sbar .fl { height: 100%; border-radius: 999px; }
+  #invRoot .sbar .sv { font-family: var(--mono); color: var(--dim); font-size: 10.5px; text-align: right; white-space: nowrap; }
+  #invRoot .fgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  #invRoot select, #invRoot input[type="text"] {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line2);
+    border-radius: 7px; padding: 6px 8px; font-size: 12px; font-family: inherit;
+    outline: none; width: 100%; cursor: pointer;
+  }
+  #invRoot select:focus, #invRoot input[type="text"]:focus { border-color: var(--cyan); }
+  #invRoot input[type="text"] { cursor: text; }
+  #invRoot .frow2 { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin-top: 6px; }
+  #invRoot .frow2 button {
+    background: var(--panel2); color: var(--dim); border: 1px solid var(--line2);
+    border-radius: 7px; padding: 6px 12px; font-size: 12px; cursor: pointer;
+  }
+  #invRoot .frow2 button:hover { border-color: var(--cyan); color: var(--text); }
+  #invRoot .ilhead, #invRoot .irow {
+    display: grid; grid-template-columns: 62px 84px 96px 68px 34px 34px 48px 62px;
+    gap: 2px; align-items: center; font-size: 11.5px;
+  }
+  #invRoot .ilhead { color: var(--dim); font-size: 10.5px; padding: 2px 6px 6px; border-bottom: 1px solid var(--line); }
+  #invListScroll { flex: 1; overflow-y: auto; position: relative; min-height: 0; }
+  #invListPad { position: relative; width: 100%; }
+  #invListRows .irow {
+    position: absolute; left: 0; right: 0; height: 30px; padding: 0 6px;
+    border-bottom: 1px solid rgba(22, 41, 79, .45); cursor: pointer; font-family: var(--mono);
+  }
+  #invListRows .irow:hover { background: rgba(56, 189, 248, .08); }
+  #invListRows .irow.sel { background: rgba(56, 189, 248, .16); outline: 1px solid rgba(56, 189, 248, .4); }
+  #invListRows .c-id { color: var(--cyan); }
+  #invListRows .c-id .pd { color: var(--amber); font-size: 10px; margin-right: 3px; }
+  #invListRows .c-slot { color: var(--text); }
+  #invListRows .c-spec i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
+  #invListRows .c-ton { color: var(--amber); }
+  #invListRows .c-day { color: var(--dim); }
+  #invListEmpty { padding: 30px 0; text-align: center; color: var(--dim); font-size: 12px; display: none; }
 </style>
 </head>
 <body>
@@ -242,6 +384,10 @@
       <h1>钢厂棒材库区 · 机器狗扫码调度仿真沙盘</h1>
       <p>长 300m × 宽 90m · 三跨（A/B/C，每跨 30m）· 3 条竖向车辆进出通道 · 91 库位（每库位 8 垛 × 20 捆）· 3 台机器狗（扫码核验）+ 6 台天车（每跨 2 台）· 一车 6-10 吊（单跨装卸）· 流程：货车进场停靠 -> 跨上立柱摄像头识别车牌 -> 物流系统吊取运单 -> 天车吊运装卸 -> 机器狗扫码确认 -> 库存更新</p>
     </div>
+  </div>
+  <div class="seg" id="viewTabs" title="切换视图：仿真沙盘 / 库存三维">
+    <button data-view="sim" class="on">🗺 仿真沙盘</button>
+    <button data-view="inv">🧱 库存三维</button>
   </div>
   <div class="clock"><span id="clock">08:00:00</span><small>仿真时间</small></div>
   <div class="controls">
@@ -262,7 +408,7 @@
 
 <div id="flowStrip"></div>
 
-<main>
+<main id="simMain">
   <div id="dbgState" style="display:none"></div>
   <section id="stage">
     <div id="cvWrap">
@@ -300,9 +446,22 @@
       <div class="kpi"><div class="kl">待处理任务</div><div class="kv c6" id="kpiQueue">0</div><div class="ks" id="kpiQueueSub">执行中 0</div></div>
     </div>
 
-    <div class="panel devp">
-      <h2>设备集群（3 机器狗 · 扫码 + 6 天车 · 吊运） <span class="cnt" id="robotCnt"></span></h2>
+    <div class="panel devp" id="devp">
+      <h2 id="devpHead" title="点击展开 / 收起设备集群">设备集群 <span class="cnt" id="robotCnt"></span><span class="chev">▾</span></h2>
+      <div class="seg devseg" id="devSeg">
+        <button data-tab="all" class="on">全部</button>
+        <button data-tab="robot">机器狗</button>
+        <button data-tab="crane">天车</button>
+      </div>
       <div class="scroll" id="robotCards"></div>
+    </div>
+
+    <div class="panel vehp">
+      <h2>车辆作业进度 <span class="cnt" id="vehCount"></span></h2>
+      <div class="scroll" id="vehPanelBody">
+        <select id="vehSelect"><option>加载中…</option></select>
+        <div id="vehDetail"></div>
+      </div>
     </div>
 
     <div class="panel tasks">
@@ -316,6 +475,58 @@
     </div>
   </aside>
 </main>
+
+<!-- ============ 库存三维视图（实时读取仿真库存：库位 -> 垛 -> 捆 下钻） ============ -->
+<section id="invRoot">
+  <div id="invStage">
+    <div id="invCvWrap">
+      <canvas id="invCv"></canvas>
+      <div id="invHint">左键拖拽 <kbd>旋转</kbd> · 滚轮 <kbd>缩放</kbd> · 右键拖拽 <kbd>平移</kbd> · 点击库位 / 垛 / 捆下钻 · <kbd>Esc</kbd> 返回上级</div>
+      <nav id="invCrumb"></nav>
+      <div id="invTooltip"></div>
+      <div id="invDetail"></div>
+      <div id="invLegend"></div>
+      <div id="invGlErr"></div>
+    </div>
+  </div>
+  <aside>
+    <div class="kpis">
+      <div class="kpi"><div class="kl">库存捆数</div><div class="kv c1" id="ikBundles">–</div><div class="ks">总库容 14,560 捆</div></div>
+      <div class="kpi"><div class="kl">库存吨位</div><div class="kv c4" id="ikTons">–</div><div class="ks">吨（按捆累计）</div></div>
+      <div class="kpi"><div class="kl">累计支数</div><div class="kv c2" id="ikRods">–</div><div class="ks">Σ 每捆支数</div></div>
+      <div class="kpi"><div class="kl">有料库位</div><div class="kv c3" id="ikSlots">–</div><div class="ks">共 91 库位</div></div>
+      <div class="kpi"><div class="kl">库容利用率</div><div class="kv c6" id="ikUtil">–</div><div class="ks">捆数 ÷ 14,560</div></div>
+      <div class="kpi"><div class="kl">待核验捆</div><div class="kv c5" id="ikPend">–</div><div class="ks">已落料待机器狗扫码</div></div>
+    </div>
+    <div class="panel" style="flex:none">
+      <h2>规格库存分布（按吨位）<span class="cnt" id="invSpecCnt"></span></h2>
+      <div id="invSpecBars"></div>
+    </div>
+    <div class="panel" style="flex:none">
+      <h2>库存筛选</h2>
+      <div class="fgrid">
+        <select id="invFZone"><option value="">全部区域</option></select>
+        <select id="invFSpan"><option value="">全部跨</option></select>
+        <select id="invFSpec"><option value="-1">全部规格</option></select>
+        <select id="invFGrade"><option value="">全部钢种</option></select>
+        <select id="invFLen"><option value="0">全部长度</option></select>
+        <select id="invFStat"><option value="">全部状态</option><option value="ok">仅在库</option><option value="pend">仅待核验</option></select>
+      </div>
+      <div class="frow2">
+        <input type="text" id="invFQ" placeholder="搜捆号（B-0102）或库位编码（33-1）…">
+        <button id="invFReset">重置</button>
+      </div>
+    </div>
+    <div class="panel" style="flex:1">
+      <h2>库存明细（捆级 · 实时）<span class="cnt" id="invListCnt">–</span></h2>
+      <div class="ilhead">
+        <span>捆号</span><span>库位·垛</span><span>规格</span><span>钢种</span>
+        <span>长m</span><span>支</span><span>吨</span><span>入账</span>
+      </div>
+      <div id="invListScroll"><div id="invListPad"><div id="invListRows"></div></div><div id="invListEmpty">当前筛选无匹配捆</div></div>
+    </div>
+  </aside>
+</section>
 
 <div id="settingsMask">
   <div id="settingsPanel">
@@ -331,6 +542,7 @@
   </div>
 </div>
 
+<script src="./vendor/three.inline.js"></script>
 <script>
 'use strict';
 /* 调试钩子：捕获运行时错误，供外部只读检查 */
@@ -353,6 +565,25 @@ window.__dbg = {
   get batchLoads() { return window.__batchLoads || []; },
   get trucksDone() { return trucksDone; },
   get craneStates() { return cranes.map(c => ({ name: c.name, span: c.span, state: c.state, jobsDone: c.jobsDone })); },
+  /* 捆级明细一致性探针（库存三维视图数据基础） */
+  get bundleSyncOK() { // 每垛 bundles 数恒等于 count，且全库捆记录总数恒等于 occupiedCount
+    return storages.every(s => s.stacks.every(k => k.bundles.length === k.count))
+      && storages.reduce((n, s) => n + s.stacks.reduce((m, k) => m + k.bundles.length, 0), 0) === occupiedCount;
+  },
+  get pendingSyncOK() { // 垛级待核验标记与捆级 pending 状态一致
+    return storages.every(s => s.stacks.every(k =>
+      k.pending === 0 ? k.bundles.every(b => !b.pending) : k.bundles.some(b => b.pending)));
+  },
+  get bundleSample() { // 抽样：返回首条捆记录字段
+    for (const s of storages) for (const k of s.stacks) if (k.bundles.length) return { ...k.bundles[0] };
+    return null;
+  },
+  get truckHistory() { return truckHistory.map(t => ({
+    taskId: t.taskId, kind: t.kind, plate: t.plate, state: t.state,
+    loads: t.batch ? t.batch.tasks.length : 0,
+    done: t.batch ? t.batch.tasks.filter(x => x.state === 'done').length : 0,
+    inScene: trucks.includes(t),
+  })); },
 };
 /* =====================================================================
  * 钢厂棒材库区 · 机器狗扫码调度仿真沙盘（2D 流程级仿真）
@@ -419,7 +650,12 @@ const CFG = {
     plateScanTime: 2.0,             // 跨上立柱摄像头识别车牌耗时（秒）
     manifestTime: 1.2,              // 凭车牌从物流系统吊取运单耗时（秒）
   },
-  task: { minInterval: 7, maxInterval: 13, inboundRatio: 0.55, maxPending: 48 },
+  task: { maxPending: 48 },             // 待处理任务上限（堆积到顶则暂缓排产，防队列失控）
+  production: {                          // 生产节奏：按天定量，订单全天铺开，不一次性下完
+    dayHours: 24,                        // 一个仿真日 = 24 仿真小时
+    inPerDay: 150,                       // 每日进厂车辆数（入库卸货）
+    outPerDay: 100,                      // 每日出厂车辆数（出库取货）
+  },
   initInventory: 30,                   // 初始库存捆数
 };
 
@@ -462,11 +698,21 @@ const PARAM_DEFS = [
   { sec: 'crane', key: 'lowerTime',  label: '放下时间',     min: 0.5, max: 10, step: 0.1, unit: '秒' },
   { sec: 'truck', key: 'plateScanTime', label: '车牌识别时间', min: 0.5, max: 8,  step: 0.1, unit: '秒' },
   { sec: 'truck', key: 'manifestTime',  label: '运单吊取时间', min: 0.3, max: 6,  step: 0.1, unit: '秒' },
+  { sec: 'production', key: 'inPerDay',  label: '每日进厂车辆', min: 10, max: 600, step: 5, unit: '辆/日' },
+  { sec: 'production', key: 'outPerDay', label: '每日出厂车辆', min: 10, max: 600, step: 5, unit: '辆/日' },
 ];
 const DEFAULT_PARAMS = {
   robot: { ...CFG.robot },
   crane: { ...CFG.crane },
   truck: { ...CFG.truck },
+  production: { ...CFG.production },
+};
+const SEC_NAMES = { robot: '机器狗', crane: '天车', truck: '货车', production: '生产节奏' };
+const SEC_GROUPS = {
+  robot: '机器狗（3 台 · D-01 ~ D-03 · 扫码核验）',
+  crane: '天车（6 台 · 每跨 2 台 · TC-A1~TC-C2 · 吊运装卸）',
+  truck: '货车（3 条竖向通道 · 立柱摄像头识别车牌 / 物流系统吊取运单）',
+  production: '生产节奏（每日进厂 / 出厂车辆数 · 订单全天均匀铺开，不一次下完）',
 };
 const paramId = d => `param-${d.sec}-${d.key}`;
 const fmtParam = (d, v) => `${(+v).toFixed(1)} ${d.unit}`;
@@ -481,9 +727,7 @@ function buildSettingsUI() {
   const rows = [];
   let lastGroup = '';
   for (const d of PARAM_DEFS) {
-    const gname = d.sec === 'robot' ? '机器狗（3 台 · D-01 ~ D-03 · 扫码核验）'
-      : d.sec === 'crane' ? '天车（6 台 · 每跨 2 台 · TC-A1~TC-C2 · 吊运装卸）'
-      : '货车（3 条竖向通道 · 立柱摄像头识别车牌 / 物流系统吊取运单）';
+    const gname = SEC_GROUPS[d.sec] || d.sec;
     if (gname !== lastGroup) { rows.push(`<div class="pgroup">${gname}</div>`); lastGroup = gname; }
     rows.push(`<div class="prow">
       <span class="pl">${d.label}</span>
@@ -501,7 +745,7 @@ function buildSettingsUI() {
       $(paramId(d) + '-v').textContent = fmtParam(d, v);
     });
     input.addEventListener('change', () => {
-      logEvent('system', `参数调整：${d.sec === 'robot' ? '机器狗' : '天车'}${d.label} -> ${CFG[d.sec][d.key]} ${d.unit}`);
+      logEvent('system', `参数调整：${SEC_NAMES[d.sec] || d.sec} ${d.label} -> ${CFG[d.sec][d.key]} ${d.unit}`);
     });
   }
 }
@@ -520,11 +764,12 @@ function restoreDefaultParams() {
  *   列 c：0-1 厂房西墙外（不可通行）；2-37 厂房内（x = (c-2)×8.33m ~ 300m，
  *         自左向右依次对应 1~33 号区与通道列）
  *   行 r：0/2/4/6 = 4 条横向通道（各 2m，横贯全长，机器狗主廊道）；
- *         1/3/5 = A/B/C 跨（各 30m，垛位列，不可穿行）；7 = 厂房外充电服务带
+ *         1/3/5 = A/B/C 跨（各 30m，垛位列，不可穿行）；7 = 厂房外充电服务带（3m）
  * 米制坐标：x = (c-2)×CELL_L 起算；y = ROW_TOP[r] 起算（行顶缘）。 */
 const M = {
   L: 300, W: 90, CELL_L: 300 / 36, SPAN_W: 30,
   CH_W: 2,                         // 横向通道宽（4 条，不计入总宽 90m）
+  SVC_W: 3,                        // 充电服务带宽（厂房外 C 跨一侧）
   COLS: 38, ROWS: 8, SLOTS: 91,
   X_MIN: 0,                          // 地图最左 = 厂房西墙
   Y_MIN: -16,                        // 地图最上 = 通道北端入口外（货车排队区）
@@ -565,8 +810,13 @@ const isChannelCol = c => LANE_COLS.includes(c);
 let tiles = [], storages = [], robots = [], tasks = [], trucks = [];
 let craneJobs = [], cranes = [], columns = [];
 let batches = [], batchSeq = 0, trucksDone = 0;   // 车次（一车 6-10 吊）分组层
+let truckHistory = [];                            // 全部货车留档（含已离场），供“车辆作业进度”面板回看
+let selVehicleId = null;                          // 面板当前选中的车辆（车次号）
+let vehPanelSig = null;                           // 车流签名：有变化才重建下拉，避免打断用户选择（null 强制首帧重建）
 let simTime = 0, speed = 1, paused = false, autoTaskOn = true;
-let taskSeq = 0, nextTaskAt = 4, occupiedCount = 0;
+let devTab = 'all';   // 设备集群页签：all | robot | crane
+let taskSeq = 0, occupiedCount = 0;
+let nextInAt = 2, nextOutAt = 3;      // 下一辆进厂 / 出厂车的排产时间（生产节奏按天铺开）
 let hoverCell = null;
 
 /* ---------------- DOM ---------------- */
@@ -583,8 +833,8 @@ const mx = m => ox + (m - M.X_MIN) * scale;  // 米 -> 像素 X
 const my = m => oy + (m - M.Y_MIN) * scale;  // 米 -> 像素 Y
 const colX = c => (c - 2) * M.CELL_L;        // 栅格列西缘 x（米）
 const cellCX = c => (c - 1.5) * M.CELL_L;    // 栅格列中心 x（米）
-/* 行几何：2m 通道行与 30m 跨行交替，连续铺满 y 0~128m */
-const ROW_H = [M.CH_W, M.SPAN_W, M.CH_W, M.SPAN_W, M.CH_W, M.SPAN_W, M.CH_W, M.SPAN_W];
+/* 行几何：2m 通道行与 30m 跨行交替，末端 3m 充电服务带，连续铺满 y 0~101m */
+const ROW_H = [M.CH_W, M.SPAN_W, M.CH_W, M.SPAN_W, M.CH_W, M.SPAN_W, M.CH_W, M.SVC_W];
 const ROW_TOP = [];
 ROW_H.reduce((acc, h) => (ROW_TOP.push(acc), acc + h), 0);
 const rowY = r => ROW_TOP[r];                  // 行 r 顶缘 y（米）
@@ -595,7 +845,7 @@ const rowOfY = y => {                          // y(米) -> 行号（通道带�
 };
 const SPAN_ROWS = [1, 3, 5];                   // A/B/C 跨所在栅格行
 const HALL_W = M.W + 4 * M.CH_W;             // 厂房图示总宽 98m（90m 三跨 + 4×2m 通道）
-const MAP_BOT = rowY(7) + M.SPAN_W;          // 地图底缘 128m（含充电服务带）
+const MAP_BOT = rowY(7) + M.SVC_W;           // 地图底缘 101m（含充电服务带）
 const HCH_Y = [0, 2, 4, 6].map(rowY);        // 4 条横向通道顶缘 y
 const TRUCK_ENTER_Y = -10;                   // 货车进场 y（通道北端入口外）
 const TRUCK_EXIT_Y = MAP_BOT + 10;           // 货车离场驶出 y（通道南端出口外）
@@ -614,8 +864,10 @@ function lerpAngle(a, b, t) {
   const d = ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
   return a + d * t;
 }
-function rr(c, x, y, w, h, r) { // 圆角矩形路径
+function rr(c, x, y, w, h, r) { // 圆角矩形路径（w/h 过小或为负时直接跳过，避免 arcTo 负半径崩溃）
+  if (!(w > 0) || !(h > 0)) return;
   r = Math.min(r, w / 2, h / 2);
+  if (r <= 0) { c.beginPath(); c.rect(x, y, w, h); return; }
   c.beginPath();
   c.moveTo(x + r, y);
   c.arcTo(x + w, y, x + w, y + h, r);
@@ -663,7 +915,51 @@ function nearestCam(tk) { // 距货车最近的同跨立柱摄像头
 }
 
 /* ---------------- 垛位（每库位 8 垛 · 每垛 20 捆）辅助 ---------------- */
-function newStack() { return { spec: null, count: 0, pending: 0, inTime: 0 }; }
+/* 捆级明细（库存三维视图展示用）：bundles 与 count/pending 同步维护，
+ * 元数据（钢种/长度/炉号）用独立随机流 invRnd，不消耗 Math.random，保证仿真时序确定性 */
+function newStack() { return { spec: null, count: 0, pending: 0, inTime: 0, bundles: [], grade: '', len: 0, heat: '' }; }
+const SPEC_META = {   // 规格展示元数据（直径/形状/可选长度/可选钢种/9m 基准单捆吨位 = SPECS.weight）
+  '螺纹钢 Φ20': { dia: 20, shape: 'rebar',  lengths: [9, 12], grades: ['HRB400E', 'HRB500E'] },
+  '螺纹钢 Φ25': { dia: 25, shape: 'rebar',  lengths: [9, 12], grades: ['HRB400E', 'HRB500E'] },
+  '圆钢 Φ50':  { dia: 50, shape: 'round',  lengths: [6, 9],  grades: ['45#', '40Cr'] },
+  '圆钢 Φ60':  { dia: 60, shape: 'round',  lengths: [6, 9],  grades: ['45#', 'GCr15'] },
+  '方钢 40×40': { dia: 40, shape: 'square', lengths: [6, 9],  grades: ['Q235B', 'Q345B'] },
+};
+let _invSeed = 20260824;
+const invRnd = () => { _invSeed = (_invSeed * 1103515245 + 12345) % 2147483648; return _invSeed / 2147483648; };
+let bundleSeq = 0;
+window.__invVer = 0;                    // 库存版本号：库存三维视图据此增量刷新
+function invBump() { window.__invVer++; }
+function mkBundleRec(st, stackIdx, spec, pending, inTime) {   // 捆落垛时登记明细
+  const k = st.stacks[stackIdx];
+  if (!k) return null;
+  if (k.bundles.length === 0) {         // 垛内首捆：定钢种/长度/炉号（同垛同质）
+    const meta = SPEC_META[spec.name];
+    k.grade = meta.grades[Math.floor(invRnd() * meta.grades.length)];
+    k.len = meta.lengths[Math.floor(invRnd() * meta.lengths.length)];
+    k.heat = 'HT' + (200000 + Math.floor(invRnd() * 699999));
+  }
+  const rec = {
+    id: 'B-' + String(++bundleSeq).padStart(4, '0'),
+    slotId: st.id, stackIdx, specIdx: SPECS.indexOf(spec),
+    grade: k.grade, len: k.len, heat: k.heat, rods: spec.rods,
+    wt: +(spec.weight * k.len / 9).toFixed(2),                 // 吨（按长度折算）
+    inTime, pending,
+  };
+  k.bundles.push(rec);
+  invBump();
+  return rec;
+}
+function popBundleRec(st, stackIdx) {   // 出库吊走：垛内 FIFO（与 pickOutStack 先进先出一致）
+  const k = st.stacks[stackIdx];
+  if (k && k.bundles.length) k.bundles.shift();
+  invBump();
+}
+function confirmBundleRec(st, stackIdx) { // 机器狗扫码入账：最早一捆待核验转为在库
+  const k = st.stacks[stackIdx];
+  if (k) { const b = k.bundles.find(x => x.pending); if (b) b.pending = false; }
+  invBump();
+}
 const slotBundles = st => st.stacks.reduce((s, k) => s + k.count, 0);   // 库位现有捆数
 const slotPending = st => st.stacks.reduce((s, k) => s + k.pending, 0); // 库位待扫码捆数
 function pickInStack(st, spec) { // 入库目标垛：优先同规格有空位，否则空垛（-1 = 已满）
@@ -1004,6 +1300,7 @@ class Robot {
     if (t.type === 'in') { // 入库：落料正式入账，任务闭环
       const k = t.slot.stacks[t.stackIdx];
       if (k) k.pending = 0;
+      confirmBundleRec(t.slot, t.stackIdx);           // 捆级明细：最早待核验捆转为在库
       t.state = 'done'; t.stage = 6; t.ended = simTime;
       logEvent('robot', `${this.name} 状态回传：${t.id} 完成，耗时 ${fmtDur(simTime - t.created)}`);
       logEvent('inventory', `库存更新：${t.slot.code} 第${t.stackIdx + 1}垛 扫码入库确认 ${t.spec.name}（库存 ${occupiedCount}/${TOTAL_BUNDLE_CAP}）`);
@@ -1061,6 +1358,7 @@ function summonTruck(batch) {
     scanT: 0,                                             // 车牌识别 / 运单吊取计时
   };
   trucks.push(truck);
+  truckHistory.push(truck);                              // 留档（面板可回看已离场车辆）
   batch.truck = truck;
   for (const t of batch.tasks) t.truck = truck;
   window.__batchLoads = window.__batchLoads || [];
@@ -1243,6 +1541,7 @@ function updateCranes(dt) {
             const k = st.stacks[j.task.stackIdx];
             if (k) {
               k.count--; k.pending = 0;
+              popBundleRec(st, j.task.stackIdx);               // 捆级明细：FIFO 核销一捆
               if (k.count === 0) { k.spec = null; k.inTime = 0; }
             }
             st.state = slotBundles(st) === 0 ? 'free' : 'occupied';
@@ -1267,6 +1566,7 @@ function updateCranes(dt) {
             if (k) {
               if (k.count === 0) { k.spec = j.spec; k.inTime = simTime; } // 垛内首捆记入库时间（FIFO）
               k.count++; k.pending = 1;                                  // 刚落料待扫码
+              mkBundleRec(st, j.task.stackIdx, j.spec, true, simTime);   // 捆级明细：登记待核验捆
             }
             st.state = 'occupied'; st.lockSpec = null; st.lockStack = null;
             occupiedCount++;
@@ -1426,17 +1726,33 @@ function toast(msg) {
 }
 
 /* ---------------- 仿真主循环 ---------------- */
+/* 一辆车的随车运单：按「一车 6-10 吊」生成同方向的一批次任务（凑满即由调度派车进场） */
+function spawnVehicleManifest(type) {
+  const n = Math.round(rand(CFG.truck.minLoads, CFG.truck.maxLoads));
+  let made = 0;
+  for (let i = 0; i < n; i++) if (createTask(type, { silent: true })) made++;
+  if (made) {
+    logEvent('task', `生产排产：${type === 'in' ? '进厂' : '出厂'}车 1 辆，随车运单 ${made} 吊（${type === 'in' ? '入库卸货' : '出库取货'}）`);
+    window.__spawnLog = window.__spawnLog || [];
+    window.__spawnLog.push({ t: simTime, type, made });   // 排产留痕（自检/调试：验证按天铺开节奏）
+  }
+  return made;
+}
 function tick(dt) {
   simTime += dt;
-  // 自动任务生成
-  if (autoTaskOn && simTime >= nextTaskAt) {
-    nextTaskAt = simTime + rand(CFG.task.minInterval, CFG.task.maxInterval);
+  // 生产节奏：按「每日进厂/出厂车辆数」把车辆订单均匀铺到一整天（带抖动），不一次性下完。
+  // 进厂间隔 = 一天 / 每日进厂数，出厂同理；待处理任务堆积到上限时暂缓，防队列失控。
+  if (autoTaskOn) {
+    const dayLen = CFG.production.dayHours * 3600;
     const pending = tasks.filter(t => t.state === 'pending').length;
-    if (pending < CFG.task.maxPending) {
-      let type = Math.random() < CFG.task.inboundRatio ? 'in' : 'out';
-      let t = createTask(type, { silent: true });
-      if (!t && type === 'out') t = createTask('in', { silent: true });   // 无库存可出时转为入库
-      if (!t && type === 'in') t = createTask('out', { silent: true });   // 库位满时转为出库
+    const canSpawn = pending < CFG.task.maxPending;
+    if (simTime >= nextInAt && canSpawn) {
+      spawnVehicleManifest('in');
+      nextInAt = simTime + (dayLen / Math.max(1, CFG.production.inPerDay)) * rand(0.55, 1.45);
+    }
+    if (simTime >= nextOutAt && canSpawn) {
+      spawnVehicleManifest('out');
+      nextOutAt = simTime + (dayLen / Math.max(1, CFG.production.outPerDay)) * rand(0.55, 1.45);
     }
   }
   dispatchBatches();   // 车次凑满 6-10 吊或超时 -> 派车
@@ -1469,7 +1785,7 @@ function frame(now) {
 function computeLayout() {
   const mL = 96, mR = 18, mT = 62, mB = 48;
   const mapWm = M.L - M.X_MIN;               // 300m
-  const mapHm = MAP_BOT - M.Y_MIN;           // 144m（含通道北端入口外排队区）
+  const mapHm = MAP_BOT - M.Y_MIN;           // 117m（含通道北端入口外排队区）
   scale = Math.max(1.2, Math.min((cssW - mL - mR) / mapWm, (cssH - mT - mB) / mapHm));
   ox = mL + Math.max(0, (cssW - mL - mR - mapWm * scale) / 2);
   oy = mT + Math.max(0, (cssH - mT - mB - mapHm * scale) / 2);
@@ -1522,7 +1838,7 @@ function drawBase() {
   ctx.strokeRect(mx(colX(2)), my(rowY(3)), 2 * M.CELL_L * scale, M.SPAN_W * scale);
   // 充电服务带（厂房外）
   ctx.fillStyle = 'rgba(167,139,250,.06)';
-  ctx.fillRect(mx(0), my(rowY(7)), M.L * scale, M.SPAN_W * scale);
+  ctx.fillRect(mx(0), my(rowY(7)), M.L * scale, M.SVC_W * scale);
   // 栅格线
   ctx.strokeStyle = 'rgba(56,130,246,.05)'; ctx.lineWidth = 1;
   for (let c = 2; c <= M.COLS; c++) {
@@ -1548,7 +1864,7 @@ function drawBase() {
   // 场外区域虚线框
   ctx.setLineDash([5, 4]);
   ctx.strokeStyle = 'rgba(114,136,179,.35)'; ctx.lineWidth = 1;
-  ctx.strokeRect(mx(0), my(rowY(7)), M.L * scale, M.SPAN_W * scale);                    // 充电带
+  ctx.strokeRect(mx(0), my(rowY(7)), M.L * scale, M.SVC_W * scale);                     // 充电带
   ctx.setLineDash([]);
   // ===== 标注 =====
   const lab = (text, xm, ym, size, color) => {
@@ -1594,7 +1910,7 @@ function drawBase() {
   // 充电桩
   for (const [r, c] of CHARGER_CELLS) {
     const no = tiles[r][c].no;
-    const s5 = 7 * scale;
+    const s5 = 2.6 * scale;
     rr(ctx, mx(cellCX(c)) - s5 / 2, my(cellCY(r)) - s5 / 2, s5, s5, 6);
     ctx.fillStyle = 'rgba(167,139,250,.13)'; ctx.fill();
     ctx.strokeStyle = 'rgba(167,139,250,.5)'; ctx.lineWidth = 1; ctx.stroke();
@@ -2044,6 +2360,83 @@ function taskPhaseText(t) { // 任务卡片子状态（车辆/摄像头/天车/�
   if (!t.robot) return '待机器狗扫码核验';
   return null;
 }
+/* 货车状态文案 */
+function truckStateText(tk) {
+  if (!tk) return '';
+  switch (tk.state) {
+    case 'QUEUE': return '排队待进场';
+    case 'ENTER': return '进场行驶';
+    case 'PLATE_SCAN': return '停靠 · 识别车牌';
+    case 'MANIFEST': return '吊取运单';
+    case 'WORKING': return '天车装卸中';
+    case 'LEAVE': return '离场中';
+    default: return tk.state;
+  }
+}
+/* 单吊完成情况（卸货 / 取货两方向） */
+function loadStatus(t) {
+  if (t.type === 'in') {
+    if (t.state === 'done') return { txt: '已卸货 · 入账', cls: 'done' };
+    if (t.materialReady) return { txt: '已卸落库位 · 待扫码', cls: 'run' };
+    if (t.cranePushed) return { txt: '天车卸货中', cls: 'run' };
+    return { txt: '待卸货', cls: 'wait' };
+  }
+  if (t.state === 'done') return { txt: '已装车 · 取货完成', cls: 'done' };
+  if (t.dogDone) return { txt: '核验通过 · 装车中', cls: 'run' };
+  return { txt: '待扫码核验', cls: 'wait' };
+}
+/* 车辆作业进度面板：选一辆车，看该车卸货/取货完成情况 */
+function renderVehiclePanel() {
+  const vehTrucks = truckHistory;                       // 含已离场留档车辆
+  const vehSig = vehTrucks.map(t => `${t.taskId}:${t.state}:${t.batch ? t.batch.tasks.length : 0}`).join('|');
+  const vehSel = $('vehSelect');
+  if (vehPanelSig !== vehSig) {                         // 车流有变化才重建下拉，避免打断用户选择
+    vehPanelSig = vehSig;
+    const cur = selVehicleId && vehTrucks.some(t => t.taskId === selVehicleId)
+      ? selVehicleId : (vehTrucks[0] ? vehTrucks[0].taskId : null);
+    vehSel.innerHTML = vehTrucks.map(t => {
+      const gone = !trucks.includes(t);
+      return `<option value="${t.taskId}">${t.plate} · ${t.taskId} ${t.kind === 'in' ? '卸货' : '取货'}${gone ? ' ✓ 已离场' : ''}</option>`;
+    }).join('') || '<option value="">暂无车辆</option>';
+    if (cur) vehSel.value = cur;
+    selVehicleId = vehSel.value || cur;
+    vehSel.onchange = () => { selVehicleId = vehSel.value; };
+  }
+  $('vehCount').textContent = `${vehTrucks.filter(t => trucks.includes(t)).length} 在场 · ${vehTrucks.length} 累计`;
+  const elVehDetail = $('vehDetail');
+  const veh = vehTrucks.find(t => t.taskId === selVehicleId) || vehTrucks[0];
+  if (!veh) { elVehDetail.innerHTML = '<div class="empty">暂无车辆，等待派车…</div>'; return; }
+  const batch = veh.batch, loads = batch ? batch.tasks : [];
+  const doneN = loads.filter(t => t.state === 'done').length;
+  const pct = loads.length ? (doneN / loads.length * 100) : 0;
+  const gone = !trucks.includes(veh);
+  const kindTxt = veh.kind === 'in' ? '卸货 · 入库' : '取货 · 出库';
+  const statTxt = veh.kind === 'in'
+    ? `已卸载 ${loads.filter(t => t.materialReady).length} 吊 · 已入账 ${doneN} 吊`
+    : `已核验 ${loads.filter(t => t.dogDone).length} 吊 · 已装车 ${doneN} 吊`;
+  const kindStyle = veh.kind === 'in'
+    ? 'margin-left:auto'
+    : 'margin-left:auto;color:#fbbf24;border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.08)';
+  elVehDetail.innerHTML = `
+    <div class="vehsum">
+      <div class="vrow1">
+        <span class="vplate">${veh.plate}</span>
+        <span class="badge ${veh.kind === 'in' ? 'b-go' : ''}" style="${kindStyle}">${kindTxt}</span>
+        <span class="badge" style="margin-left:0">${gone ? '已离场' : truckStateText(veh)}</span>
+      </div>
+      <div class="vrow2">
+        <span class="vmeta">${batch ? batch.id : veh.taskId}</span>
+        <span class="vmeta">${SPANS[batch.span]} · ${laneNo(veh.lane)} 号通道</span>
+        <span class="vmeta">共 ${loads.length} 吊</span>
+      </div>
+      <div class="vbar"><i class="${veh.kind === 'out' ? 'out' : ''}" style="width:${pct}%"></i></div>
+      <div class="vbarlbl"><span>${statTxt}</span><span>${doneN}/${loads.length} 吊完成</span></div>
+    </div>
+    <div class="vrows">${loads.map(t => {
+      const st = loadStatus(t);
+      return `<div class="vrow"><span class="vchip ${st.cls}">${st.txt}</span><span class="vspec">${t.spec.name} ${t.spec.weight}t</span><span class="vslot">${t.slot.code} · ${t.stackIdx + 1}垛</span></div>`;
+    }).join('')}</div>`;
+}
 function refreshPanels() {
   const dbgEl = document.getElementById('dbgState');
   if (dbgEl) dbgEl.textContent = `t=${simTime.toFixed(1)} f=${window.__frameCount || 0} vis=${document.visibilityState} errs=${__errs.join(' | ') || 'none'}`;
@@ -2102,7 +2495,10 @@ function refreshPanels() {
       <div class="rstats">速度 ${CFG.crane.speed} m/s · 吊取 ${CFG.crane.hoistTime}s / 放下 ${CFG.crane.lowerTime}s · 排队 ${craneJobs.length}</div>
     </div>`;
   }).join('');
-  elRobotCards.innerHTML = dogCards + craneCards;
+  // 按设备集群页签过滤：all = 机器狗 + 天车
+  elRobotCards.innerHTML = devTab === 'robot' ? dogCards
+    : devTab === 'crane' ? craneCards
+    : dogCards + craneCards;
   // 任务队列
   const active = tasks.filter(t => t.state !== 'done')
     .sort((a, b) => (a.robot ? 1 : 0) - (b.robot ? 1 : 0) || a.created - b.created);
@@ -2124,6 +2520,8 @@ function refreshPanels() {
       <div class="tsub">${run ? `执行：${t.robot.name} · ${navStateText(t.robot)}` : phase}</div>
     </div>`;
   }).join('') : '<div class="empty">队列为空，等待任务下发…</div>';
+  // 车辆作业进度
+  renderVehiclePanel();
   // 流程链路条
   const counts = [0, 0, 0, 0, 0, 0];
   for (const t of tasks) if (t.state !== 'done' && t.stage < 6) counts[t.stage]++;
@@ -2254,6 +2652,16 @@ function setSpeed(n) {
   document.querySelectorAll('#speedSeg button').forEach(b => b.classList.toggle('on', +b.dataset.speed === n));
   logEvent('system', `仿真倍率调整为 ${n}×`);
 }
+$('devSeg').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-tab]');
+  if (!btn || btn.dataset.tab === devTab) return;
+  devTab = btn.dataset.tab;
+  document.querySelectorAll('#devSeg button').forEach(b => b.classList.toggle('on', b.dataset.tab === devTab));
+  refreshPanels();
+});
+/* 设备集群折叠：矮屏默认收起，保证任务队列/事件日志始终可见；点击标题展开/收起 */
+$('devpHead').addEventListener('click', () => $('devp').classList.toggle('collapsed'));
+$('devp').classList.toggle('collapsed', window.innerHeight < 900);
 $('autoTask').addEventListener('change', e => {
   autoTaskOn = e.target.checked;
   logEvent('system', autoTaskOn ? '自动任务生成：开启' : '自动任务生成：关闭（改为手动下发）');
@@ -2291,10 +2699,13 @@ window.addEventListener('resize', resizeCanvas);
 
 /* ---------------- 初始化 ---------------- */
 function init() {
-  simTime = 0; taskSeq = 0; nextTaskAt = 4; logTotal = 0;
+  simTime = 0; taskSeq = 0; logTotal = 0;
+  nextInAt = 2; nextOutAt = 3;
   tasks = []; trucks = []; craneJobs = [];
   batches = []; batchSeq = 0; trucksDone = 0;
+  truckHistory = []; selVehicleId = null; vehPanelSig = null;
   window.__batchLoads = [];
+  window.__spawnLog = [];
   buildMap();
   buildColumns();
   resetCranes();
@@ -2303,8 +2714,10 @@ function init() {
   for (let n = 0; n < CFG.initInventory; n++) {
     const st = pick(storages);
     const k = pick(st.stacks);
+    const si = st.stacks.indexOf(k);
     if (k.count === 0) { k.spec = pick(SPECS); k.inTime = -rand(600, 7200); } // 垛内首捆记入库时间
     k.count++; k.pending = 0;
+    mkBundleRec(st, si, k.spec, false, k.inTime);                // 捆级明细：期初在库
     st.state = 'occupied';
     occupiedCount++;
   }
@@ -2323,10 +2736,957 @@ function init() {
   logEvent('system', '作业流程：入库 = 货车进场停靠 -> 立柱摄像头识别车牌 -> 吊取运单 -> 天车吊运落料 -> 机器狗扫码入账；出库 = 机器狗扫码核验 -> 货车进场 -> 识别车牌吊取装车计划 -> 天车装车 -> 货车离场');
   logEvent('system', '调度规则：机器狗就近分配 + 电量约束 + 先到先服务（出库先进先出）；天车限本跨作业，同跨双车区间互让；天车须待货车运单确认后才开工');
   logEvent('system', '车次规则：一车 6-10 吊（同跨装卸），凑满一车或超时按现有吊数放行；任务按吊计数，货车全部吊完才离场');
+  logEvent('system', `生产节奏：每日进厂 ${CFG.production.inPerDay} 辆 / 出厂 ${CFG.production.outPerDay} 辆（可在「⚙ 设备参数」调整），订单按天均匀铺开，随车运单 6-10 吊`);
   logEvent('system', '通行规则：机器狗只沿通道（4 条 2m 横向廊道 + 3 条竖向车辆通道 + 服务带）与垛位间隙行走，不进入库位内部，扫码时从通道边进入目标库位');
   buildSettingsUI();
   refreshPanels();
 }
+
+/* =====================================================================
+ * 库存三维视图（顶栏「库存三维」标签切换，实时读取仿真库存）
+ * 数据源 = storages[].stacks[].bundles（捆级明细，与仿真出入库同步维护）。
+ * three.js 缺失 / WebGL 不可用时自动降级为纯列表模式。
+ * ===================================================================== */
+(() => {
+  'use strict';
+  /* ---------------- 复用主页面的布局/数据 ---------------- */
+  const MAP_BOT2 = rowY(7) + M.SPAN_W;                 // 128m（含充电服务带）
+  const WX = x => x - M.L / 2, WZ = y => y - MAP_BOT2 / 2;
+  const zoneTint = zone => parseInt(ZONES[zone].tint.split(',').map(x => (+x).toString(16).padStart(2, '0')).join(''), 16);
+  const slotGeo = s => ({
+    x: cellCX(s.col),
+    z: s.merged ? (rowY(1) + rowY(5) + M.SPAN_W) / 2 : rowY(s.row) + M.SPAN_W / 2,
+    w: M.CELL_L,
+    d: s.merged ? rowY(5) + M.SPAN_W - rowY(1) : M.SPAN_W,
+  });
+  const invSpanName = s => s.merged ? '整跨合并' : SPANS[spanOfSlot(s)];
+  function stackCell(s, i) {   // 垛在库位内的网格：4 列(宽向) × 2 排(深向)
+    const g = slotGeo(s), dEff = Math.min(g.d, 40);
+    return {
+      x: g.x + ((i % 4) - 1.5) * (g.w / 4),
+      z: g.z + ((i < 4 ? 0 : 1) - 0.5) * (dEff / 2),
+      cw: g.w / 4, cd: dEff / 2,
+    };
+  }
+  /* 捆内支数排布（自下而上每层支数；6 支 = 3+2+1 金字塔） */
+  const ROD_ROWS = { 3: [2, 1], 4: [2, 2], 5: [3, 2], 6: [3, 2, 1] };
+  const rodR = dia => 0.13 + dia * 0.003;
+  const bundleW = sp => Math.max(...ROD_ROWS[sp.rods]) * 2 * rodR(SPEC_META[sp.name].dia) * 1.08 + 0.05;
+  const bundleH = sp => ROD_ROWS[sp.rods].length * 2 * rodR(SPEC_META[sp.name].dia) * 1.04 + 0.05;
+  const fmtIn = t => t < 0 ? '期初' : fmtClock(t).slice(0, 5);
+
+  /* ---------------- 实时库存采集 ---------------- */
+  function collect() {   // [{ b(捆记录), s(库位), si(垛号), layer(层) }]
+    const out = [];
+    for (const s of storages) s.stacks.forEach((k, si) => {
+      if (k.count > 0) k.bundles.forEach((b, layer) => out.push({ b, s, si, layer }));
+    });
+    return out;
+  }
+  function calcStats(items) {
+    let rods = 0, tons = 0, pend = 0, slotsOcc = 0;
+    const bySpec = SPECS.map(() => ({ n: 0, tons: 0 }));
+    for (const { b } of items) {
+      rods += b.rods; tons += b.wt; if (b.pending) pend++;
+      bySpec[b.specIdx].n++; bySpec[b.specIdx].tons += b.wt;
+    }
+    for (const s of storages) if (slotBundles(s) > 0) slotsOcc++;
+    return { bundles: items.length, rods, tons, pend, slotsOcc, bySpec };
+  }
+  function specMix(s) {
+    const m = new Map();
+    for (const k of s.stacks) if (k.count > 0) {
+      const key = `${SPECS.indexOf(k.spec)}|${k.grade}|${k.len}`;
+      m.set(key, (m.get(key) || 0) + k.count);
+    }
+    return [...m.entries()].map(([kk, n]) => {
+      const [si, g, l] = kk.split('|');
+      return `${SPECS[+si].name} ${g} ${l}m ×${n}`;
+    });
+  }
+
+  /* ---------------- 筛选 ---------------- */
+  const filt = { zone: '', span: '', spec: -1, grade: '', len: 0, stat: '', q: '' };
+  let listData = [];
+  function matchItem({ b, s }) {
+    if (filt.zone && s.zone !== filt.zone) return false;
+    if (filt.span && invSpanName(s) !== filt.span) return false;
+    if (filt.spec >= 0 && b.specIdx !== filt.spec) return false;
+    if (filt.grade && b.grade !== filt.grade) return false;
+    if (filt.len && b.len !== filt.len) return false;
+    if (filt.stat === 'ok' && b.pending) return false;
+    if (filt.stat === 'pend' && !b.pending) return false;
+    if (filt.q) {
+      const q = filt.q.toLowerCase();
+      if (!b.id.toLowerCase().includes(q) && !s.code.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  }
+  function stackMatch(s, si) {
+    const k = s.stacks[si];
+    if (!k || k.count === 0) return false;
+    if (filt.zone && s.zone !== filt.zone) return false;
+    if (filt.span && invSpanName(s) !== filt.span) return false;
+    if (filt.spec >= 0 && SPECS.indexOf(k.spec) !== filt.spec) return false;
+    if (filt.grade && k.grade !== filt.grade) return false;
+    if (filt.len && k.len !== filt.len) return false;
+    if (filt.stat === 'ok' && k.bundles.every(b => b.pending)) return false;
+    if (filt.stat === 'pend' && k.bundles.every(b => !b.pending)) return false;
+    if (filt.q) {
+      const q = filt.q.toLowerCase();
+      if (!s.code.toLowerCase().includes(q) && !k.bundles.some(b => b.id.toLowerCase().includes(q))) return false;
+    }
+    return true;
+  }
+  function refreshList() {
+    listData = collect().filter(matchItem)
+      .sort((x, y) => x.s.id - y.s.id || x.si - y.si || x.layer - y.layer);
+  }
+
+  /* ---------------- 视图状态机（库区 -> 库位 -> 垛 -> 捆） ---------------- */
+  let view = { level: 'yard', slotId: -1, stackIdx: -1, bundleId: '' };
+  const invCrumb = $('invCrumb'), invDetail = $('invDetail');
+  function gotoYard()   { view = { level: 'yard', slotId: -1, stackIdx: -1, bundleId: '' }; applyView(); }
+  function gotoSlot(id) { view = { level: 'slot', slotId: id, stackIdx: -1, bundleId: '' }; applyView(); }
+  function gotoStack(id, si) { view = { level: 'stack', slotId: id, stackIdx: si, bundleId: '' }; applyView(); }
+  function gotoBundle(w) { view = { level: 'bundle', slotId: w.s.id, stackIdx: w.si, bundleId: w.b.id }; applyView(); }
+  function back() {
+    if (view.level === 'bundle') gotoStack(view.slotId, view.stackIdx);
+    else if (view.level === 'stack') gotoSlot(view.slotId);
+    else if (view.level === 'slot') gotoYard();
+  }
+  function ensureViewValid() {   // 库存实时变动后当前焦点可能已出库 -> 逐级回退
+    for (;;) {
+      if (view.level === 'yard') return;
+      const s = storages[view.slotId];
+      if (!s) { view = { level: 'yard', slotId: -1, stackIdx: -1, bundleId: '' }; return; }
+      if (view.level === 'slot') return;
+      const k = s.stacks[view.stackIdx];
+      if (!k || k.count === 0) { view = { level: 'slot', slotId: s.id, stackIdx: -1, bundleId: '' }; continue; }
+      if (view.level === 'stack') return;
+      if (k.bundles.some(b => b.id === view.bundleId)) return;
+      view = { level: 'stack', slotId: s.id, stackIdx: view.stackIdx, bundleId: '' };
+    }
+  }
+  function applyView() {
+    renderCrumb();
+    renderDetail();
+    if (T) { rebuildScene(); frameView(); }
+    highlightListSel();
+  }
+  function renderCrumb() {
+    const s = view.slotId >= 0 ? storages[view.slotId] : null;
+    const parts = [`<span class="cseg ${view.level === 'yard' ? 'on' : ''}" data-nav="yard">库区总览</span>`];
+    if (s) parts.push(`<span class="cseg ${view.level === 'slot' ? 'on' : ''}" data-nav="slot">${s.code} 库位</span>`);
+    if (s && view.stackIdx >= 0) parts.push(`<span class="cseg ${view.level === 'stack' ? 'on' : ''}" data-nav="stack">第 ${view.stackIdx + 1} 垛</span>`);
+    if (s && view.stackIdx >= 0 && view.level === 'bundle') parts.push(`<span class="cseg on" data-nav="bundle">${view.bundleId}</span>`);
+    invCrumb.innerHTML = parts.join('<span class="csep">›</span>');
+  }
+  function renderDetail() {
+    if (view.level === 'yard') { invDetail.style.display = 'none'; return; }
+    invDetail.style.display = 'block';
+    if (view.level === 'slot') {
+      const s = storages[view.slotId];
+      const nb = slotBundles(s), occ = s.stacks.filter(k => k.count > 0).length;
+      const np = slotPending(s);
+      invDetail.innerHTML = `
+        <h3>库位 ${s.code} <span class="tag">${s.state === 'locked' ? '任务锁定' : nb ? '有料' : '空库位'}</span></h3>
+        <div class="dgrid">
+          <span class="dl">分区</span><span class="dv">${s.zone} · ${invSpanName(s)}</span>
+          <span class="dl">垛位</span><span class="dv">8 垛（${occ} 垛有料）</span>
+          <span class="dl">在库</span><span class="dv">${nb} 捆 <i>/ 上限 160${np ? ` · ${np} 待核验` : ''}</i></span>
+        </div>
+        <div class="sub">${specMix(s).length ? '规格构成：<br>' + specMix(s).join('<br>') : '空库位——无在库钢材'}</div>
+        <div class="ops"><button data-act="back">← 返回库区</button><span style="color:var(--dim);font-size:11px">点击垛位继续下钻</span></div>`;
+    } else if (view.level === 'stack') {
+      const s = storages[view.slotId], k = s.stacks[view.stackIdx];
+      if (!k || k.count === 0) { gotoSlot(view.slotId); return; }
+      const sp = k.spec, np = k.bundles.filter(b => b.pending).length;
+      invDetail.innerHTML = `
+        <h3>库位 ${s.code} · 第 ${view.stackIdx + 1} 垛 ${np ? '<span class="tag pend">' + np + ' 捆待核验</span>' : ''}</h3>
+        <div class="dgrid">
+          <span class="dl">规格</span><span class="dv">${sp.name}</span>
+          <span class="dl">钢种</span><span class="dv">${k.grade}</span>
+          <span class="dl">直径</span><span class="dv">Φ${SPEC_META[sp.name].dia} mm</span>
+          <span class="dl">长度</span><span class="dv">${k.len} m</span>
+          <span class="dl">捆数</span><span class="dv">${k.count} 捆 <i>/ 上限 20</i></span>
+          <span class="dl">支数</span><span class="dv">${k.count * sp.rods} 支</span>
+          <span class="dl">吨位</span><span class="dv">${(k.count * sp.weight * k.len / 9).toFixed(1)} t</span>
+          <span class="dl">炉号</span><span class="dv">${k.heat}</span>
+        </div>
+        <div class="sub">最早入库 ${k.inTime < 0 ? '期初' : fmtClock(k.inTime)} · 点击捆查看单捆明细</div>
+        <div class="ops"><button data-act="back">← 返回库位</button></div>`;
+    } else if (view.level === 'bundle') {
+      const s = storages[view.slotId], k = s.stacks[view.stackIdx];
+      const b = k && k.bundles.find(x => x.id === view.bundleId);
+      if (!b) { back(); return; }
+      const sp = SPECS[b.specIdx], layer = k.bundles.indexOf(b);
+      invDetail.innerHTML = `
+        <h3>捆 ${b.id} <span class="tag${b.pending ? ' pend' : ''}">${b.pending ? '待核验' : '在库'}</span></h3>
+        <div class="dgrid">
+          <span class="dl">规格</span><span class="dv">${sp.name}（${SPEC_META[sp.name].shape === 'rebar' ? '螺纹钢' : SPEC_META[sp.name].shape === 'round' ? '圆钢' : '方钢'}）</span>
+          <span class="dl">钢种</span><span class="dv">${b.grade}</span>
+          <span class="dl">直径</span><span class="dv">Φ${SPEC_META[sp.name].dia} mm</span>
+          <span class="dl">长度</span><span class="dv">${b.len} m</span>
+          <span class="dl">支数</span><span class="dv">${b.rods} 支 <i>（${ROD_ROWS[b.rods].join('+')} 排布）</i></span>
+          <span class="dl">单捆重</span><span class="dv">${b.wt.toFixed(2)} t</span>
+          <span class="dl">炉号</span><span class="dv">${b.heat}</span>
+          <span class="dl">位置</span><span class="dv">${s.code} 第 ${b.stackIdx + 1} 垛 第 ${layer + 1} 层</span>
+          <span class="dl">入账</span><span class="dv">${fmtIn(b.inTime)}</span>
+        </div>
+        <div class="sub">捆标签（二维码绑定）：${b.id}|${sp.name}|${b.grade}|${b.len}m×${b.rods}支${b.pending ? ' · 等待机器狗扫码核验' : ''}</div>
+        <div class="ops">
+          <button data-act="back">← 返回垛</button>
+          <label style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--dim);cursor:pointer">
+            <input type="checkbox" id="invAutoRot" checked>自动旋转
+          </label>
+        </div>`;
+    }
+  }
+
+  /* ---------------- 右侧面板 ---------------- */
+  function renderLegend() {
+    $('invLegend').innerHTML = SPECS.map(sp =>
+      `<div class="li"><span class="sw" style="background:${sp.color}"></span>${sp.name}</div>`).join('')
+      + `<div class="li" style="margin-top:2px"><span class="sw" style="background:#8fa7d6;opacity:.45"></span>待核验（已落料待扫码）</div>`
+      + `<div class="li" style="color:#8fa7d6">灰化垛 = 不匹配当前筛选</div>`;
+  }
+  function renderKPIs() {
+    const st = calcStats(collect());
+    $('ikBundles').textContent = st.bundles.toLocaleString();
+    $('ikRods').textContent = st.rods.toLocaleString();
+    $('ikTons').textContent = st.tons.toFixed(1);
+    $('ikSlots').textContent = `${st.slotsOcc}/91`;
+    $('ikUtil').textContent = (st.bundles / TOTAL_BUNDLE_CAP * 100).toFixed(1) + '%';
+    $('ikPend').textContent = String(st.pend);
+    return st;
+  }
+  function renderSpecBars() {
+    const st = calcStats(collect());
+    const maxT = Math.max(...st.bySpec.map(d => d.tons), 1);
+    $('invSpecBars').innerHTML = SPECS.map((sp, i) => {
+      const d = st.bySpec[i];
+      return `<div class="sbar${filt.spec === i ? ' on' : ''}" data-spec="${i}" title="点击筛选该规格">
+        <span class="sn"><span class="dot" style="background:${sp.color}"></span>${sp.name}</span>
+        <span class="tr"><span class="fl" style="width:${(d.tons / maxT * 100).toFixed(1)}%;background:${sp.color}"></span></span>
+        <span class="sv">${d.n} 捆 · ${d.tons.toFixed(0)}t</span>
+      </div>`;
+    }).join('');
+    $('invSpecCnt').textContent = `${st.bundles} 捆 · ${st.tons.toFixed(0)} t`;
+  }
+
+  /* ---------------- 库存列表（虚拟滚动） ---------------- */
+  const ILROW = 30;
+  const invListScroll = $('invListScroll'), invListPad = $('invListPad'), invListRows = $('invListRows');
+  function rowHTML(w, i) {
+    const { b, s } = w, sp = SPECS[b.specIdx];
+    return `<div class="irow" data-id="${b.id}" style="top:${i * ILROW}px">
+      <span class="c-id">${b.pending ? '<span class="pd">●</span>' : ''}${b.id}</span><span class="c-slot">${s.code}·${b.stackIdx + 1}垛</span>
+      <span class="c-spec"><i style="background:${sp.color}"></i>${sp.name.replace(' ', '')}</span>
+      <span>${b.grade}</span><span>${b.len}</span><span>${b.rods}</span>
+      <span class="c-ton">${b.wt.toFixed(1)}</span><span class="c-day">${fmtIn(b.inTime)}</span>
+    </div>`;
+  }
+  function renderListWindow() {
+    const n = listData.length;
+    $('invListEmpty').style.display = n ? 'none' : 'block';
+    $('invListCnt').textContent = `${n} 捆`;
+    invListPad.style.height = n * ILROW + 'px';
+    const h = invListScroll.clientHeight || 500;
+    const start = Math.max(0, Math.floor(invListScroll.scrollTop / ILROW) - 6);
+    const end = Math.min(n, start + Math.ceil(h / ILROW) + 12);
+    let html = '';
+    for (let i = start; i < end; i++) html += rowHTML(listData[i], i);
+    invListRows.innerHTML = html;
+  }
+  function highlightListSel() {
+    invListRows.querySelector('.irow.sel')?.classList.remove('sel');
+    if (view.level !== 'bundle') return;
+    const row = invListRows.querySelector(`.irow[data-id="${view.bundleId}"]`);
+    if (row) { row.classList.add('sel'); return; }
+    const idx = listData.findIndex(w => w.b.id === view.bundleId);
+    if (idx >= 0) {
+      invListScroll.scrollTop = Math.max(0, idx * ILROW - 60);
+      renderListWindow();
+      invListRows.querySelector(`.irow[data-id="${view.bundleId}"]`)?.classList.add('sel');
+    }
+  }
+
+  /* ---------------- 筛选 UI 绑定 ---------------- */
+  function buildFilterOptions() {
+    $('invFZone').innerHTML = '<option value="">全部区域</option>' + Object.keys(ZONES).map(z => `<option>${z}</option>`).join('');
+    $('invFSpan').innerHTML = '<option value="">全部跨</option>' + SPANS.map(z => `<option>${z}</option>`).join('') + '<option>整跨合并</option>';
+    $('invFSpec').innerHTML = '<option value="-1">全部规格</option>' + SPECS.map((s, i) => `<option value="${i}">${s.name}</option>`).join('');
+    const grades = [...new Set(Object.values(SPEC_META).flatMap(m => m.grades))].sort();
+    $('invFGrade').innerHTML = '<option value="">全部钢种</option>' + grades.map(g => `<option>${g}</option>`).join('');
+    const lens = [...new Set(Object.values(SPEC_META).flatMap(m => m.lengths))].sort((a, b) => a - b);
+    $('invFLen').innerHTML = '<option value="0">全部长度</option>' + lens.map(l => `<option value="${l}">${l} m</option>`).join('');
+  }
+  function applyFilters() {
+    refreshList();
+    renderListWindow();
+    renderSpecBars();
+    highlightListSel();
+    if (T) rebuildScene();
+  }
+  function bindInvUI() {
+    const bind = (id, key, conv) => $(id).addEventListener('change', e => {
+      filt[key] = conv ? conv(e.target.value) : e.target.value; applyFilters();
+    });
+    bind('invFZone', 'zone'); bind('invFSpan', 'span'); bind('invFGrade', 'grade');
+    bind('invFSpec', 'spec', Number); bind('invFLen', 'len', Number); bind('invFStat', 'stat');
+    $('invFQ').addEventListener('input', e => { filt.q = e.target.value.trim(); applyFilters(); });
+    $('invFReset').addEventListener('click', () => {
+      Object.assign(filt, { zone: '', span: '', spec: -1, grade: '', len: 0, stat: '', q: '' });
+      $('invFZone').value = ''; $('invFSpan').value = ''; $('invFSpec').value = '-1';
+      $('invFGrade').value = ''; $('invFLen').value = '0'; $('invFStat').value = ''; $('invFQ').value = '';
+      applyFilters();
+    });
+    $('invSpecBars').addEventListener('click', e => {
+      const bar = e.target.closest('.sbar'); if (!bar) return;
+      const i = +bar.dataset.spec;
+      filt.spec = filt.spec === i ? -1 : i;
+      $('invFSpec').value = String(filt.spec);
+      applyFilters();
+    });
+    invListRows.addEventListener('click', e => {
+      const row = e.target.closest('.irow'); if (!row) return;
+      const w = listData.find(x => x.b.id === row.dataset.id) || collect().find(x => x.b.id === row.dataset.id);
+      if (w) gotoBundle(w);
+    });
+    invListScroll.addEventListener('scroll', renderListWindow);
+    invCrumb.addEventListener('click', e => {
+      const seg = e.target.closest('.cseg'); if (!seg) return;
+      const nav = seg.dataset.nav;
+      if (nav === 'yard') gotoYard();
+      else if (nav === 'slot') gotoSlot(view.slotId);
+      else if (nav === 'stack') gotoStack(view.slotId, view.stackIdx);
+    });
+    invDetail.addEventListener('click', e => {
+      if (e.target.closest('button[data-act="back"]')) back();
+    });
+    invDetail.addEventListener('change', e => { if (e.target.id === 'invAutoRot' && T) T.autoRot = e.target.checked; });
+    window.addEventListener('keydown', e => { if (e.key === 'Escape' && invActive) back(); });
+  }
+
+  /* ---------------- 全量刷新（库存变动 / 切页时） ---------------- */
+  let lastVer = -1;
+  function invRefresh(force) {
+    if (!force && window.__invVer === lastVer) return;
+    lastVer = window.__invVer;
+    ensureViewValid();
+    refreshList();
+    renderKPIs();
+    renderSpecBars();
+    renderListWindow();
+    renderCrumb();
+    renderDetail();
+    if (T) { rebuildScene(); highlightListSel(); }
+  }
+
+  /* ---------------- Three.js 场景 ---------------- */
+  let T = null;
+  const cvI = $('invCv'), cvWrapI = $('invCvWrap'), invTooltip = $('invTooltip');
+  function initThree() {
+    const renderer = new THREE.WebGLRenderer({ canvas: cvI, antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x050b1a);
+    scene.fog = new THREE.Fog(0x050b1a, 420, 980);
+    const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 2000);
+    scene.add(new THREE.HemisphereLight(0xbcd4ff, 0x0a1226, 0.85));
+    const sun = new THREE.DirectionalLight(0xffe8c0, 1.9);
+    sun.position.set(120, 190, 90);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    Object.assign(sun.shadow.camera, { left: -240, right: 240, top: 150, bottom: -150, near: 20, far: 600 });
+    sun.shadow.bias = -0.0006;
+    scene.add(sun);
+    const fill = new THREE.DirectionalLight(0x38608f, 0.5);
+    fill.position.set(-140, 90, -120);
+    scene.add(fill);
+    T = { renderer, scene, camera, viewGroup: new THREE.Group(), envGroup: new THREE.Group(),
+          pickables: [], hover: null, raycaster: new THREE.Raycaster(), pointer: new THREE.Vector2(-9, -9),
+          pointerDirty: false, dragging: false, autoRot: true };
+    scene.add(T.envGroup, T.viewGroup);
+    T.geoCache = new Map(); T.matCache = new Map();
+    T.geo = (key, make) => { if (!T.geoCache.has(key)) T.geoCache.set(key, make()); return T.geoCache.get(key); };
+    T.mat = (key, make) => { if (!T.matCache.has(key)) T.matCache.set(key, make()); return T.matCache.get(key); };
+    T.hl = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+      new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: .8 }));
+    T.hl.visible = false;
+    scene.add(T.hl);
+    buildEnv();
+    bindPointer();
+    bindResize();
+    rebuildScene();
+    cam.target = V3(0, 0, 0);
+    camSnap(V3(0, 0, 0), 310, 1.0, -1.05);
+    requestAnimationFrame(invLoop);
+  }
+
+  const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+  function makeLabel(text, color, w) {
+    const key = 'lbl:' + text + ':' + color;
+    if (T.geoCache.has(key)) return T.geoCache.get(key).clone();
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 96;
+    const g = c.getContext('2d');
+    g.font = '700 52px "Segoe UI","Microsoft YaHei",sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.shadowColor = 'rgba(0,0,0,.8)'; g.shadowBlur = 8;
+    g.fillStyle = color; g.fillText(text, 256, 50);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+    sp.scale.set(w, w * 96 / 512, 1);
+    T.geoCache.set(key, sp);
+    return sp.clone();
+  }
+  const easeIO = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+  /* ---------------- 相机 ---------------- */
+  const cam = { target: null, r: 310, theta: -1.05, phi: 1.0 };
+  let camTween = null;
+  function applyCam() {
+    const sp = Math.sin(cam.phi);
+    T.camera.position.set(
+      cam.target.x + cam.r * sp * Math.sin(cam.theta),
+      cam.target.y + cam.r * Math.cos(cam.phi),
+      cam.target.z + cam.r * sp * Math.cos(cam.theta));
+    T.camera.lookAt(cam.target);
+  }
+  function camSnap(target, r, phi, theta) {
+    cam.target.copy(target); cam.r = r; cam.phi = phi; cam.theta = theta; camTween = null; applyCam();
+  }
+  function flyTo(target, r, phi, ms = 700) {
+    camTween = { t0: performance.now(), ms,
+      from: { t: cam.target.clone(), r: cam.r, p: cam.phi },
+      to: { t: target.clone(), r, p: phi } };
+  }
+  function stepTween(now) {
+    if (!camTween) return;
+    const k = Math.min(1, (now - camTween.t0) / camTween.ms), e = easeIO(k);
+    cam.target.lerpVectors(camTween.from.t, camTween.to.t, e);
+    cam.r = camTween.from.r + (camTween.to.r - camTween.from.r) * e;
+    cam.phi = camTween.from.p + (camTween.to.p - camTween.from.p) * e;
+    if (k >= 1) camTween = null;
+    applyCam();
+  }
+  function frameView() {
+    if (view.level === 'yard') { flyTo(V3(0, 0, 0), 310, 1.0); return; }
+    const s = storages[view.slotId], g = slotGeo(s);
+    if (view.level === 'slot') {
+      const dEff = Math.min(g.d, 40);
+      flyTo(V3(WX(g.x), 3, WZ(g.z)), Math.max(g.w, dEff) * 1.75 + 8, 1.02);
+    } else if (view.level === 'stack') {
+      const cell = stackCell(s, view.stackIdx), k = s.stacks[view.stackIdx];
+      const sp = k.spec;
+      const h = k.count * bundleH(sp) + 1;
+      flyTo(V3(WX(cell.x), h * .45, WZ(cell.z)), Math.max(h, k.len) * 1.15 + 6, 1.05);
+    } else if (view.level === 'bundle') {
+      const k = s.stacks[view.stackIdx];
+      const b = k.bundles.find(x => x.id === view.bundleId);
+      if (!b) return;
+      const sp = SPECS[b.specIdx], cell = stackCell(s, b.stackIdx);
+      const layer = k.bundles.indexOf(b);
+      const y = layer * bundleH(sp) + bundleH(sp) / 2 + 0.3;
+      flyTo(V3(WX(cell.x), y, WZ(cell.z)), b.len * 1.05 + 3, 1.08);
+      T.autoRot = true;
+      const cb = $('invAutoRot'); if (cb) cb.checked = true;
+    }
+  }
+
+  /* ---------------- 静态环境 ---------------- */
+  function buildEnv() {
+    const { envGroup, geo, mat } = T;
+    const ground = new THREE.Mesh(
+      geo('ground', () => new THREE.BoxGeometry(M.L + 60, 0.2, MAP_BOT2 + 50)),
+      mat('ground', () => new THREE.MeshStandardMaterial({ color: 0x08101f, roughness: .95 })));
+    ground.position.y = -0.1;
+    ground.receiveShadow = true;
+    envGroup.add(ground);
+    const band = (y0, y1, color) => {
+      const m = new THREE.Mesh(
+        geo(`band${y0}`, () => new THREE.BoxGeometry(M.L + 4, 0.12, y1 - y0)),
+        mat('band' + color, () => new THREE.MeshStandardMaterial({ color, roughness: .9 })));
+      m.position.set(0, 0.02, WZ((y0 + y1) / 2));
+      m.receiveShadow = true;
+      envGroup.add(m);
+    };
+    band(0, 2, 0x13233f); band(32, 34, 0x13233f); band(64, 66, 0x13233f); band(96, 98, 0x13233f);
+    band(2, 32, 0x0d1a33); band(34, 64, 0x0d1a33); band(66, 96, 0x0d1a33);
+    band(98, 128, 0x0c1a2e);
+    for (const c of LANE_COLS) {
+      const lane = new THREE.Mesh(
+        geo('lane', () => new THREE.BoxGeometry(M.CELL_L - 0.8, 0.14, 94)),
+        mat('lane', () => new THREE.MeshStandardMaterial({ color: 0x1a2f57, roughness: .85 })));
+      lane.position.set(WX(cellCX(c)), 0.05, WZ(49));
+      envGroup.add(lane);
+      const ch = new THREE.Mesh(
+        geo('charger', () => new THREE.BoxGeometry(3.2, 1.6, 2.2)),
+        mat('charger', () => new THREE.MeshStandardMaterial({ color: 0x14532d, emissive: 0x0a2f1a, roughness: .6 })));
+      ch.position.set(WX(cellCX(c)), 0.9, WZ(113));
+      ch.castShadow = true;
+      envGroup.add(ch);
+    }
+    const addLabel = (txt, col, x, z, w) => {
+      const lb = makeLabel(txt, col, w);
+      lb.position.set(x, 1, z);
+      envGroup.add(lb);
+    };
+    addLabel('一跨 A', '#7dd3fc', -14, WZ(17), 14);
+    addLabel('二跨 B', '#7dd3fc', -14, WZ(49), 14);
+    addLabel('三跨 C', '#7dd3fc', -14, WZ(81), 14);
+    addLabel('充电服务带', '#34d399', -20, WZ(113), 18);
+    addLabel('铁姆肯区', '#fde047', -136, -76, 14);
+    addLabel('大棒区域', '#fdba74', -80, -76, 14);
+    addLabel('大棒单支和长钢', '#86efac', -22, -76, 25);
+    addLabel('中棒区域', '#7dd3fc', 62, -76, 14);
+    addLabel('← 南端（1 号区）', '#33507f', -135, 60, 26);
+    addLabel('北端（33 号区）→', '#33507f', 135, 60, 26);
+  }
+
+  /* ---------------- 捆模型 ---------------- */
+  function buildBundleMesh(b, { tag = false } = {}) {
+    const sp = SPECS[b.specIdx], meta = SPEC_META[sp.name];
+    const r = rodR(meta.dia), rows = ROD_ROWS[b.rods];
+    const g = new THREE.Group();
+    const rodMat = T.mat('rod' + b.specIdx + (b.pending ? 'P' : ''), () => new THREE.MeshStandardMaterial({
+      color: sp.color, metalness: .45, roughness: .42,
+      transparent: !!b.pending, opacity: b.pending ? .55 : 1 }));
+    const rodGeo = meta.shape === 'square'
+      ? T.geo(`sq${r}:${b.len}`, () => new THREE.BoxGeometry(b.len, 2 * r * .98, 2 * r * .98))
+      : T.geo(`cy${r}:${b.len}`, () => {
+          const gg = new THREE.CylinderGeometry(r, r, b.len, 14);
+          gg.rotateZ(Math.PI / 2);
+          return gg;
+        });
+    rows.forEach((n, kk) => {
+      for (let j = 0; j < n; j++) {
+        const rod = new THREE.Mesh(rodGeo, rodMat);
+        rod.position.set(0, r + kk * 2 * r * 1.04, (j - (n - 1) / 2) * 2 * r * 1.08);
+        rod.castShadow = true;
+        rod.userData = { kind: 'bundle', b };
+        g.add(rod);
+      }
+    });
+    const W = bundleW(sp), H = bundleH(sp);
+    const strapGeo = T.geo(`st${H}:${W}`, () => new THREE.BoxGeometry(.14, H + .07, W + .07));
+    const strapMat = T.mat('strap', () => new THREE.MeshStandardMaterial({ color: 0xc9a24e, metalness: .8, roughness: .3 }));
+    for (const dx of [-b.len * .28, b.len * .28]) {
+      const st = new THREE.Mesh(strapGeo, strapMat);
+      st.position.set(dx, H / 2, 0);
+      st.castShadow = true;
+      st.userData = { kind: 'bundle', b };
+      g.add(st);
+    }
+    if (tag) {
+      const c = document.createElement('canvas');
+      c.width = 256; c.height = 128;
+      const g2 = c.getContext('2d');
+      g2.fillStyle = '#e8eefc'; g2.fillRect(0, 0, 256, 128);
+      g2.fillStyle = '#0b1730'; g2.font = '700 34px Consolas,monospace';
+      g2.textAlign = 'center'; g2.fillText(b.id, 128, 44);
+      g2.font = '24px "Microsoft YaHei",sans-serif'; g2.fillText(`${sp.name} ${b.grade}`, 128, 82);
+      g2.fillText(`${b.len}m × ${b.rods}支${b.pending ? ' 待核验' : ''}`, 128, 112);
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex }));
+      spr.scale.set(2.6, 1.3, 1);
+      spr.position.set(0, H + 1.0, 0);
+      spr.userData = { kind: 'bundle', b, noPick: true };
+      g.add(spr);
+    }
+    return g;
+  }
+
+  /* ---------------- 各级视图 ---------------- */
+  function clearViewGroup() {
+    const g = T.viewGroup;
+    for (let i = g.children.length - 1; i >= 0; i--) g.remove(g.children[i]);
+    T.pickables = [];
+    T.hl.visible = false;
+    invTooltip.style.display = 'none';
+  }
+  function pickable(mesh) { T.pickables.push(mesh); return mesh; }
+
+  function buildYardView() {
+    const g = T.viewGroup;
+    const plateGeoCache = new Map();
+    for (const s of storages) {
+      const gg = slotGeo(s);
+      const w = gg.w - 0.7, d = gg.d - 0.8;
+      const key = `${w.toFixed(1)}x${d.toFixed(1)}`;
+      if (!plateGeoCache.has(key)) plateGeoCache.set(key, new THREE.BoxGeometry(w, .3, d));
+      const nb = slotBundles(s);
+      const matKey = `plate:${s.zone}:${s.state}:${nb > 0}`;
+      const plate = new THREE.Mesh(plateGeoCache.get(key), T.mat(matKey, () => {
+        const tint = zoneTint(s.zone);
+        return new THREE.MeshStandardMaterial({
+          color: tint,
+          emissive: s.state === 'locked' ? 0xfbbf24 : tint,
+          emissiveIntensity: s.state === 'locked' ? .3 : nb > 0 ? .16 : .05,
+          roughness: .9, transparent: true, opacity: nb > 0 ? .95 : .45 });
+      }));
+      plate.position.set(WX(gg.x), .17, WZ(gg.z));
+      plate.receiveShadow = true;
+      plate.userData = { kind: 'slot', slot: s };
+      g.add(pickable(plate));
+    }
+    const occ = [];
+    for (const s of storages) s.stacks.forEach((k, si) => { if (k.count > 0) occ.push({ s, si, k }); });
+    if (occ.length) {
+      const colGeo = new THREE.BoxGeometry(1.5, 1, 1.5);
+      const colMat = new THREE.MeshStandardMaterial({ roughness: .55, metalness: .25 });
+      const inst = new THREE.InstancedMesh(colGeo, colMat, occ.length);
+      inst.castShadow = true;
+      const mtx = new THREE.Matrix4(), col = new THREE.Color(), white = new THREE.Color(0xdde6ff);
+      const dim = filt.zone || filt.span || filt.spec >= 0 || filt.grade || filt.len || filt.stat || filt.q;
+      occ.forEach((o, i) => {
+        const cell = stackCell(o.s, o.si);
+        const h = Math.max(.8, o.k.count * .55);
+        mtx.makeScale(1, h, 1);
+        mtx.setPosition(WX(cell.x), h / 2 + .3, WZ(cell.z));
+        inst.setMatrixAt(i, mtx);
+        col.set(SPECS[SPECS.indexOf(o.k.spec)].color);
+        if (o.k.bundles.some(b => b.pending)) col.lerp(white, .3);
+        if (dim && !stackMatch(o.s, o.si)) col.set(0x2a3a55);
+        inst.setColorAt(i, col);
+      });
+      inst.instanceMatrix.needsUpdate = true;
+      if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+      inst.userData = { kind: 'stackCol', map: occ };
+      g.add(pickable(inst));
+      for (const s of storages) {
+        if (slotBundles(s) === 0) continue;
+        const gg = slotGeo(s);
+        const maxH = Math.max(.8, ...s.stacks.filter(k => k.count > 0).map(k => k.count * .55));
+        const lb = makeLabel(s.code, '#9fc3ff', 9);
+        lb.position.set(WX(gg.x), maxH + 3.2, WZ(gg.z));
+        g.add(lb);
+      }
+    }
+  }
+
+  function buildSlotView() {
+    const g = T.viewGroup, s = storages[view.slotId];
+    const gg = slotGeo(s), dEff = Math.min(gg.d, 40);
+    const plate = new THREE.Mesh(
+      new THREE.BoxGeometry(gg.w, .3, dEff),
+      T.mat(`plateBig:${s.zone}`, () => new THREE.MeshStandardMaterial({
+        color: zoneTint(s.zone), transparent: true, opacity: .22, roughness: .9 })));
+    plate.position.set(WX(gg.x), .15, WZ(gg.z));
+    plate.receiveShadow = true;
+    g.add(plate);
+    const lbSlot = makeLabel(`库位 ${s.code} · ${s.zone}`, ZONES[s.zone].label, 15);
+    lbSlot.position.set(WX(gg.x), 1.2, WZ(gg.z) - dEff / 2 - 3);
+    g.add(lbSlot);
+    for (let si = 0; si < STACKS_PER_SLOT; si++) {
+      const cell = stackCell(s, si), k = s.stacks[si];
+      const base = new THREE.Mesh(
+        new THREE.BoxGeometry(cell.cw - .3, .22, cell.cd - .5),
+        T.mat('stackBase', () => new THREE.MeshStandardMaterial({ color: 0x0c1a33, roughness: .85 })));
+      base.position.set(WX(cell.x), .35, WZ(cell.z));
+      base.receiveShadow = true;
+      g.add(base);
+      const sp = k.count > 0 ? k.spec : null;
+      const Hb = sp ? bundleH(sp) : 0;
+      if (sp) {
+        k.bundles.forEach((b, li) => {
+          const bm = buildBundleMesh(b);
+          bm.rotation.y = Math.PI / 2;
+          const jx = (b.id.charCodeAt(3) % 7 - 3) * .025, jz = (b.id.charCodeAt(5) % 7 - 3) * .025;
+          bm.position.set(WX(cell.x) + jx, .45 + li * Hb + Hb / 2, WZ(cell.z) + jz);
+          bm.traverse(o => { if (o.userData.kind === 'bundle') o.userData.hidden = true; });
+          g.add(bm);
+        });
+      } else {
+        const empty = makeLabel('空', '#33507f', 5);
+        empty.position.set(WX(cell.x), 1.4, WZ(cell.z));
+        g.add(empty);
+      }
+      const lb = makeLabel(`第${si + 1}垛`, sp ? sp.color : '#4b6496', 7.5);
+      lb.position.set(WX(cell.x), (sp ? k.count * Hb : 0) + 2.2, WZ(cell.z) + cell.cd / 2 + 1.6);
+      g.add(lb);
+      const proxy = new THREE.Mesh(
+        new THREE.BoxGeometry(cell.cw - .15, Math.max(sp ? k.count * Hb : 1, 1) + .6, cell.cd - .3),
+        T.mat('proxy', () => new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })));
+      proxy.position.set(WX(cell.x), Math.max(sp ? k.count * Hb : 1, 1) / 2 + .5, WZ(cell.z));
+      proxy.userData = { kind: 'stack', slot: s, stackIdx: si };
+      g.add(pickable(proxy));
+    }
+  }
+
+  function buildStackView() {
+    const g = T.viewGroup, s = storages[view.slotId], si = view.stackIdx;
+    const k = s.stacks[si];
+    if (!k || k.count === 0) return;
+    const cell = stackCell(s, si), sp = k.spec;
+    const base = new THREE.Mesh(
+      new THREE.BoxGeometry(cell.cw - .2, .3, cell.cd - .4),
+      T.mat('stackBaseBig', () => new THREE.MeshStandardMaterial({ color: 0x0c1a33, roughness: .85 })));
+    base.position.set(WX(cell.x), .15, WZ(cell.z));
+    base.receiveShadow = true;
+    g.add(base);
+    const Hb = bundleH(sp);
+    k.bundles.forEach((b, li) => {
+      const bm = buildBundleMesh(b);
+      bm.rotation.y = Math.PI / 2;
+      const jx = (b.id.charCodeAt(3) % 7 - 3) * .025;
+      bm.position.set(WX(cell.x) + jx, .3 + li * Hb + Hb / 2, WZ(cell.z));
+      bm.traverse(o => { if (o.userData.kind === 'bundle' && !o.userData.noPick) pickable(o); });
+      g.add(bm);
+      const lb = makeLabel(`第${li + 1}层`, '#5f7bb0', 4.5);
+      lb.position.set(WX(cell.x) - cell.cw / 2 - 2.2, .3 + li * Hb + Hb / 2, WZ(cell.z) + b.len / 2 + 1.2);
+      g.add(lb);
+    });
+    const lb = makeLabel(`${s.code} 第${si + 1}垛 · ${sp.name} ${k.grade} ${k.len}m`, sp.color, 7);
+    lb.position.set(WX(cell.x), k.count * Hb + 3, WZ(cell.z));
+    g.add(lb);
+  }
+
+  function buildBundleView() {
+    const g = T.viewGroup;
+    const s = storages[view.slotId], k = s.stacks[view.stackIdx];
+    const b = k && k.bundles.find(x => x.id === view.bundleId);
+    if (!b) return;
+    const cell = stackCell(s, b.stackIdx), sp = SPECS[b.specIdx];
+    const Hb = bundleH(sp), layer = k.bundles.indexOf(b);
+    const bm = buildBundleMesh(b, { tag: true });
+    bm.rotation.y = Math.PI / 2;
+    bm.position.set(WX(cell.x), layer * Hb + Hb / 2 + .3, WZ(cell.z));
+    g.add(bm);
+    const base = new THREE.Mesh(
+      new THREE.BoxGeometry(cell.cw - .2, .3, cell.cd - .4),
+      T.mat('stackBaseBig', () => new THREE.MeshStandardMaterial({ color: 0x0c1a33, roughness: .85 })));
+    base.position.set(WX(cell.x), .05, WZ(cell.z));
+    g.add(base);
+  }
+
+  function rebuildScene() {
+    if (!T) return;
+    clearViewGroup();
+    if (view.level === 'yard') buildYardView();
+    else if (view.level === 'slot') buildSlotView();
+    else if (view.level === 'stack') buildStackView();
+    else buildBundleView();
+  }
+
+  /* ---------------- 拾取 / 悬停 / 点击 ---------------- */
+  function resolveHit(hit) {
+    const u = hit.object.userData;
+    if (!u || !u.kind) return null;
+    if (u.kind === 'stackCol') {
+      const o = u.map[hit.instanceId];
+      return { kind: 'stack', slot: o.s, stackIdx: o.si };
+    }
+    if (u.kind === 'slot') return { kind: 'slot', slot: u.slot };
+    if (u.kind === 'stack') return { kind: 'stack', slot: u.slot, stackIdx: u.stackIdx };
+    if (u.kind === 'bundle' && !u.noPick) return { kind: 'bundle', b: u.b };
+    return null;
+  }
+  function hlBox(x, y, z, sx, sy, sz) {
+    T.hl.position.set(x, y, z);
+    T.hl.scale.set(sx, sy, sz);
+    T.hl.visible = true;
+  }
+  function hoverInfo(res) {
+    if (res.kind === 'slot') {
+      const s = res.slot, nb = slotBundles(s), occ = s.stacks.filter(k => k.count > 0).length;
+      const np = slotPending(s);
+      const gg = slotGeo(s);
+      return {
+        html: `<b>库位 ${s.code}</b><br><span class="tt-dim">${s.zone} · ${invSpanName(s)}${s.state === 'locked' ? ' · 任务锁定' : ''}</span><br>${nb} 捆 · ${occ}/8 垛有料${np ? ` · ${np} 待核验` : ''}` +
+          (nb ? `<br><span class="tt-dim">${specMix(s).slice(0, 2).join('<br>')}</span>` : ''),
+        box: [WX(gg.x), .4, WZ(gg.z), gg.w, .8, Math.min(gg.d, 40)],
+      };
+    }
+    if (res.kind === 'stack') {
+      const s = res.slot, si = res.stackIdx, k = s.stacks[si];
+      const cell = stackCell(s, si);
+      if (!k || k.count === 0) return { html: `<b>${s.code} 第 ${si + 1} 垛</b><br><span class="tt-dim">空垛 · 点击查看库位</span>`,
+        box: [WX(cell.x), 1, WZ(cell.z), 2, 2, 2] };
+      const sp = k.spec, h = k.count * bundleH(sp);
+      const np = k.bundles.filter(b => b.pending).length;
+      return {
+        html: `<b>${s.code} · 第 ${si + 1} 垛</b><br>${sp.name} · ${k.grade} · ${k.len}m<br>` +
+          `${k.count} 捆 / 20 · ${k.count * sp.rods} 支${np ? ` · <span class="tt-dim">${np} 捆待核验</span>` : ''}<br><span class="tt-dim">炉号 ${k.heat} · 点击下钻</span>`,
+        box: [WX(cell.x), h / 2 + .4, WZ(cell.z), 2.4, h + .8, Math.min(cell.cd, k.len + 1.5)],
+      };
+    }
+    const b = res.b, sp = SPECS[b.specIdx], s = storages[b.slotId];
+    return {
+      html: `<b>捆 ${b.id}</b>${b.pending ? ' <span class="tt-dim">（待核验）</span>' : ''}<br>${sp.name} · ${b.grade}<br>Φ${SPEC_META[sp.name].dia} · ${b.len}m · ${b.rods}支 · ${b.wt.toFixed(2)}t<br>` +
+        `<span class="tt-dim">${s.code} 第${b.stackIdx + 1}垛 · 入账 ${fmtIn(b.inTime)} · 点击查看</span>`,
+      box: null,
+    };
+  }
+  function raycastHover() {
+    T.raycaster.setFromCamera(T.pointer, T.camera);
+    const hits = T.raycaster.intersectObjects(T.pickables, false);
+    const res = hits.length ? resolveHit(hits[0]) : null;
+    if (!res) {
+      T.hl.visible = false; invTooltip.style.display = 'none'; cvI.style.cursor = 'grab';
+      return;
+    }
+    cvI.style.cursor = 'pointer';
+    const info = hoverInfo(res);
+    if (res.kind === 'bundle') {
+      const sp = SPECS[res.b.specIdx];
+      const s = storages[res.b.slotId], k = s.stacks[res.b.stackIdx];
+      const cell = stackCell(s, res.b.stackIdx);
+      const Hb = bundleH(sp), W = bundleW(sp);
+      const layer = k ? k.bundles.indexOf(res.b) : 0;
+      const y = (view.level === 'stack' ? .3 : .45) + Math.max(0, layer) * Hb + Hb / 2;
+      hlBox(WX(cell.x), y, WZ(cell.z), W + .35, Hb + .25, res.b.len + .35);
+    } else hlBox(...info.box);
+    invTooltip.innerHTML = info.html;
+    invTooltip.style.display = 'block';
+  }
+  function bindPointer() {
+    let down = null, moved = false;
+    const rectPos = e => {
+      const r = cvI.getBoundingClientRect();
+      T.pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      T.pointerDirty = true;
+      invTooltip.style.left = Math.min(e.clientX - r.left + 14, r.width - 270) + 'px';
+      invTooltip.style.top = Math.min(e.clientY - r.top + 14, r.height - 130) + 'px';
+    };
+    cvI.addEventListener('pointerdown', e => {
+      down = { x: e.clientX, y: e.clientY, btn: e.button };
+      moved = false; T.dragging = true; camTween = null;
+      cvI.setPointerCapture(e.pointerId);
+    });
+    cvI.addEventListener('pointermove', e => {
+      rectPos(e);
+      if (!down) return;
+      const dx = e.movementX || 0, dy = e.movementY || 0;
+      if (Math.abs(e.clientX - down.x) + Math.abs(e.clientY - down.y) > 4) moved = true;
+      if (!moved) return;
+      if (down.btn === 0 && !e.shiftKey) {
+        cam.theta -= dx * .0052;
+        cam.phi = Math.min(1.5, Math.max(.06, cam.phi - dy * .0052));
+        T.autoRot = false;
+        const cb = $('invAutoRot'); if (cb) cb.checked = false;
+      } else {
+        const k = cam.r * .0013;
+        const fx = -Math.sin(cam.theta), fz = -Math.cos(cam.theta);
+        cam.target.x += (-Math.cos(cam.theta) * -dx - fx * dy) * k * -1;
+        cam.target.z += (Math.sin(cam.theta) * -dx - fz * dy) * k * -1;
+      }
+      applyCam();
+    });
+    cvI.addEventListener('pointerup', e => {
+      T.dragging = false;
+      if (down && !moved) {
+        rectPos(e);
+        T.raycaster.setFromCamera(T.pointer, T.camera);
+        const hits = T.raycaster.intersectObjects(T.pickables, false);
+        const res = hits.length ? resolveHit(hits[0]) : null;
+        if (res) {
+          if (res.kind === 'slot') gotoSlot(res.slot.id);
+          else if (res.kind === 'stack') gotoStack(res.slot.id, res.stackIdx);
+          else if (res.kind === 'bundle') {
+            const s = storages[res.b.slotId];
+            gotoBundle({ b: res.b, s, si: res.b.stackIdx });
+          }
+        }
+      }
+      down = null;
+    });
+    cvI.addEventListener('pointerleave', () => { T.hl.visible = false; invTooltip.style.display = 'none'; });
+    cvI.addEventListener('wheel', e => {
+      e.preventDefault();
+      cam.r = Math.min(760, Math.max(3, cam.r * (1 + e.deltaY * .0011)));
+      camTween = null;
+      applyCam();
+    }, { passive: false });
+    cvI.addEventListener('contextmenu', e => e.preventDefault());
+  }
+  function bindResize() {
+    const fit = () => {
+      const w = cvWrapI.clientWidth, h = cvWrapI.clientHeight;
+      if (!w || !h) return;
+      T.renderer.setSize(w, h, false);
+      T.camera.aspect = w / h;
+      T.camera.updateProjectionMatrix();
+    };
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(fit).observe(cvWrapI);
+    window.addEventListener('resize', fit);
+    fit();
+  }
+  let lastRebuild = 0;
+  function invLoop(now) {
+    requestAnimationFrame(invLoop);
+    if (!invActive) return;
+    if (window.__invVer !== lastVer && now - lastRebuild > 500) {
+      lastRebuild = now;
+      invRefresh();
+    }
+    stepTween(now);
+    if (view.level === 'bundle' && T.autoRot && !T.dragging && !camTween) {
+      cam.theta += .004;
+      applyCam();
+    }
+    if (T.pointerDirty) { T.pointerDirty = false; raycastHover(); }
+    T.hl.material.opacity = .5 + .3 * Math.sin(now / 180);
+    T.renderer.render(T.scene, T.camera);
+  }
+
+  function glFail(err) {
+    const el = $('invGlErr');
+    el.style.display = 'flex';
+    el.innerHTML = `<div style="font-size:30px">🛑</div>
+      <div><b>三维视图不可用</b><br>${err ? `<span style="color:var(--dim);font-size:12px">${err}</span><br>` : ''}
+      右侧库存列表 / 筛选 / 统计仍可正常使用</div>`;
+  }
+
+  /* ---------------- 标签切换（仿真沙盘 <-> 库存三维） ---------------- */
+  let invActive = false, invInited = false;
+  function switchView(which) {
+    invActive = which === 'inv';
+    document.querySelectorAll('#viewTabs button').forEach(b => b.classList.toggle('on', b.dataset.view === which));
+    $('simMain').style.display = invActive ? 'none' : 'flex';
+    $('invRoot').classList.toggle('on', invActive);
+    if (!invActive) return;
+    if (!invInited) {
+      invInited = true;
+      renderLegend();
+      buildFilterOptions();
+      bindInvUI();
+      invRefresh(true);
+      gotoYard();
+      if (window.THREE) {
+        try { initThree(); } catch (e) { glFail(e && e.message || String(e)); }
+      } else {
+        glFail('three.js 未加载（缺少 ./vendor/three.inline.js）');
+      }
+    } else {
+      invRefresh(true);
+      if (T) { rebuildScene(); frameView(); }
+    }
+  }
+  $('viewTabs').addEventListener('click', e => {
+    const btn = e.target.closest('button[data-view]');
+    if (btn) switchView(btn.dataset.view);
+  });
+
+  /* 自检钩子（只读） */
+  window.__invDbg = {
+    get active() { return invActive; },
+    get inited() { return invInited; },
+    get view() { return { ...view }; },
+    get listData() { return listData; },
+    get listHTML() { return invListRows.innerHTML; },
+    get crumbHTML() { return invCrumb.innerHTML; },
+    get kpis() { return ['ikBundles', 'ikRods', 'ikTons', 'ikSlots', 'ikUtil', 'ikPend'].map(i => $(i).textContent); },
+    switchView, gotoYard, gotoSlot, gotoStack, back, collect, calcStats, matchItem,
+  };
+})();
 
 init();
 resizeCanvas();

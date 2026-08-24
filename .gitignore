@@ -42,5 +42,10 @@ coverage
 # Misc
 *.log
 
+# 本地数据库（由 npm run db:init 生成，不提交二进制）
+server/*.db
+server/*.db-wal
+server/*.db-shm
+
 # ZCode 本地工具目录
 .zcode/

@@ -26,12 +26,15 @@ const absorber = new Proxy(function () {}, {
 const elements = new Map();
 function makeEl(id = '') {
   const el = {
-    id, textContent: '', innerHTML: '', className: '', checked: false,
+    id, textContent: '', innerHTML: '', className: '', checked: false, value: '', style: {},
     children: [],
     appendChild(ch) { this.children.push(ch); return ch; },
     removeChild(ch) { const i = this.children.indexOf(ch); if (i >= 0) this.children.splice(i, 1); return ch; },
     get firstChild() { return this.children[0]; },
     addEventListener() {},
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+    closest() { return null; },
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 1680, height: 980 }),
     classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
     clientWidth: 1680, clientHeight: 620, scrollTop: 0, scrollHeight: 0,
@@ -240,6 +243,41 @@ pump(3);
 check('重置后时钟归零', el('clock').textContent.startsWith('08:00:0'), el('clock').textContent);
 check('重置后完成数归零', +el('kpiDone').textContent === 0, '');
 check('重置后零错误', sandbox.__dbg.errs.length === 0, '');
+
+console.log('== 阶段七：捆级明细（库存三维视图数据基础） ==');
+check('初始库存捆记录与垛 count 同步', sandbox.__dbg.bundleSyncOK, '');
+check('初始库存无待核验捆', sandbox.__dbg.pendingSyncOK, '');
+const bs = sandbox.__dbg.bundleSample;
+check('捆记录字段完整（捆号/钢种/长度/支数/吨位/炉号）',
+  !!bs && /^B-\d{4}$/.test(bs.id) && bs.grade && bs.len > 0 && bs.rods > 0 && bs.wt > 0 && /^HT\d{6}$/.test(bs.heat),
+  bs ? `${bs.id} ${bs.grade} ${bs.len}m ${bs.rods}支 ${bs.wt}t ${bs.heat}` : '无');
+sandbox.setSpeed(8);
+pump(90); // 90s 实时 × 8 = 720 仿真秒，覆盖出入库全流程（落料待核验 -> 扫码入账 -> 出库核销）
+check('运行中捆记录与垛 count 全程同步', sandbox.__dbg.bundleSyncOK, '');
+check('运行中待核验标记一致', sandbox.__dbg.pendingSyncOK, '');
+const inBundles = sandbox.__invDbg.collect().filter(w => w.b.inTime >= 0);
+check('运行期入库捆已登记明细（inTime >= 0，落料->扫码链路）', inBundles.length > 0, `${inBundles.length} 捆`);
+// 库存三维标签页（无头降级：无 THREE，仅验证视图状态机与面板渲染）
+sandbox.__invDbg.switchView('inv');
+check('切到库存三维标签后初始化完成', sandbox.__invDbg.inited === true, '');
+check('库存视图 KPI 已渲染', sandbox.__invDbg.kpis.every(x => x && x !== '–'), sandbox.__invDbg.kpis.join(' | '));
+check('库存明细列表与库存数一致', sandbox.__invDbg.listData.length === +el('kpiInv').textContent.split('/')[0],
+  `${sandbox.__invDbg.listData.length} 行`);
+check('面包屑默认库区总览', sandbox.__invDbg.crumbHTML.includes('库区总览'), '');
+const invB = sandbox.__invDbg.listData[0];
+if (invB) {
+  sandbox.__invDbg.gotoStack(invB.s.id, invB.si);
+  check('下钻垛视图（面包屑含垛号）', sandbox.__invDbg.crumbHTML.includes('垛'), '');
+  sandbox.__invDbg.back();
+  check('返回库位视图', sandbox.__invDbg.view.level === 'slot', '');
+  sandbox.__invDbg.gotoYard();
+  check('返回库区总览', sandbox.__invDbg.view.level === 'yard', '');
+}
+sandbox.__invDbg.switchView('sim');
+sandbox.restoreDefaultParams();
+sandbox.setSpeed(1);
+pump(1);
+check('库存视图往返后仿真零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.join('|').slice(0, 120));
 
 console.log(failed === 0 ? '\n全部自检通过 ✓' : `\n${failed} 项断言失败 ✗`);
 process.exit(failed === 0 ? 0 : 1);
