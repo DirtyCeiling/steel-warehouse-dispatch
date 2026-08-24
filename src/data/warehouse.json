@@ -1,0 +1,29 @@
+{
+  "id": "wh-001",
+  "name": "主库区",
+  "totalArea": 27000,
+  "numberOfSpans": 3,
+  "spans": [
+    {
+      "id": "span-1",
+      "name": "一跨",
+      "length": 300,
+      "width": 30,
+      "position": 1
+    },
+    {
+      "id": "span-2",
+      "name": "二跨",
+      "length": 300,
+      "width": 30,
+      "position": 2
+    },
+    {
+      "id": "span-3",
+      "name": "三跨",
+      "length": 300,
+      "width": 30,
+      "position": 3
+    }
+  ]
+}

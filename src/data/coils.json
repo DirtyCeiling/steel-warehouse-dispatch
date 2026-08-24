@@ -1,0 +1,19 @@
+[
+  {"id": "coil-001", "coilNumber": "SV20240001", "specification": "2.0*1500*C", "weight": 18.5, "diameter": 1200, "material": "Q235B", "status": "in-stock", "locationId": "loc-1-1-1"},
+  {"id": "coil-002", "coilNumber": "SV20240002", "specification": "2.5*1500*C", "weight": 19.2, "diameter": 1250, "material": "Q345B", "status": "in-stock", "locationId": "loc-1-1-2"},
+  {"id": "coil-003", "coilNumber": "SV20240003", "specification": "1.8*1250*C", "weight": 15.8, "diameter": 1100, "material": "SPCC", "status": "in-stock", "locationId": "loc-1-1-4"},
+  {"id": "coil-004", "coilNumber": "SV20240004", "specification": "3.0*1500*C", "weight": 22.1, "diameter": 1300, "material": "Q235B", "status": "in-stock", "locationId": "loc-1-2-1"},
+  {"id": "coil-005", "coilNumber": "SV20240005", "specification": "2.0*1250*C", "weight": 16.5, "diameter": 1150, "material": "DC01", "status": "in-stock", "locationId": "loc-1-2-3"},
+  {"id": "coil-006", "coilNumber": "SV20240006", "specification": "2.5*1500*C", "weight": 20.3, "diameter": 1280, "material": "Q345B", "status": "in-stock", "locationId": "loc-1-2-5"},
+  {"id": "coil-007", "coilNumber": "SV20240007", "specification": "1.5*1250*C", "weight": 14.2, "diameter": 1050, "material": "SPCC", "status": "in-stock", "locationId": "loc-2-1-1"},
+  {"id": "coil-008", "coilNumber": "SV20240008", "specification": "2.0*1500*C", "weight": 18.8, "diameter": 1220, "material": "Q235B", "status": "in-stock", "locationId": "loc-2-1-3"},
+  {"id": "coil-009", "coilNumber": "SV20240009", "specification": "3.0*1500*C", "weight": 23.5, "diameter": 1350, "material": "Q345B", "status": "in-stock", "locationId": "loc-2-1-4"},
+  {"id": "coil-010", "coilNumber": "SV20240010", "specification": "2.5*1250*C", "weight": 17.6, "diameter": 1180, "material": "DC01", "status": "in-stock", "locationId": "loc-2-2-2"},
+  {"id": "coil-011", "coilNumber": "SV20240011", "specification": "1.8*1500*C", "weight": 16.2, "diameter": 1120, "material": "SPCC", "status": "in-stock", "locationId": "loc-2-2-4"},
+  {"id": "coil-012", "coilNumber": "SV20240012", "specification": "2.0*1250*C", "weight": 17.0, "diameter": 1160, "material": "Q235B", "status": "in-stock", "locationId": "loc-2-2-5"},
+  {"id": "coil-013", "coilNumber": "SV20240013", "specification": "2.5*1500*C", "weight": 19.8, "diameter": 1260, "material": "Q345B", "status": "in-stock", "locationId": "loc-3-1-2"},
+  {"id": "coil-014", "coilNumber": "SV20240014", "specification": "3.0*1500*C", "weight": 24.0, "diameter": 1380, "material": "Q235B", "status": "in-stock", "locationId": "loc-3-1-3"},
+  {"id": "coil-015", "coilNumber": "SV20240015", "specification": "1.5*1250*C", "weight": 13.8, "diameter": 1020, "material": "SPCC", "status": "in-stock", "locationId": "loc-3-1-5"},
+  {"id": "coil-016", "coilNumber": "SV20240016", "specification": "2.0*1500*C", "weight": 18.2, "diameter": 1200, "material": "DC01", "status": "in-stock", "locationId": "loc-3-2-1"},
+  {"id": "coil-017", "coilNumber": "SV20240017", "specification": "2.5*1250*C", "weight": 17.2, "diameter": 1170, "material": "Q345B", "status": "in-stock", "locationId": "loc-3-2-4"}
+]

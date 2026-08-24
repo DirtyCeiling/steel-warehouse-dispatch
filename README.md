@@ -1,0 +1,178 @@
+# 钢厂库区调度系统
+
+## 项目简介
+
+这是一个基于 React + Three.js 的钢厂库区三维可视化调度系统，用于管理和调度2.7万平方米厂区内的钢卷库存。系统采用三跨布局（每跨30m×300m），提供实时库存监控、库位管理和调度优化功能。
+
+## 技术栈
+
+- **前端框架**: React 18 + TypeScript
+- **3D渲染**: Three.js + @react-three/fiber + @react-three/drei
+- **状态管理**: Zustand
+- **路由**: React Router DOM
+- **样式**: Tailwind CSS
+- **构建工具**: Vite
+
+## 主要功能
+
+### 1. 三维库区总览
+- 三跨库区三维可视化展示
+- 实时库位状态显示
+- 钢卷信息查看
+- 支持旋转、缩放、平移操作
+
+### 2. 库存管理
+- 钢卷列表展示
+- 搜索和筛选功能
+- 材质分类统计
+
+### 3. 调度任务
+- 任务列表管理
+- 任务状态跟踪（待执行、执行中、已完成）
+- 入库/出库/移库任务
+
+### 4. 数据分析
+- 库位利用率统计
+- 库存总量分析
+- 材质分布图表
+
+## 安装和运行
+
+### 1. 克隆项目
+```bash
+git clone <你的仓库URL>
+cd steel-warehouse-dispatch
+```
+
+### 2. 安装依赖
+```bash
+npm install
+```
+
+### 3. 启动开发服务器
+```bash
+npm run dev
+```
+
+访问 http://localhost:5173/ 查看应用
+
+### 4. 构建生产版本
+```bash
+npm run build
+```
+
+## 项目结构
+
+```
+src/
+├── components/          # React组件
+│   ├── 3d/             # 3D场景组件
+│   │   ├── WarehouseScene.tsx  # 3D仓库场景
+│   │   ├── Span.tsx           # 库区跨组件
+│   │   ├── Location.tsx       # 库位组件
+│   │   └── SteelCoil.tsx      # 钢卷3D模型
+│   └── layout/         # 布局组件
+│       ├── Header.tsx         # 头部导航
+│       ├── Sidebar.tsx        # 侧边栏
+│       └── InfoPanel.tsx      # 信息面板
+├── pages/              # 页面组件
+│   ├── Dashboard.tsx   # 三维库区总览
+│   ├── Inventory.tsx   # 库存管理
+│   ├── Tasks.tsx       # 调度任务
+│   └── Analytics.tsx   # 数据分析
+├── store/              # 状态管理
+│   └── warehouseStore.ts
+├── data/               # Mock数据
+│   ├── warehouse.json
+│   ├── locations.json
+│   ├── coils.json
+│   └── tasks.json
+└── types/              # TypeScript类型定义
+    └── index.ts
+```
+
+## 3D场景说明
+
+### 库区布局
+- 总面积: 27,000平方米
+- 三跨布局，每跨: 30m × 300m
+- 每跨包含多个库位
+
+### 钢卷状态颜色
+- 🟢 绿色: 在库 (in-stock)
+- 🟠 橙色: 预留 (reserved)
+- 🔴 红色: 发货中 (shipping)
+
+### 操作说明
+- **旋转**: 鼠标左键拖拽
+- **缩放**: 鼠标滚轮
+- **平移**: 鼠标右键拖拽
+- **查看详情**: 点击钢卷或库位
+
+## 数据模型
+
+### 库区 (Warehouse)
+```typescript
+{
+  id: string;
+  name: string;
+  totalArea: number;      // 总面积 (m²)
+  numberOfSpans: number;   // 跨数
+}
+```
+
+### 库位 (Location)
+```typescript
+{
+  id: string;
+  spanId: string;          // 所属跨ID
+  row: number;             // 行号
+  column: number;          // 列号
+  status: 'empty' | 'occupied' | 'reserved';
+  capacity: number;         // 容量 (吨)
+}
+```
+
+### 钢卷 (SteelCoil)
+```typescript
+{
+  id: string;
+  coilNumber: string;      // 钢卷号
+  specification: string;   // 规格
+  weight: number;          // 重量 (吨)
+  diameter: number;        // 直径 (mm)
+  material: string;        // 材质
+  status: 'in-stock' | 'reserved' | 'shipping';
+}
+```
+
+### 调度任务 (Task)
+```typescript
+{
+  id: string;
+  type: 'inbound' | 'outbound' | 'transfer';
+  status: 'pending' | 'executing' | 'completed' | 'failed';
+  steelCoilId: string;
+  fromLocationId?: string;
+  toLocationId?: string;
+  createTime: string;
+}
+```
+
+## 部署
+
+项目可部署到任何静态托管服务，如：
+- Vercel
+- Netlify
+- GitHub Pages
+- 任意Web服务器
+
+构建输出在 `dist/` 目录。
+
+## 许可证
+
+MIT License
+
+## 作者
+
+[你的名字]

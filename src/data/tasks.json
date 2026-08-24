@@ -1,0 +1,44 @@
+[
+  {
+    "id": "task-001",
+    "type": "inbound",
+    "status": "pending",
+    "steelCoilId": "coil-001",
+    "toLocationId": "loc-1-1-3",
+    "createTime": "2024-01-15T08:30:00Z"
+  },
+  {
+    "id": "task-002",
+    "type": "outbound",
+    "status": "executing",
+    "steelCoilId": "coil-005",
+    "fromLocationId": "loc-1-2-3",
+    "createTime": "2024-01-15T09:00:00Z"
+  },
+  {
+    "id": "task-003",
+    "type": "transfer",
+    "status": "completed",
+    "steelCoilId": "coil-009",
+    "fromLocationId": "loc-2-1-4",
+    "toLocationId": "loc-2-2-4",
+    "createTime": "2024-01-15T07:00:00Z",
+    "completeTime": "2024-01-15T07:45:00Z"
+  },
+  {
+    "id": "task-004",
+    "type": "inbound",
+    "status": "pending",
+    "steelCoilId": "coil-007",
+    "toLocationId": "loc-3-1-4",
+    "createTime": "2024-01-15T10:00:00Z"
+  },
+  {
+    "id": "task-005",
+    "type": "outbound",
+    "status": "pending",
+    "steelCoilId": "coil-012",
+    "fromLocationId": "loc-2-2-5",
+    "createTime": "2024-01-15T10:30:00Z"
+  }
+]
