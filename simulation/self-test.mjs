@@ -128,10 +128,15 @@ check('全部 91 库位均可从横向通道抵达（通道边进入作业格）
 console.log('== 阶段一：手动下单 + 单步 + 设备参数（t=0 初始态，确定性） ==');
 const t1 = sandbox.createTask('in');
 check('手动入库任务创建', !!t1 && /^T-\d{4}$/.test(t1.id), t1 && t1.id);
-check('入库任务派生货车', !!t1 && !!t1.truck && !!t1.truck.taskId, t1 && t1.truck && t1.truck.taskId);
+check('入库任务进入待组车车次（不立即派车）', !!t1 && !!t1.batch && t1.batch.tasks.includes(t1) && !t1.truck, t1 && t1.batch && t1.batch.id);
 const t2 = sandbox.createTask('out');
 check('手动出库任务创建（初始库存可出）', !!t2 && t2.type === 'out', t2 && t2.id);
-check('出库任务派生货车', !!t2 && !!t2.truck, '');
+check('出库任务进入待组车车次（不立即派车）', !!t2 && !!t2.batch && t2.batch.tasks.includes(t2) && !t2.truck, t2 && t2.batch && t2.batch.id);
+sandbox.forceDispatchBatches(); // 调试钩子：立即为所有未派车车次派车
+check('车次派车后派生货车', !!t1 && !!t1.truck && !!t1.truck.taskId, t1 && t1.truck && t1.truck.taskId);
+check('货车承载吊数 1..10（不足 6 吊按现有吊数放行）',
+  !!t1 && !!t1.truck && t1.truck.remaining >= 1 && t1.truck.remaining <= 10,
+  t1 && t1.truck ? t1.truck.remaining + ' 吊' : '无');
 pump(1);
 const stepBefore = sandbox.__dbg.simTime;
 sandbox.advance(0.5); // btnStep 的核心逻辑
@@ -187,7 +192,10 @@ check('充电循环已触发（返航充电 >= 2 次）', (lc.charge || 0) >= 2,
 check('电量被充电补充（运行期最高电量 >= 85%）', (sandbox.__maxBatt || 0) >= 85, 'max=' + (sandbox.__maxBatt || 0).toFixed(1) + '%');
 check('电量消耗真实发生（运行期最低电量 <= 55%）', (sandbox.__minBatt ?? 100) <= 55, 'min=' + (sandbox.__minBatt ?? 100).toFixed(1) + '%');
 check('天车吊运充分（>= 5 次）', (lc.crane || 0) >= 5, 'crane=' + (lc.crane || 0));
-check('货车进出充分（>= 8 次）', (lc.truck || 0) >= 8, 'truck=' + (lc.truck || 0));
+check('货车车次进出充分（>= 3 次）', (lc.truck || 0) >= 3, 'truck=' + (lc.truck || 0));
+const batchLoads = sandbox.__dbg.batchLoads;
+check('存在 6-10 吊的满车次（一车多吊）', batchLoads.some(n => n >= 6 && n <= 10), '吊数=' + JSON.stringify(batchLoads.slice(-10)));
+check('所有车次吊数 1..10（一车不超过 10 吊）', batchLoads.every(n => n >= 1 && n <= 10), '');
 const inv = el('kpiInv').textContent;
 const invN = parseInt(inv);
 check('库存在合理区间 1..91', invN >= 1 && invN <= 91, inv);

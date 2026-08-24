@@ -41,3 +41,6 @@ coverage
 
 # Misc
 *.log
+
+# ZCode 本地工具目录
+.zcode/
