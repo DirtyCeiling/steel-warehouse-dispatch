@@ -4,7 +4,8 @@
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import {
-  openDb, seed, getInventory, getSlots, getSlot, getSpecs, setStack, DB_PATH,
+  openDb, seed, getInventory, getSlots, getSlot, getSpecs, setStack,
+  getAppData, seedAppData, createTask, updateTaskStatus, DB_PATH,
 } from './database.js';
 
 const HOST = process.env.HOST || '127.0.0.1';
@@ -44,6 +45,28 @@ export function startServer({ host = HOST, port = PORT } = {}) {
       if (req.method === 'GET' && p === '/api/inventory') return json(res, 200, getInventory(db));
       if (req.method === 'GET' && p === '/api/slots') return json(res, 200, { slots: getSlots(db) });
       if (req.method === 'GET' && p === '/api/specs') return json(res, 200, getSpecs(db));
+
+      // 主应用（三维库区）数据接口：前端启动时从这里加载全量数据
+      if (req.method === 'GET' && p === '/api/app/data') {
+        const data = getAppData(db);
+        return data ? json(res, 200, data) : json(res, 404, { error: '主应用数据未初始化，请先执行 npm run db:init-app' });
+      }
+      if (req.method === 'POST' && p === '/api/app/reset') {
+        seedAppData(db);
+        return json(res, 200, getAppData(db));
+      }
+      if (req.method === 'POST' && p === '/api/app/tasks') {
+        const body = await readBody(req);
+        const t = createTask(db, body);
+        return t ? json(res, 200, t) : json(res, 400, { error: '任务参数不完整（需 id、type、steelCoilId）或钢卷不存在' });
+      }
+      const mTask = p.match(/^\/api\/app\/tasks\/([^/]+)$/);
+      if (req.method === 'PUT' && mTask) {
+        const body = await readBody(req);
+        if (!body.status) return json(res, 400, { error: '缺少 status 字段' });
+        const t = updateTaskStatus(db, decodeURIComponent(mTask[1]), body.status);
+        return t ? json(res, 200, t) : json(res, 404, { error: '任务不存在' });
+      }
 
       const mSlot = p.match(/^\/api\/slots\/(\d+)$/);
       if (req.method === 'GET' && mSlot) {

@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "db:init": "node server/cli.js init",
+    "db:init-app": "node server/cli.js init-app",
     "db:reset": "node server/cli.js reset",
     "db:inspect": "node server/cli.js inspect",
     "db:serve": "node server/cli.js serve",

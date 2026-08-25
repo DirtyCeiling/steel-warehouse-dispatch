@@ -24,35 +24,35 @@
   }
   /* ============ 顶栏 ============ */
   header {
-    display: flex; align-items: center; gap: 18px; padding: 10px 18px;
+    display: flex; align-items: center; gap: 12px; padding: 5px 14px;
     border-bottom: 1px solid var(--line); background: rgba(8, 18, 38, .7);
     flex-wrap: wrap;
   }
-  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .logo {
-    width: 40px; height: 40px; border-radius: 10px; flex: none;
+    width: 30px; height: 30px; border-radius: 8px; flex: none;
     background: linear-gradient(135deg, #0ea5e9, #1d4ed8);
-    display: flex; align-items: center; justify-content: center; font-size: 20px;
-    box-shadow: 0 0 18px rgba(56, 189, 248, .35);
+    display: flex; align-items: center; justify-content: center; font-size: 15px;
+    box-shadow: 0 0 14px rgba(56, 189, 248, .35);
   }
-  .brand h1 { font-size: 17px; font-weight: 700; letter-spacing: .5px; }
-  .brand p { font-size: 11px; color: var(--dim); margin-top: 2px; }
+  .brand h1 { font-size: 14px; font-weight: 700; letter-spacing: .5px; }
+  .brand p { font-size: 10px; color: var(--dim); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 660px; }
   .clock {
-    font-family: var(--mono); font-size: 24px; font-weight: 700; color: var(--cyan);
-    background: rgba(14, 29, 58, .8); border: 1px solid var(--line2); border-radius: 10px;
-    padding: 6px 16px; letter-spacing: 1px; text-shadow: 0 0 12px rgba(56, 189, 248, .5);
+    font-family: var(--mono); font-size: 16px; font-weight: 700; color: var(--cyan);
+    background: rgba(14, 29, 58, .8); border: 1px solid var(--line2); border-radius: 8px;
+    padding: 2px 10px; letter-spacing: 1px; text-shadow: 0 0 12px rgba(56, 189, 248, .5);
   }
-  .clock small { font-size: 11px; color: var(--dim); display: block; letter-spacing: 0; text-align: center; font-weight: 400; }
-  .controls { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+  .clock small { font-size: 9.5px; color: var(--dim); display: block; letter-spacing: 0; text-align: center; font-weight: 400; line-height: 1.1; }
+  .controls { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-wrap: wrap; }
   button {
     background: var(--panel2); color: var(--text); border: 1px solid var(--line2);
-    border-radius: 8px; padding: 7px 12px; font-size: 12.5px; cursor: pointer;
+    border-radius: 6px; padding: 4px 9px; font-size: 12px; cursor: pointer;
     font-family: inherit; transition: all .15s;
   }
   button:hover { border-color: var(--cyan); color: #fff; box-shadow: 0 0 10px rgba(56,189,248,.2); }
   button:active { transform: translateY(1px); }
-  .seg { display: flex; border: 1px solid var(--line2); border-radius: 8px; overflow: hidden; }
-  .seg button { border: none; border-radius: 0; padding: 7px 13px; }
+  .seg { display: flex; border: 1px solid var(--line2); border-radius: 6px; overflow: hidden; }
+  .seg button { border: none; border-radius: 0; padding: 4px 10px; }
   .seg button + button { border-left: 1px solid var(--line2); }
   .seg button.on { background: var(--cyan); color: #04121f; font-weight: 700; }
   .act.in { border-color: rgba(45, 212, 191, .5); color: var(--teal); }
@@ -72,18 +72,18 @@
   .switch input:checked + .tk::after { left: 18px; background: var(--cyan); }
   /* ============ 流程链路条 ============ */
   #flowStrip {
-    display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding: 7px 18px;
+    display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding: 3px 14px;
     background: linear-gradient(90deg, rgba(14,29,58,.9), rgba(11,23,48,.5));
-    border-bottom: 1px solid var(--line); font-size: 12px;
+    border-bottom: 1px solid var(--line); font-size: 11px;
   }
   .fnode {
-    display: flex; align-items: center; gap: 7px; padding: 4px 11px;
+    display: flex; align-items: center; gap: 6px; padding: 1px 8px;
     border: 1px solid var(--line2); border-radius: 999px; background: rgba(11,23,48,.7);
     color: var(--dim); transition: all .3s;
   }
   .fnode .fc {
-    min-width: 20px; text-align: center; border-radius: 999px; background: #122448;
-    color: var(--dim); font-size: 11px; padding: 1px 6px; font-weight: 700; font-family: var(--mono);
+    min-width: 18px; text-align: center; border-radius: 999px; background: #122448;
+    color: var(--dim); font-size: 10px; padding: 0 5px; font-weight: 700; font-family: var(--mono);
     transition: all .3s;
   }
   .fnode.on { border-color: rgba(56,189,248,.55); color: var(--text); box-shadow: 0 0 12px rgba(56,189,248,.18); }
@@ -229,6 +229,29 @@
   /* ============ 车辆作业进度面板 ============ */
   .panel.vehp { flex: none; max-height: 360px; }
   .panel.vehp .scroll { max-height: 300px; }
+  /* ============ 订单履约面板（出库按合同凑捆，齐套闭环） ============ */
+  .panel.ordp { flex: none; max-height: 186px; }
+  .panel.ordp .scroll { max-height: 136px; }
+  .orow { display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 3px 2px; border-bottom: 1px dashed rgba(22,41,79,.5); }
+  .orow:last-child { border-bottom: none; }
+  .orow .oid { font-family: var(--mono); color: var(--cyan); flex: none; }
+  .orow .ospec { color: var(--dim); flex: none; font-size: 10px; }
+  .orow .obar { flex: 1; height: 6px; background: #0a1730; border-radius: 999px; overflow: hidden; min-width: 30px; }
+  .orow .obar i { display: block; height: 100%; background: linear-gradient(90deg, var(--amber), var(--orange)); border-radius: 999px; }
+  .orow .ocnt { font-family: var(--mono); font-size: 10px; color: var(--dim); flex: none; }
+  .tord { font-family: var(--mono); font-size: 10px; color: var(--amber); border: 1px solid rgba(251,191,36,.35); border-radius: 999px; padding: 0 6px; }
+  /* ============ 运行趋势面板（时序 KPI 曲线） ============ */
+  .panel.trendp { flex: none; }
+  #kpiChart { width: 100%; height: 56px; display: block; }
+  .trendlg { display: flex; gap: 12px; font-size: 10px; color: var(--dim); margin-top: 4px; }
+  .trendlg i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+  .focusbtn {
+    margin-left: 6px; padding: 2px 9px; font-size: 11px; border-radius: 999px;
+    background: var(--panel2); color: var(--dim); border: 1px solid var(--line2);
+    letter-spacing: 0; box-shadow: none;
+  }
+  .focusbtn:hover { color: var(--text); border-color: var(--cyan); box-shadow: none; }
+  .focusbtn.on { background: var(--cyan); color: #04121f; border-color: var(--cyan); font-weight: 700; }
   #vehSelect {
     width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line2);
     border-radius: 8px; padding: 6px 8px; font-size: 12px; font-family: inherit; margin-bottom: 8px;
@@ -382,7 +405,7 @@
     <div class="logo">🤖</div>
     <div>
       <h1>钢厂棒材库区 · 机器狗扫码调度仿真沙盘</h1>
-      <p>长 300m × 宽 90m · 三跨（A/B/C，每跨 30m）· 3 条竖向车辆进出通道 · 91 库位（每库位 8 垛 × 20 捆）· 3 台机器狗（扫码核验）+ 6 台天车（每跨 2 台）· 一车 6-10 吊（单跨装卸）· 流程：货车进场停靠 -> 跨上立柱摄像头识别车牌 -> 物流系统吊取运单 -> 天车吊运装卸 -> 机器狗扫码确认 -> 库存更新</p>
+      <p title="长 300m × 宽 90m · 三跨（A/B/C，每跨 30m）· 3 条竖向车辆进出通道 · 91 库位（每库位 8 垛 × 20 捆）· 3 台机器狗（扫码核验）+ 6 台天车（每跨 2 台）· 一车 6-10 吊（单跨装卸）· 流程：货车进场停靠 -> 跨上立柱摄像头识别车牌 -> 物流系统吊取运单 -> 天车吊运装卸 -> 机器狗扫码确认 -> 库存更新">长 300m × 宽 90m · 三跨（A/B/C，每跨 30m）· 3 条竖向车辆进出通道 · 91 库位（每库位 8 垛 × 20 捆）· 3 台机器狗（扫码核验）+ 6 台天车（每跨 2 台）· 一车 6-10 吊（单跨装卸）· 流程：货车进场停靠 -> 跨上立柱摄像头识别车牌 -> 物流系统吊取运单 -> 天车吊运装卸 -> 机器狗扫码确认 -> 库存更新</p>
     </div>
   </div>
   <div class="seg" id="viewTabs" title="切换视图：仿真沙盘 / 库存三维">
@@ -402,6 +425,8 @@
     <button id="btnIn" class="act in">＋入库任务</button>
     <button id="btnOut" class="act out">＋出库任务</button>
     <button id="btnSettings">⚙ 设备参数</button>
+    <button id="btnExport" class="ghost" title="导出任务台账 CSV（含历史场次累计）">⤓ 台账导出</button>
+    <button id="btnFitView" class="ghost" title="复位视图（取消缩放/平移）">⊞ 视图复位</button>
     <button id="btnReset" class="ghost">↺ 重置</button>
   </div>
 </header>
@@ -432,7 +457,7 @@
       <span class="li hint">机器狗不搬运钢材：天车负责吊运装卸，机器狗前往库位扫码确认入/出库</span>
       <span class="li hint">货车一车 6-10 吊（同跨装卸）：凑满一车发车，低峰期超时按现有吊数放行</span>
       <span class="li hint">点击空闲库位 -> 入库上架 · 点击有料库位 -> 下发出库</span>
-      <span class="li hint"><kbd>空格</kbd>暂停 <kbd>S</kbd>单步</span>
+      <span class="li hint"><kbd>空格</kbd>暂停 <kbd>S</kbd>单步 · <kbd>滚轮</kbd>缩放 <kbd>拖拽</kbd>平移</span>
     </div>
   </section>
 
@@ -457,16 +482,33 @@
     </div>
 
     <div class="panel vehp">
-      <h2>车辆作业进度 <span class="cnt" id="vehCount"></span></h2>
+      <h2>车辆作业进度 <span class="cnt" id="vehCount"></span>
+        <button id="btnFocus" class="focusbtn" title="只看当前选中这辆车：画布聚焦该车 + 运送目的地 + 相关任务，隐藏其余车辆设备">⊙ 聚焦</button>
+      </h2>
       <div class="scroll" id="vehPanelBody">
         <select id="vehSelect"><option>加载中…</option></select>
         <div id="vehDetail"></div>
       </div>
     </div>
 
+    <div class="panel ordp">
+      <h2>订单履约（出库按合同凑捆）<span class="cnt" id="orderCnt"></span></h2>
+      <div class="scroll" id="orderList"></div>
+    </div>
+
     <div class="panel tasks">
       <h2>任务队列 <span class="cnt" id="taskCount"></span></h2>
       <div class="scroll" id="taskList"></div>
+    </div>
+
+    <div class="panel trendp">
+      <h2>运行趋势（每 60 仿真秒采样）<span class="cnt" id="trendCnt"></span></h2>
+      <canvas id="kpiChart"></canvas>
+      <div class="trendlg">
+        <span><i style="background:#22d3ee"></i>库存捆数</span>
+        <span><i style="background:#34d399"></i>累计完成</span>
+        <span><i style="background:#fbbf24"></i>待处理排队</span>
+      </div>
     </div>
 
     <div class="panel logp">
@@ -481,7 +523,7 @@
   <div id="invStage">
     <div id="invCvWrap">
       <canvas id="invCv"></canvas>
-      <div id="invHint">左键拖拽 <kbd>旋转</kbd> · 滚轮 <kbd>缩放</kbd> · 右键拖拽 <kbd>平移</kbd> · 点击库位 / 垛 / 捆下钻 · <kbd>Esc</kbd> 返回上级</div>
+      <div id="invHint">左键拖拽 <kbd>平移</kbd> · 右键拖拽 <kbd>旋转</kbd> · 滚轮 <kbd>缩放</kbd> · 点击库位 / 垛 / 捆下钻 · <kbd>Esc</kbd> 返回上级</div>
       <nav id="invCrumb"></nav>
       <div id="invTooltip"></div>
       <div id="invDetail"></div>
@@ -584,6 +626,18 @@ window.__dbg = {
     done: t.batch ? t.batch.tasks.filter(x => x.state === 'done').length : 0,
     inScene: trucks.includes(t),
   })); },
+  /* 订单履约 / 时序 KPI / 异常注入探针（自检与调试） */
+  get orders() { return orders.map(o => ({ id: o.id, spec: o.spec.name, required: o.required, assigned: o.assigned, done: o.done, tons: o.tonsLoaded })); },
+  get kpiSeriesLen() { return kpiSeries.length; },
+  get kpiSeriesLast() { return kpiSeries.length ? { ...kpiSeries[kpiSeries.length - 1] } : null; },
+  get abnormal() { return { ...(window.__abnormal || {}) }; },
+  get ledgerSize() { return ledger.tasks.length; },
+  get storages() { return storages; },   // 库位/垛级引用（专项探针：构造极端库存场景）
+  get tasks() { return tasks; },
+  /* 单车聚焦模式探针（自检：验证聚焦目标与相关任务集合） */
+  get focusMode() { return focusMode; },
+  get focusTruckId() { const t = focusTruck(); return t ? t.taskId : null; },
+  get focusTaskIds() { const s = focusTaskIds(); return s ? [...s] : null; },
 };
 /* =====================================================================
  * 钢厂棒材库区 · 机器狗扫码调度仿真沙盘（2D 流程级仿真）
@@ -599,7 +653,9 @@ window.__dbg = {
  *   · 入库：货车进场停靠 -> 立柱摄像头识别车牌 -> 吊取运单 ->
  *     天车把钢材从车上吊到目标库位 -> 机器狗扫码确认入账。
  *   · 出库对称：机器狗先到库位扫码核验 -> 货车进场停靠 -> 识别车牌吊取
- *     装车计划 -> 天车把钢材从库位吊到车上 -> 货车载料离场。
+ *     装车计划 -> 天车把钢材从库位吊到车上 -> 出场复验 -> 货车载料离场。
+ *   · 出库按订单履约：一车出厂 = 一张提货订单（合同号 + 需求捆数/吨数），
+ *     按规格先进先出凑捆，目标捆被压货先倒垛，合同捆齐套才闭环。
  *
  * 库区布局（与库区平面图一致，横置：长 300m 横向、宽 90m 纵向）：
  *   宽 90m = 三跨：A跨/一跨(上) · B跨/二跨(中) · C跨/三跨(下)，每跨 30m
@@ -620,7 +676,8 @@ window.__dbg = {
  *         限本跨作业（大车沿本跨轨道行走）；同跨双车按作业区间互让，不相撞
  *   充电服务带（厂房外侧 C 跨一路）：充电桩 ×3，对齐三条横向通道
  *   通行规则：机器狗只能在通道（4 条 2m 横向廊道 + 3 条竖向车辆通道 + 服务带）
- *         和垛位之间的间隙行走，不进入库位内部；扫码时从通道边进入目标库位作业格。
+ *         和垛位之间的间隙行走，不进入库位内部；扫码时走到垛位旁的通道边，
+ *         转身面向垛位扫码。
  * 模块：地图/库位 · 货车（通道进场）· 天车（吊运装卸）· 机器狗（扫码）·
  *       调度引擎 · 任务流 · KPI · 事件日志
  * ===================================================================== */
@@ -649,15 +706,25 @@ const CFG = {
     maxWait: 150,                   // 凑不满 6 吊时，等待该时长后按现有吊数放行（秒）
     plateScanTime: 2.0,             // 跨上立柱摄像头识别车牌耗时（秒）
     manifestTime: 1.2,              // 凭车牌从物流系统吊取运单耗时（秒）
+    verifyTime: 1.5,                // 出场复验耗时（装卸数量与运单复核，秒）
   },
-  task: { maxPending: 48 },             // 待处理任务上限（堆积到顶则暂缓排产，防队列失控）
+  task: { maxPending: 48, maxOpenOrders: 16 },   // 待处理任务上限 / 在办出库订单上限（防队列失控）
   production: {                          // 生产节奏：按天定量，订单全天铺开，不一次性下完
     dayHours: 24,                        // 一个仿真日 = 24 仿真小时
     inPerDay: 150,                       // 每日进厂车辆数（入库卸货）
     outPerDay: 100,                      // 每日出厂车辆数（出库取货）
   },
-  initInventory: 30,                   // 初始库存捆数
+  abnormal: {                            // 异常注入概率（0 = 关闭，「⚙ 设备参数」可调）
+    scanFailPct: 4,                      // 机器狗扫码失败率 %（失败原地重扫，超限转人工介入）
+    manifestMismatchPct: 5,              // 运单与实货差异率 %（以现场扫码数据为准修正）
+    verifyIssuePct: 3,                   // 出场复验异常率 %（人工复核后放行）
+    maxScanRetries: 2,                   // 扫码失败最多重扫次数，超出转人工介入核验
+  },
+  initInventory: 30,                   // 期初库存捆数（兜底：库存数据库服务不可达时使用内置随机分布）
 };
+
+/* 库存数据库服务（npm run db:serve 启动）：期初优先从这里加载实际钢材分布 */
+const DB_API = 'http://127.0.0.1:3001';
 
 /* 棒材规格（颜色用于地图渲染与图例） */
 const SPECS = [
@@ -671,14 +738,14 @@ const SPECS = [
 const STAGE_NAMES = ['任务下发', '调度分配', '路径规划', '导航执行', '扫码确认', '状态回传', '库存更新'];
 const STATE_TEXT = {
   IDLE: '待命', ASSIGN: '接单确认', PLAN: '路径规划', NAV: '导航中',
-  SCAN: '扫码中', REPORT: '状态回传',
+  TURN: '转身对位', SCAN: '扫码中', REPORT: '状态回传',
   TO_CHARGER: '返航充电', CHARGING: '充电中',
 };
 const CAT_NAMES = {
   task: '任务', dispatch: '调度', plan: '规划', robot: '机器狗', truck: '车辆',
   inventory: '库存', charge: '电量', crane: '天车', system: '系统',
 };
-const BUSY_STATES = ['ASSIGN', 'PLAN', 'NAV', 'SCAN', 'REPORT'];
+const BUSY_STATES = ['ASSIGN', 'PLAN', 'NAV', 'TURN', 'SCAN', 'REPORT'];
 function ringDur(state) { // 作业进度环时长（实时读取参数，支持运行时调整）
   switch (state) {
     case 'ASSIGN': return CFG.robot.assignTime;
@@ -698,21 +765,27 @@ const PARAM_DEFS = [
   { sec: 'crane', key: 'lowerTime',  label: '放下时间',     min: 0.5, max: 10, step: 0.1, unit: '秒' },
   { sec: 'truck', key: 'plateScanTime', label: '车牌识别时间', min: 0.5, max: 8,  step: 0.1, unit: '秒' },
   { sec: 'truck', key: 'manifestTime',  label: '运单吊取时间', min: 0.3, max: 6,  step: 0.1, unit: '秒' },
+  { sec: 'truck', key: 'verifyTime',    label: '出场复验时间', min: 0.5, max: 8,  step: 0.1, unit: '秒' },
   { sec: 'production', key: 'inPerDay',  label: '每日进厂车辆', min: 10, max: 600, step: 5, unit: '辆/日' },
   { sec: 'production', key: 'outPerDay', label: '每日出厂车辆', min: 10, max: 600, step: 5, unit: '辆/日' },
+  { sec: 'abnormal', key: 'scanFailPct',        label: '扫码失败率',   min: 0, max: 50, step: 1, unit: '%' },
+  { sec: 'abnormal', key: 'manifestMismatchPct', label: '运单差异率',   min: 0, max: 50, step: 1, unit: '%' },
+  { sec: 'abnormal', key: 'verifyIssuePct',      label: '复验异常率',   min: 0, max: 50, step: 1, unit: '%' },
 ];
 const DEFAULT_PARAMS = {
   robot: { ...CFG.robot },
   crane: { ...CFG.crane },
   truck: { ...CFG.truck },
   production: { ...CFG.production },
+  abnormal: { ...CFG.abnormal },
 };
-const SEC_NAMES = { robot: '机器狗', crane: '天车', truck: '货车', production: '生产节奏' };
+const SEC_NAMES = { robot: '机器狗', crane: '天车', truck: '货车', production: '生产节奏', abnormal: '异常注入' };
 const SEC_GROUPS = {
   robot: '机器狗（3 台 · D-01 ~ D-03 · 扫码核验）',
   crane: '天车（6 台 · 每跨 2 台 · TC-A1~TC-C2 · 吊运装卸）',
   truck: '货车（3 条竖向通道 · 立柱摄像头识别车牌 / 物流系统吊取运单）',
   production: '生产节奏（每日进厂 / 出厂车辆数 · 订单全天均匀铺开，不一次下完）',
+  abnormal: '异常注入（扫码失败 / 运单差异 / 复验异常概率 · 0 = 关闭）',
 };
 const paramId = d => `param-${d.sec}-${d.key}`;
 const fmtParam = (d, v) => `${(+v).toFixed(1)} ${d.unit}`;
@@ -813,10 +886,14 @@ let batches = [], batchSeq = 0, trucksDone = 0;   // 车次（一车 6-10 吊）
 let truckHistory = [];                            // 全部货车留档（含已离场），供“车辆作业进度”面板回看
 let selVehicleId = null;                          // 面板当前选中的车辆（车次号）
 let vehPanelSig = null;                           // 车流签名：有变化才重建下拉，避免打断用户选择（null 强制首帧重建）
+let focusMode = false;                            // 单车聚焦模式：只看选中车辆 + 运送目的地 + 相关任务，隐藏其余
 let simTime = 0, speed = 1, paused = false, autoTaskOn = true;
 let devTab = 'all';   // 设备集群页签：all | robot | crane
 let taskSeq = 0, occupiedCount = 0;
 let nextInAt = 2, nextOutAt = 3;      // 下一辆进厂 / 出厂车的排产时间（生产节奏按天铺开）
+let orders = [], orderSeq = 0;        // 出库订单（合同）层：一车出厂 = 一张提货订单，按规格凑捆，齐套闭环
+let kpiSeries = [], lastSampleAt = -1e9, lastFulfillAt = 0;   // 时序 KPI 采样点 / 订单配捆周期检查时刻
+let ledger = { tasks: [], histIn: 0, histOut: 0 };            // 任务台账（localStorage 持久化，含历史场次）
 let hoverCell = null;
 
 /* ---------------- DOM ---------------- */
@@ -825,6 +902,7 @@ const cv = $('cv'), ctx = cv.getContext('2d');
 const elClock = $('clock'), elTooltip = $('tooltip'), elToast = $('toast');
 const elLogList = $('logList'), elTaskList = $('taskList'), elRobotCards = $('robotCards');
 let cssW = 800, cssH = 600, scale = 3, ox = 0, oy = 0;
+let userView = null;   // 用户缩放/平移后的视图变换 {scale, ox, oy}；null = 自适应布局
 
 /* ---------------- 工具函数 ---------------- */
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -978,6 +1056,53 @@ function pickOutStack(st) { // 出库目标垛：先进先出（垛内最早入�
   return best;
 }
 
+/* ---------------- 倒垛（压货翻移） ----------------
+ * 垛是物理堆叠：天车只能从垛顶吊取。出库按先进先出，目标是垛内最早入账的捆（垛底），
+ * 目标捆上方若有压货，须先将其逐吊移往其他垛位（倒垛）才能吊出目标捆。
+ * 落点优先级（与设计方案 5.2 一致）：本库位同规格垛 > 本库位空垛 > 同跨同规格垛 > 同跨空垛；
+ * 规划时以 simCap 模拟落点容量递增，同一批倒垛捆尽量集中码入同一目标垛。 */
+function pickRestackDest(srcSt, srcStackIdx, spec, simCap) {
+  const remain = (s, i) => BUNDLES_PER_STACK - (simCap.get(s.id + ':' + i) ?? s.stacks[i].count);
+  const L1 = [], L2 = [], L3 = [], L4 = [];   // 本位同规格 / 本位空垛 / 同跨同规格 / 同跨空垛
+  const span = spanOfSlot(srcSt);
+  for (const s of storages) {
+    const sameSlot = s === srcSt;
+    if (!sameSlot && (s.state === 'locked' || spanOfSlot(s) !== span)) continue; // 天车限本跨；跳过被他任务锁定的库位（本库位内倒垛不受限）
+    s.stacks.forEach((k, i) => {
+      if (sameSlot && i === srcStackIdx) return;              // 不得压回源垛（目标捆还在其中）
+      if (k.pending > 0) return;                              // 不压入有待扫码落料的垛（避免扫码错位）
+      const rm = remain(s, i);
+      if (rm <= 0) return;
+      if (k.count > 0 && k.spec === spec) (sameSlot ? L1 : L3).push([s, i, rm]);
+      else if (k.count === 0) (sameSlot ? L2 : L4).push([s, i, rm]);
+    });
+  }
+  for (const list of [L1, L2, L3, L4]) {
+    if (list.length) { list.sort((a, b) => b[2] - a[2]); return { st: list[0][0], stackIdx: list[0][1] }; }
+  }
+  return null;
+}
+function planRestackJobs(task, slotP) { // 出库前排产倒垛作业：返回 []（无需倒垛）/ 作业数组 / null（压货无处可放）
+  const st = task.slot, srcIdx = task.stackIdx;
+  const k = st.stacks[srcIdx];
+  if (!k || k.bundles.length <= 1) return [];                 // 目标捆已在垛顶，直接吊取
+  const buried = k.bundles.slice(1).reverse();                // 垛顶 -> 垛底：天车须自顶逐捆吊走（目标捆 bundles[0] 留在最后）
+  const simCap = new Map(), jobs = [];
+  for (const b of buried) {
+    const spec = SPECS[b.specIdx];
+    const d = pickRestackDest(st, srcIdx, spec, simCap);
+    if (!d) return null;                                      // 有一捆无处可放 -> 整体倒垛方案不成立
+    const key = d.st.id + ':' + d.stackIdx;
+    simCap.set(key, (simCap.get(key) ?? d.st.stacks[d.stackIdx].count) + 1);
+    jobs.push({
+      kind: 'restack', taskId: task.id, spec, slot: st, task,
+      span: spanOfSlot(st), from: slotP, to: slotPoint(d.st),
+      fromStack: srcIdx, dest: d.st, destStack: d.stackIdx,
+    });
+  }
+  return jobs;
+}
+
 /* ---------------- 地图构建 ---------------- */
 function buildMap() {
   tiles = [];
@@ -1035,13 +1160,14 @@ function buildMap() {
  * 通行规则：机器狗只能在通道和垛位之间的间隙行走，不进入库位内部。
  *   通道（4 条横向廊道 + 3 条竖向车辆通道 + 南端入口）1.0 / 服务带与开放区 1.35 /
  *   库位格（垛位本体，无论空闲与否）∞ 不可穿行；
- *   仅起点/终点格（库位作业格）强制放行——狗从通道边进入目标库位扫码。
+ *   仅起点/终点格强制放行（兜底）；扫码任务的规划终点取库位旁的通道
+ *   作业点（approachCell）——狗走到垛位旁边站定，再转身面向垛位扫码。
  * 边代价 = 基础代价 × 步长（横向 8.33m / 纵向 16m=相邻行高各半）。 */
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 function cellBaseCost(r, c) {
   const t = tiles[r][c];
   if (t.type === 'wall') return Infinity;                       // 厂房外（西墙外）不可通行
-  if (t.type === 'storage') return Infinity;                    // 垛位本体不可穿行（作业格由起终点放行）
+  if (t.type === 'storage') return Infinity;                    // 垛位本体不可穿行（仅起终点格兜底放行）
   if (t.type === 'aisle' || t.type === 'channel') return 1;
   return 1.35;
 }
@@ -1150,6 +1276,21 @@ function pathLen(a, b) { // 实际米数（沿平滑后路径，按格中心米�
 /* ---------------- 位置描述 ---------------- */
 const slotCell = st => ({ r: st.goalR, c: st.goalC });
 const slotPoint = st => ({ x: cellCX(st.goalC), y: cellCY(st.goalR) });
+/* 作业接近点：机器狗只能站在与库位相邻的通道/间隙格上（不进垛位本体），
+ * 扫码时停在垛位旁边、转身面向垛位。候选格多于一个时，取从当前位置出发
+ * 沿通道走过去最近的一个，避免绕远。 */
+function approachCell(st, from) {
+  const { r, c } = slotCell(st);
+  let best = null, bestLen = Infinity;
+  for (const [dr, dc] of DIRS) {
+    const nr = r + dr, nc = c + dc;
+    if (nr < 0 || nc < 0 || nr >= M.ROWS || nc >= M.COLS) continue;
+    if (!isFinite(cellBaseCost(nr, nc))) continue;        // 仅取可通行格：通道/间隙/服务带
+    const L = from ? pathLen(from, { r: nr, c: nc }) : 0;
+    if (!best || L < bestLen) { best = { r: nr, c: nc }; bestLen = L; }
+  }
+  return best;
+}
 const spanOfSlot = st => SPAN_ROWS.indexOf(st.goalR);   // 0/1/2 -> A/B/C 跨
 function locName(loc) {
   if (loc.kind === 'storage') return loc.storage.code;
@@ -1220,12 +1361,12 @@ class Robot {
         break;
       case 'ASSIGN':
         if (this.timer >= R.assignTime) {
-          const goal = slotCell(this.task.slot);
-          this.path = findPath(this.cell(), goal);
+          const ap = approachCell(this.task.slot, this.cell());   // 垛位旁的通道站位点（不进库位内部）
+          this.path = ap ? findPath(this.cell(), ap) : null;
           this.pathIdx = 0;
           if (!this.path) { this.abortTask(); break; }
           this.setState('PLAN'); this.task.stage = 2;
-          logEvent('plan', `${this.name} 路径规划完成：当前位置 -> 库位 ${this.task.slot.code}，全程 ${Math.round(pathLen(this.cell(), goal))}m`);
+          logEvent('plan', `${this.name} 路径规划完成：当前位置 -> 库位 ${this.task.slot.code} 通道边，全程 ${Math.round(pathLen(this.cell(), ap))}m`);
         }
         break;
       case 'PLAN':
@@ -1236,14 +1377,40 @@ class Robot {
         break;
       case 'NAV':
         if (this.moveAlong(dt)) {
-          this.setState('SCAN'); this.task.stage = 4;
-          logEvent('robot', `${this.name} 抵达库位 ${this.task.slot.code}，开始扫码核验（二维码）`);
+          this.setState('TURN');   // 抵达垛位旁通道站位：先转身面向垛位，再扫码（不进垛位）
         }
         break;
+      case 'TURN': {
+        const sp = slotPoint(this.task.slot);
+        const want = Math.atan2(sp.y - this.y, sp.x - this.x);
+        this.heading = lerpAngle(this.heading, want, Math.min(1, dt * 10));
+        const dAng = Math.atan2(Math.sin(want - this.heading), Math.cos(want - this.heading));
+        if (Math.abs(dAng) < 0.06 || this.timer >= 2) {
+          this.heading = want;
+          this.setState('SCAN'); this.task.stage = 4;
+          logEvent('robot', `${this.name} 抵达库位 ${this.task.slot.code} 通道边，已转身面向垛位，开始扫码核验（二维码）`);
+        }
+        break;
+      }
       case 'SCAN':
         if (this.timer >= R.scanTime) {
-          this.scans++;
           const t = this.task;
+          const fail = CFG.abnormal.scanFailPct > 0 && Math.random() * 100 < CFG.abnormal.scanFailPct;
+          if (fail && (t.scanRetries || 0) < CFG.abnormal.maxScanRetries) { // 扫码失败：原地重扫（码面污损/反光等现场因素）
+            t.scanRetries = (t.scanRetries || 0) + 1;
+            window.__abnormal.scanFail++;
+            window.__abnormal.scanAnomalyLog++;   // 异常日志留痕（日志窗口仅留近 260 条，计数不受挤出影响）
+            this.timer = 0;   // 保持 SCAN 状态重新计时
+            logEvent('robot', `扫码异常：${t.id} 扫码失败（码面污损/反光），${this.name} 原地重扫（第 ${t.scanRetries} 次）`);
+            break;
+          }
+          this.scans++;
+          if (fail) {   // 重扫仍失败：转人工介入核验放行（异常留痕，不阻断流程）
+            t.anomaly = true;
+            window.__abnormal.manualOverride++;
+            window.__abnormal.scanAnomalyLog++;
+            logEvent('robot', `扫码异常：${t.id} 连续 ${CFG.abnormal.maxScanRetries} 次重扫失败，人工介入核验放行（${this.name}）`);
+          }
           logEvent('robot', t.type === 'in'
             ? `扫码完成：${t.spec.name} 捆标签已绑定库位 ${t.slot.code} 第${t.stackIdx + 1}垛（${this.name}）`
             : `扫码完成：${t.slot.code} 第${t.stackIdx + 1}垛 ${t.spec.name} 与出库单核验一致（${this.name}）`);
@@ -1302,6 +1469,7 @@ class Robot {
       if (k) k.pending = 0;
       confirmBundleRec(t.slot, t.stackIdx);           // 捆级明细：最早待核验捆转为在库
       t.state = 'done'; t.stage = 6; t.ended = simTime;
+      ledgerPush(t);                                   // 任务台账留痕（持久化/导出用）
       logEvent('robot', `${this.name} 状态回传：${t.id} 完成，耗时 ${fmtDur(simTime - t.created)}`);
       logEvent('inventory', `库存更新：${t.slot.code} 第${t.stackIdx + 1}垛 扫码入库确认 ${t.spec.name}（库存 ${occupiedCount}/${TOTAL_BUNDLE_CAP}）`);
     } else { // 出库：核验通过，等待天车装车（任务在货车离场时闭环）
@@ -1413,11 +1581,33 @@ function updateTrucks(dt) {
           for (const t of batch.tasks) cnt[t.spec.name] = (cnt[t.spec.name] || 0) + 1;
           const list = Object.entries(cnt).map(([n, c]) => `${n}×${c}`).join('、');
           logEvent('truck', `运单吊取：${tk.taskId}（${tk.plate}）该车 ${batch.tasks.length} 吊：${list}，天车开始吊运`);
+          if (CFG.abnormal.manifestMismatchPct > 0 && Math.random() * 100 < CFG.abnormal.manifestMismatchPct) { // 运单差异：以现场扫码数据为准修正
+            batch.manifestMismatch = true;
+            window.__abnormal.manifestMismatch++;
+            logEvent('truck', `⚠ 运单差异：${tk.taskId}（${tk.plate}）运单与车上实货不符，以现场扫码数据为准修正装卸方案`);
+          }
           for (const t of batch.tasks) maybePushCraneJob(t);
         }
         break;
-      case 'WORKING': // 天车逐一吊运中（吊完由天车置 LEAVE）
+      case 'WORKING': // 天车逐一吊运中（吊完由天车置 VERIFY）
         break;
+      case 'VERIFY': { // 出场复验：装卸数量与运单复核，异常转人工复核后放行（复验通过才离场）
+        tk.scanT += dt;
+        if (tk.scanT >= CFG.truck.verifyTime) {
+          const total = batch.tasks.length;
+          const doneN = batch.tasks.filter(t => t.state === 'done').length;
+          const readyN = batch.tasks.filter(t => t.materialReady).length;
+          if (CFG.abnormal.verifyIssuePct > 0 && Math.random() * 100 < CFG.abnormal.verifyIssuePct) {
+            window.__abnormal.verifyIssue++;
+            logEvent('truck', `⚠ 出场复验异常：${tk.taskId}（${tk.plate}）抽检发现捆标签与运单不符，人工复核后放行`);
+          } else {
+            logEvent('truck', `出场复验通过：${tk.taskId}（${tk.plate}）${tk.kind === 'in' ? `卸货 ${readyN}` : `装车 ${doneN}`}/${total} 吊与运单复核一致，放行`);
+          }
+          batch.verified = true;
+          tk.state = 'LEAVE'; tk.scanT = 0;
+        }
+        break;
+      }
       case 'LEAVE':
         tk.y -= CFG.truck.speed * dt;
         if (tk.y <= TRUCK_ENTER_Y) {
@@ -1457,19 +1647,36 @@ function resetCranes() {
 }
 function jobDesc(j) {
   const si = (j.task && j.task.stackIdx != null) ? j.task.stackIdx + 1 : '';
-  return j.kind === 'in'
-    ? `${j.taskId} 入库吊运：货车 -> 库位 ${j.slot.code}${si ? ' 第' + si + '垛' : ''}`
-    : `${j.taskId} 出库装车：库位 ${j.slot.code}${si ? ' 第' + si + '垛' : ''} -> 货车`;
+  if (j.kind === 'in') return `${j.taskId} 入库吊运：货车 -> 库位 ${j.slot.code}${si ? ' 第' + si + '垛' : ''}`;
+  if (j.kind === 'restack') return `${j.taskId} 倒垛：库位 ${j.slot.code} 第${j.fromStack + 1}垛(顶) -> 库位 ${j.dest.code} 第${j.destStack + 1}垛`;
+  return `${j.taskId} 出库装车：库位 ${j.slot.code}${si ? ' 第' + si + '垛' : ''} -> 货车`;
 }
 function maybePushCraneJob(task) { // 天车作业条件：货车就位 + 车牌识别 + 运单吊取确认；出库还需机器狗扫码核验通过
   if (task.cranePushed) return;
   const tk = task.batch && task.batch.truck;
   if (!tk || tk.state !== 'WORKING') return;           // 货车须已停靠且完成车牌识别 + 运单吊取
   if (task.type === 'out' && !task.dogDone) return;
-  task.cranePushed = true;
   const st = task.slot;
   const truckP = { x: task.truck.x, y: task.truck.targetY };
   const slotP = slotPoint(st);
+  if (task.type === 'out') { // 倒垛：FIFO 目标捆可能被压垛，须先由天车将上方压货逐吊移走，排在装车吊之前
+    const rs = planRestackJobs(task, slotP);
+    if (rs === null) { // 压货无处可放：排队等待倒垛落点释放。严禁降级吊装——天车物理上只能吊垛顶捆，
+      if (!task.restackWaiting) {   // 若此时核销 FIFO 目标捆（垛底）必致账物错位；故不入队，由 retryWaitingJobs 周期性重试
+        task.restackWaiting = true;
+        logEvent('crane', `⚠ ${task.id} 目标捆上方有压货且库区暂无可倒垛落点，装车排队等待（库存释放后自动重试，严守先进先出）`);
+      }
+      return;
+    }
+    if (task.restackWaiting) logEvent('crane', `倒垛落点已释放：${task.id} 恢复装车流程（FIFO 目标捆可出垛）`);
+    task.restackWaiting = false;
+    if (rs.length) {
+      task.restackLeft = rs.length;
+      craneJobs.push(...rs);
+      logEvent('crane', `倒垛作业排队：${task.id} 目标捆上方压货 ${rs.length} 捆，天车先倒垛再装车（${SPANS[spanOfSlot(st)]} · 先进先出）`);
+    }
+  }
+  task.cranePushed = true;
   const job = {
     kind: task.type, taskId: task.id, spec: task.spec, slot: st, task,
     span: spanOfSlot(st),
@@ -1478,6 +1685,9 @@ function maybePushCraneJob(task) { // 天车作业条件：货车就位 + 车牌
   };
   craneJobs.push(job);
   logEvent('crane', `天车作业排队：${jobDesc(job)}（${SPANS[job.span]}）`);
+}
+function retryWaitingJobs() { // 因无倒垛落点而排队的出库任务：库存释放后倒垛方案成立，自动恢复装车（每拍检查，仅扫少量等待任务）
+  for (const t of tasks) if (t.state === 'crane' && t.restackWaiting) maybePushCraneJob(t);
 }
 function craneRangeX(cr) { // 天车当前占用的 X 区间（含作业目标）
   if (!cr.job) return [cr.x, cr.x];
@@ -1532,11 +1742,13 @@ function updateCranes(dt) {
         if (cr.timer >= C.hoistTime) {
           const j = cr.job;
           const tk = j.task.truck;
-          if (j.kind === 'in') { // 从货车上吊取钢材：最后一吊吊起后货车空车离场
+          if (j.kind === 'in') { // 从货车上吊取钢材：最后一吊吊起后货车转出场复验（卸货数与运单复核）
             tk.remaining--;
-            if (tk.remaining <= 0) { tk.loaded = false; tk.state = 'LEAVE'; }
+            if (tk.remaining <= 0) { tk.loaded = false; tk.state = 'VERIFY'; tk.scanT = 0; }
             logEvent('crane', `天车吊取：${j.spec.name}（${laneNo(tk.lane)} 号通道货车 ${tk.taskId} · ${cr.name} · 车剩 ${Math.max(0, tk.remaining)} 吊）`);
-          } else { // 从库位垛上吊取：垛扣减，垛空则库位释放
+          } else if (j.kind === 'restack') { // 倒垛吊起：自源垛顶取一捆压货（库存迁移在 LOWER 落位时完成）
+            logEvent('crane', `天车倒垛吊起：${j.spec.name}（库位 ${j.slot.code} 第${j.fromStack + 1}垛顶 · ${cr.name}）`);
+          } else { // 出库装车：从库位垛上吊取，垛扣减，垛空则库位释放
             const st = j.slot;
             const k = st.stacks[j.task.stackIdx];
             if (k) {
@@ -1573,14 +1785,43 @@ function updateCranes(dt) {
             j.task.materialReady = true;
             logEvent('crane', `天车吊放完成：${j.spec.name} 落位库位 ${st.code} 第${j.task.stackIdx + 1}垛（${cr.name}）`);
             logEvent('inventory', `库位 ${st.code} 第${j.task.stackIdx + 1}垛 落料 ${j.spec.name}（物理库存 ${occupiedCount}/${TOTAL_BUNDLE_CAP} · 待机器狗扫码入账）`);
-          } else { // 装车完成：出库任务闭环，最后一吊装毕后货车载料离场
+          } else if (j.kind === 'restack') { // 倒垛落位：压货自源垛顶移入目标垛顶（台账总数不变，仅位置迁移）
+            const st = j.slot, t = j.task;
+            const k = st.stacks[j.fromStack];
+            const top = k && k.bundles.length ? k.bundles.pop() : null;   // 物理取捆：自垛顶吊取（与排产顺序一致）
+            if (k) {
+              k.count--;
+              if (k.count === 0) { k.spec = null; k.inTime = 0; k.grade = ''; k.len = 0; k.heat = ''; }
+            }
+            const dk = j.dest.stacks[j.destStack];
+            if (dk && top) {
+              top.slotId = j.dest.id; top.stackIdx = j.destStack;         // 捆级明细随迁（库存三维视图/追溯同步）
+              if (dk.count === 0) { dk.spec = SPECS[top.specIdx]; dk.grade = top.grade; dk.len = top.len; dk.heat = top.heat; dk.inTime = top.inTime; } // 空垛接收首捆：建垛元数据（保留原入账时间，FIFO 不乱）
+              dk.bundles.push(top); dk.count++;
+            }
+            if (j.dest !== st && j.dest.state === 'free') j.dest.state = 'occupied';
+            if (t.restackLeft > 0) t.restackLeft--;
+            invBump();
+            logEvent('crane', `倒垛完成：${j.spec.name} 库位 ${st.code} 第${j.fromStack + 1}垛 -> ${j.dest.code} 第${j.destStack + 1}垛（${cr.name} · ${t.id} 剩 ${t.restackLeft} 吊）`);
+            logEvent('inventory', `倒垛更新：${st.code} 第${j.fromStack + 1}垛 压货一捆移至 ${j.dest.code} 第${j.destStack + 1}垛（库存总量不变 ${occupiedCount}/${TOTAL_BUNDLE_CAP}）`);
+          } else { // 装车完成：出库任务闭环（订单履约推进 + 台账留痕），最后一吊装毕后货车转出场复验
             const tk = j.task.truck;
             tk.remaining--;
             const t = j.task;
             t.state = 'done'; t.stage = 6; t.ended = simTime;
+            if (t.order) {   // 订单履约：装车一捆计入合同进度，捆齐套则合同闭环
+              t.order.done++;
+              t.order.tonsLoaded = +(t.order.tonsLoaded + t.spec.weight).toFixed(2);
+              if (t.order.done >= t.order.required) {
+                t.order.doneAt = simTime;
+                window.__ordersDone = (window.__ordersDone || 0) + 1;   // 合同闭环计数（自检/调试钩子）
+                logEvent('task', `订单履约完成：合同 ${t.order.id} ${t.order.spec.name} ×${t.order.required} 捆齐套出厂（累计 ${t.order.tonsLoaded.toFixed(1)}t · 历时 ${fmtDur(simTime - t.order.created)}）`);
+              }
+            }
+            ledgerPush(t);
             logEvent('crane', `天车装车完成：${j.spec.name} 落位货车（${cr.name} · 车剩 ${Math.max(0, tk.remaining)} 吊）`);
             logEvent('task', `${t.id} 出库完成回传 WMS，全程耗时 ${fmtDur(simTime - t.created)}`);
-            if (tk.remaining <= 0) { tk.loaded = true; tk.state = 'LEAVE'; }
+            if (tk.remaining <= 0) { tk.loaded = true; tk.state = 'VERIFY'; tk.scanT = 0; }
           }
           cr.jobsDone++;
           cr.carrying = null; cr.job = null;
@@ -1595,13 +1836,75 @@ function updateCranes(dt) {
  * 一吊一任务：任务保持"吊"粒度（1 任务 = 1 规格 -> 1 库位），机器狗/天车/库存/KPI 均按吊计数。
  * 车次（Batch）分组层：同类型 + 同跨的任务凑满 6-10 吊组成一车，共享一辆货车；
  * 货车停靠一次（目标跨车道），该跨天车逐一吊运，全部吊完货车才离场。 */
-function pickInStorage(spec, spanHint = null) { // 入库库位：优先已有同规格垛（归堆），否则有空垛的库位（可按跨筛选）
-  const same = storages.filter(s => s.state !== 'locked' && (spanHint == null || spanOfSlot(s) === spanHint)
-    && s.stacks.some(k => k.spec === spec && k.count < BUNDLES_PER_STACK));
-  if (same.length) return pick(same);
-  const avail = storages.filter(s => s.state !== 'locked' && (spanHint == null || spanOfSlot(s) === spanHint)
-    && s.stacks.some(k => k.count === 0));
-  return avail.length ? pick(avail) : null;
+/* ---------------- 卸货（入库）推荐算法 ----------------
+ * 核心原则：相同/相似货物归堆放一起，不随机荐垛。对所有候选（库位,垛）综合评分，
+ * 选出最优卸货落点，并把推荐过程（最优候选得分分解 + 次选候选）写入事件日志。
+ * 评分项（见 scoreInCandidates）：
+ *   ① 同规格归堆 +60 起步，按垛内填充率加励：优先码入已有同规格垛，先填满旧垛、
+ *      把空垛留给新规格；
+ *   ② 空垛兜底 +20 起步：无同规格垛才用空垛；本库位空垛越多扣分越多（空垛是稀缺资源）；
+ *   ③ 库位同质性：库位内同族（同形状）垛 +5/垛，异族垛 -8/垛（避免异类混入归堆区）；
+ *   ④ 邻位聚簇：同号区相邻库位（area±1）内同规格垛 +4/垛（上限 20），延展连片聚簇；
+ *   ⑤ 扫码干扰：库位内待扫码垛 -3/垛（不打扰机器狗核验队列）；待扫码垛本身不作落点；
+ *   ⑥ 跨匹配 +10：匹配待组车车次的跨（天车限本跨、货车按跨组车，短倒运距）。
+ * 硬规则：同垛不混异规格；不荐被锁定库位；满垛/待扫码垛不作落点。 */
+const specFamily = spec => SPEC_META[spec.name].shape;   // 规格族（形状）：rebar / round / square
+function scoreInCandidates(spec, fam, spanHint) { // 全库候选（库位,垛）评分；返回 [{st, stackIdx, sc, parts}]
+  const cands = [];
+  for (const s of storages) {
+    if (s.state === 'locked') continue;
+    if (spanHint != null && !s.merged && spanOfSlot(s) !== spanHint) continue;
+    // 库位级统计：同族垛 / 异族垛 / 待扫码垛 / 空垛数（供③⑤评分）
+    let famN = 0, mixN = 0, pendN = 0, emptyN = 0;
+    for (const k of s.stacks) {
+      if (k.pending > 0) pendN++;
+      if (k.count === 0 && k.pending === 0) { emptyN++; continue; }
+      if (k.spec === spec || (k.spec && specFamily(k.spec) === fam)) famN++;
+      else if (k.spec) mixN++;
+    }
+    // ④ 邻位聚簇：同号区相邻库位（area±1）内同规格在库垛数
+    let nearN = 0;
+    for (const o of storages) {
+      if (o === s || Math.abs(o.area - s.area) > 1) continue;
+      for (const k of o.stacks) if (k.spec === spec && k.count > 0) nearN++;
+    }
+    s.stacks.forEach((k, i) => {
+      if (k.count >= BUNDLES_PER_STACK || k.pending > 0) return;   // 满垛/待扫码垛不作落点
+      if (k.count > 0 && k.spec !== spec) return;                  // 硬规则：同垛不混异规格
+      const parts = [];
+      let sc = 0;
+      if (k.spec === spec) {                                       // ① 同规格归堆（按填充率加励，先填旧垛）
+        const g = 60 + Math.round(20 * k.count / BUNDLES_PER_STACK);
+        sc += g; parts.push(`同规格归堆 ${g}（${k.count}/${BUNDLES_PER_STACK}）`);
+      } else {                                                     // ② 空垛兜底（空垛多则惜用）
+        const g = Math.max(0, 20 - emptyN * 3);
+        sc += g; parts.push(`空垛兜底 ${g}`);
+      }
+      if (famN) { sc += famN * 5; parts.push(`库位同族 ${famN * 5}`); }     // ③ 同质性奖励
+      if (mixN) { sc -= mixN * 8; parts.push(`库位异族 -${mixN * 8}`); }    // ③ 异类混入惩罚
+      if (nearN) { const g = Math.min(nearN * 4, 20); sc += g; parts.push(`邻位聚簇 ${g}`); }  // ④
+      if (pendN) { sc -= pendN * 3; parts.push(`扫码干扰 -${pendN * 3}`); } // ⑤
+      if (spanHint != null) { sc += 10; parts.push('跨匹配 10'); }          // ⑥ 已按跨筛选，匹配即加分
+      cands.push({ st: s, stackIdx: i, sc, parts });
+    });
+  }
+  return cands;
+}
+function recommendInPlacement(spec, spanHint = null) { // 卸货推荐：返回 {st, stackIdx}；null = 无合法落点（库满）
+  const fam = specFamily(spec);
+  let cands = scoreInCandidates(spec, fam, spanHint);
+  if (!cands.length && spanHint != null) cands = scoreInCandidates(spec, fam, null);   // 指定跨无落点 -> 放宽跨约束全库重荐
+  if (!cands.length) return null;
+  cands.sort((a, b) => b.sc - a.sc);
+  const best = cands[0];
+  logEvent('task', `卸货推荐：${spec.name} -> 库位 ${best.st.code} 第${best.stackIdx + 1}垛（综合 ${best.sc} 分 · ${best.parts.join(' + ')}）`);
+  const runners = cands.slice(1, 3).map(c => `${c.st.code} 第${c.stackIdx + 1}垛 ${c.sc}分`).join('；');
+  if (runners) logEvent('task', `卸货推荐次选：${runners}（同规格归堆 + 库位同质 + 邻位聚簇综合评分）`);
+  return { st: best.st, stackIdx: best.stackIdx };
+}
+function pickInStorage(spec, spanHint = null) { // 兼容入口：转由推荐算法选库位（仅返回库位，垛由调用方再定）
+  const rec = recommendInPlacement(spec, spanHint);
+  return rec ? rec.st : null;
 }
 function pickOldestScannable(spanHint = null) { // 先进先出可出库库位（垛内最早入账的已扫码捆；可按跨筛选）
   let best = null, bestT = Infinity;
@@ -1613,15 +1916,80 @@ function pickOldestScannable(spanHint = null) { // 先进先出可出库库位�
   }
   return best;
 }
-function newBatch(kind, span) {
-  const b = { id: `B-${String(++batchSeq).padStart(4, '0')}`, kind, span, tasks: [], truck: null, created: simTime };
+function pickOutStackSpec(st, spec) { // 库位内指定规格的可出垛：先进先出（最早入账的已扫码垛）
+  let best = -1, bestT = Infinity;
+  st.stacks.forEach((k, i) => {
+    if (k.count > 0 && k.pending === 0 && k.spec === spec && k.inTime < bestT) { best = i; bestT = k.inTime; }
+  });
+  return best;
+}
+function pickOldestScannableSpec(spec, spanHint = null) { // 订单配捆：指定规格先进先出可出库库位（仅已扫码捆）
+  let best = null, bestT = Infinity;
+  for (const s of storages) {
+    if (s.state === 'locked') continue;
+    if (spanHint != null && spanOfSlot(s) !== spanHint) continue;
+    const idx = pickOutStackSpec(s, spec);
+    if (idx >= 0 && s.stacks[idx].inTime < bestT) { best = s; bestT = s.stacks[idx].inTime; }
+  }
+  return best;
+}
+function specOutAvail(spec) { // 指定规格可出库捆数（已扫码且库位未被任务锁定）
+  let n = 0;
+  for (const s of storages) {
+    if (s.state === 'locked') continue;
+    for (const k of s.stacks) if (k.spec === spec && k.count > 0 && k.pending === 0) n += k.count;
+  }
+  return n;
+}
+/* ---------------- 出库订单（合同）履约层 ----------------
+ * 一车出厂 = 一张提货订单：合同号 + 规格 + 需求捆数（吨数 = 捆×单捆重）。
+ * 排产时优先选在库可出量最多的规格（便于当场履约）；库存不足时先配部分捆，
+ * 剩余由 tick 周期检查（新库存入账后）继续配捆；全部捆装车完成合同才闭环。 */
+function createSpotOrder(spec) { // 手动下发（点库位）的单吊零星订单：1 捆 1 合同，保持台账维度一致
+  const order = {
+    id: `HT26-${String(++orderSeq).padStart(4, '0')}`, spec,
+    required: 1, assigned: 0, done: 0, tonsLoaded: 0, tasks: [], created: simTime, doneAt: null,
+  };
+  orders.push(order);
+  return order;
+}
+function createOutOrder() { // 生产排产：出厂提货订单（一车 6-10 捆同规格）；无可出库存则本轮跳过
+  if (orders.filter(o => o.done < o.required).length >= CFG.task.maxOpenOrders) return 0;
+  const n = Math.round(rand(CFG.truck.minLoads, CFG.truck.maxLoads));
+  let best = -1, bestN = 0;
+  SPECS.forEach((sp, i) => { const c = specOutAvail(sp); if (c > bestN) { bestN = c; best = i; } });
+  if (best < 0) return 0;   // 全库无可出库库存，本轮不排产（库存回补后自动恢复）
+  const order = {
+    id: `HT26-${String(++orderSeq).padStart(4, '0')}`, spec: SPECS[best],
+    required: n, assigned: 0, done: 0, tonsLoaded: 0, tasks: [], created: simTime, doneAt: null,
+  };
+  orders.push(order);
+  const made = fulfillOrder(order);
+  logEvent('task', `WMS 下发出库订单 ${order.id}：${order.spec.name} ×${order.required} 捆（合同需求 ${(order.required * order.spec.weight).toFixed(1)}t），已配捆 ${made}/${order.required}${made < order.required ? '（余捆待库存回补）' : ''}`);
+  return made;
+}
+function fulfillOrder(order) { // 订单配捆：按先进先出逐捆下发出库任务；库存不足时中断，待周期检查续配；返回本轮下发数
+  let made = 0;
+  while (order.assigned < order.required) {
+    if (!createTask('out', { order, silent: true })) break;
+    made++;
+  }
+  return made;
+}
+function newBatch(kind, span, order = null) {
+  const b = { id: `B-${String(++batchSeq).padStart(4, '0')}`, kind, span, order, tasks: [], truck: null, created: simTime };
   batches.push(b);
   return b;
 }
-function routeToBatch(type, task) { // 挂入同类型同跨的待组车次（不足则新建）
+function routeToBatch(type, task) { // 挂入待组车次：出库按「同订单 + 同跨」组车（一单一车），入库按「同类型 + 同跨」凑车
   const span = spanOfSlot(task.slot);
-  let b = batches.find(x => x.kind === type && x.span === span && !x.truck && x.tasks.length < CFG.truck.maxLoads);
-  if (!b) b = newBatch(type, span);
+  let b;
+  if (type === 'out' && task.order) {
+    b = batches.find(x => x.order === task.order && x.span === span && !x.truck);
+  } else {
+    b = batches.find(x => x.kind === type && x.span === span && !x.truck && x.tasks.length < CFG.truck.maxLoads);
+  }
+  if (!b) b = newBatch(type, span, type === 'out' ? task.order : null);
   b.tasks.push(task);
   task.batch = b;
   return b;
@@ -1631,14 +1999,17 @@ function createTask(type, opts = {}) {
   const spec = opts.spec || pick(SPECS);
   const warn = opts.silent ? () => {} : toast;
   let task = null;
-  // 优先加入已有待组车次的跨，保证同跨能凑满一车
-  const open = batches.find(b => b.kind === type && !b.truck && b.tasks.length < CFG.truck.maxLoads);
+  // 优先加入已有待组车次的跨，保证同跨能凑满一车（出库按本订单已有车次定向）
+  const open = type === 'out' && opts.order
+    ? batches.find(b => b.order === opts.order && !b.truck)
+    : batches.find(b => b.kind === type && !b.truck && b.tasks.length < CFG.truck.maxLoads);
   const spanHint = open ? open.span : null;
   if (type === 'in') {
-    const st = opts.storage || pickInStorage(spec, spanHint) || pickInStorage(spec);
-    if (!st) { warn('⚠ 库区库位已满（各垛均达 20 捆上限），无法入库'); return null; }
-    const stackIdx = pickInStack(st, spec);
-    if (stackIdx < 0) { warn(`⚠ 库位 ${st.code} 无可用垛`); return null; }
+    const rec = opts.storage
+      ? { st: opts.storage, stackIdx: pickInStack(opts.storage, spec) }
+      : recommendInPlacement(spec, spanHint);
+    if (!rec || rec.stackIdx < 0) { warn('⚠ 库区库位已满（各垛均达 20 捆上限）或指定库位无可用垛，无法入库'); return null; }
+    const st = rec.st, stackIdx = rec.stackIdx;
     st.state = 'locked'; st.lockSpec = spec; st.lockStack = stackIdx;
     task = {
       id: `T-${String(++taskSeq).padStart(4, '0')}`, type, spec, slot: st, stackIdx,
@@ -1650,20 +2021,40 @@ function createTask(type, opts = {}) {
     logEvent('task', `WMS 下发入库任务 ${task.id}：${spec.name} ${spec.weight}t -> 库位 ${st.code} 第${stackIdx + 1}垛（锁定）`);
     logEvent('truck', `${task.id} 加入车次 ${b.id}（${SPANS[b.span]} · ${b.tasks.length}/${CFG.truck.maxLoads} 吊 · 待组车）`);
   } else {
-    const st = opts.storage || pickOldestScannable(spanHint) || pickOldestScannable();
-    if (!st) { warn('⚠ 暂无可出库库存（待扫码确认的落料不可出库）'); return null; }
-    const stackIdx = pickOutStack(st);
-    if (stackIdx < 0) { warn(`⚠ 库位 ${st.code} 无可出垛`); return null; }
+    let order = opts.order || null;
+    let st, stackIdx;
+    if (opts.storage) {   // 手动指定库位（点击下发）：零星订单，规格随选定垛
+      st = opts.storage;
+      stackIdx = pickOutStack(st);
+      if (stackIdx < 0) { warn(`⚠ 库位 ${st.code} 无可出垛`); return null; }
+      if (!order) order = createSpotOrder(st.stacks[stackIdx].spec);
+    } else {              // 订单配捆：仅选合同规格的已扫码捆（先进先出）
+      if (!order) {       // 无订单调用（兼容手动/自检）：按全库最老可出捆自动生成零星订单
+        st = pickOldestScannable(spanHint) || pickOldestScannable();
+        if (!st) { warn('⚠ 暂无可出库库存（待扫码确认的落料不可出库）'); return null; }
+        stackIdx = pickOutStack(st);
+        if (stackIdx < 0) { warn(`⚠ 库位 ${st.code} 无可出垛`); return null; }
+        order = createSpotOrder(st.stacks[stackIdx].spec);
+      } else {
+        st = pickOldestScannableSpec(order.spec, spanHint) || pickOldestScannableSpec(order.spec);
+        if (!st) { warn('⚠ 该订单规格暂无可出库库存（待扫码落料不可出库），等待库存回补'); return null; }
+        stackIdx = pickOutStackSpec(st, order.spec);
+        if (stackIdx < 0) return null;
+      }
+    }
     const mSpec = st.stacks[stackIdx].spec;
+    const buriedN = Math.max(0, st.stacks[stackIdx].bundles.length - 1);   // 目标捆（FIFO 最早捆）上方的压货捆数，出库前需倒垛
     st.state = 'locked'; st.lockSpec = mSpec; st.lockStack = stackIdx;
     task = {
       id: `T-${String(++taskSeq).padStart(4, '0')}`, type, spec: mSpec, slot: st, stackIdx,
       state: 'pending', stage: 0, created: simTime, robot: null,
       truckParked: false, dogDone: false, // 机器狗扫码核验通过后，天车方可装车
-      cranePushed: false, truck: null, batch: null,
+      cranePushed: false, restackWaiting: false, restackLeft: 0, truck: null, batch: null,
+      order, scanRetries: 0, anomaly: false,   // 所属合同 / 扫码重扫次数 / 异常留痕
     };
+    order.assigned++; order.tasks.push(task);
     const b = routeToBatch(type, task);
-    logEvent('task', `WMS 下发出库任务 ${task.id}：${st.code} 第${stackIdx + 1}垛 ${mSpec.name} ${mSpec.weight}t（先进先出 · 待扫码核验）`);
+    logEvent('task', `WMS 下发出库任务 ${task.id}（合同 ${order.id}）：${st.code} 第${stackIdx + 1}垛 ${mSpec.name} ${mSpec.weight}t（先进先出${buriedN ? ` · 目标捆在第${buriedN + 1}层，需先倒垛 ${buriedN} 捆` : ' · 目标捆在垛顶'} · 待扫码核验）`);
     logEvent('truck', `${task.id} 加入车次 ${b.id}（${SPANS[b.span]} · ${b.tasks.length}/${CFG.truck.maxLoads} 吊 · 待组车）`);
   }
   tasks.push(task);
@@ -1725,14 +2116,22 @@ function toast(msg) {
   toastTimer = setTimeout(() => elToast.classList.remove('show'), 2200);
 }
 
-/* ---------------- 仿真主循环 ---------------- */
-/* 一辆车的随车运单：按「一车 6-10 吊」生成同方向的一批次任务（凑满即由调度派车进场） */
+/* ---------------- 仿真主循环 ----------------
+ * 入库 = 随车运单批次（一车 6-10 吊）；出厂 = 提货订单（合同号 + 需求捆数，凑捆履约）。 */
 function spawnVehicleManifest(type) {
+  if (type === 'out') {   // 出厂 = 下发提货订单（合同号 + 需求捆数），按订单凑捆履约，凑齐才闭环
+    const made = createOutOrder();
+    if (made) {
+      window.__spawnLog = window.__spawnLog || [];
+      window.__spawnLog.push({ t: simTime, type, made });   // 排产留痕（自检/调试：验证按天铺开节奏）
+    }
+    return made;
+  }
   const n = Math.round(rand(CFG.truck.minLoads, CFG.truck.maxLoads));
   let made = 0;
   for (let i = 0; i < n; i++) if (createTask(type, { silent: true })) made++;
   if (made) {
-    logEvent('task', `生产排产：${type === 'in' ? '进厂' : '出厂'}车 1 辆，随车运单 ${made} 吊（${type === 'in' ? '入库卸货' : '出库取货'}）`);
+    logEvent('task', `生产排产：进厂车 1 辆，随车运单 ${made} 吊（入库卸货）`);
     window.__spawnLog = window.__spawnLog || [];
     window.__spawnLog.push({ t: simTime, type, made });   // 排产留痕（自检/调试：验证按天铺开节奏）
   }
@@ -1760,6 +2159,25 @@ function tick(dt) {
   for (const rb of robots) rb.update(dt);
   updateTrucks(dt);
   updateCranes(dt);
+  retryWaitingJobs();  // 因无倒垛落点而排队的出库任务：库存释放后自动恢复装车（严守先进先出）
+  // 在办订单周期配捆：新库存入账后，为未满合同继续按先进先出配捆（待处理堆积到顶时暂缓）
+  if (simTime - lastFulfillAt >= 3) {
+    lastFulfillAt = simTime;
+    if (tasks.filter(t => t.state === 'pending').length < CFG.task.maxPending) {
+      for (const o of orders) if (o.done < o.required && o.assigned < o.required) fulfillOrder(o);
+    }
+  }
+  // 时序 KPI 采样：每 60 仿真秒记一点（库存/累计完成/排队，环形缓存 1 天）+ 台账定期落盘
+  if (simTime - lastSampleAt >= 60) {
+    lastSampleAt = simTime;
+    kpiSeries.push({
+      t: simTime, inv: occupiedCount,
+      done: tasks.filter(t => t.state === 'done').length,
+      pend: tasks.filter(t => t.state === 'pending').length,
+    });
+    if (kpiSeries.length > 1440) kpiSeries.shift();
+    flushLedger();
+  }
 }
 function advance(dt) { // 固定子步长，保证 16× 时数值稳定
   let rem = Math.min(dt, 1.2);
@@ -1782,13 +2200,80 @@ function frame(now) {
 }
 
 /* ---------------- 渲染 ---------------- */
-function computeLayout() {
-  const mL = 96, mR = 18, mT = 62, mB = 48;
+const VIEW_M = { l: 96, r: 18, t: 62, b: 48 };   // 自适应布局四边留白（px）
+function fitScale() { // 自适应适配比例（画布尺寸 -> 地图铺满）
   const mapWm = M.L - M.X_MIN;               // 300m
   const mapHm = MAP_BOT - M.Y_MIN;           // 117m（含通道北端入口外排队区）
-  scale = Math.max(1.2, Math.min((cssW - mL - mR) / mapWm, (cssH - mT - mB) / mapHm));
-  ox = mL + Math.max(0, (cssW - mL - mR - mapWm * scale) / 2);
-  oy = mT + Math.max(0, (cssH - mT - mB - mapHm * scale) / 2);
+  return Math.max(1.2, Math.min((cssW - VIEW_M.l - VIEW_M.r) / mapWm, (cssH - VIEW_M.t - VIEW_M.b) / mapHm));
+}
+function computeLayout() {
+  if (userView) { scale = userView.scale; ox = userView.ox; oy = userView.oy; return; } // 用户缩放/平移中，保持其视图
+  const mapWm = M.L - M.X_MIN, mapHm = MAP_BOT - M.Y_MIN;
+  scale = fitScale();
+  ox = VIEW_M.l + Math.max(0, (cssW - VIEW_M.l - VIEW_M.r - mapWm * scale) / 2);
+  oy = VIEW_M.t + Math.max(0, (cssH - VIEW_M.t - VIEW_M.b - mapHm * scale) / 2);
+}
+/* ---------------- 单车聚焦模式 ---------------- */
+function focusTruck() {        // 聚焦目标：面板当前选中且仍在场的货车（未派车/已离场返回 null）
+  if (!focusMode || !selVehicleId) return null;
+  return trucks.find(t => t.taskId === selVehicleId) || null;
+}
+function focusTaskIds() {      // 聚焦车的相关任务（该车次随车运单的每一吊）
+  const tk = focusTruck();
+  return (tk && tk.batch) ? new Set(tk.batch.tasks.map(t => t.id)) : null;
+}
+function syncFocusBtn() {     // 同步“⊙ 聚焦”按钮高亮态（测试桩下 classList 为空实现，安全）
+  const b = $('btnFocus');
+  if (b && b.classList) b.classList.toggle('on', focusMode);
+}
+window.setFocusMode = v => { focusMode = !!v; syncFocusBtn(); };   // 自检/调试钩子：程序化开关聚焦
+window.setFocusVehicle = id => { selVehicleId = id; };   // 自检/调试钩子：程序化指定聚焦车辆（等同下拉选择）
+function drawFocusOverlay(tk) { // 单车聚焦覆盖层：停靠目的地 + 每吊目标库位连线 + 顶部横幅
+  const batch = tk.batch;
+  const inKind = tk.kind === 'in';
+  const col = inKind ? '45,212,191' : '251,146,60';
+  const pulse = 0.55 + 0.35 * Math.sin(simTime * 5);
+  // 1) 停靠目的地标记（目标跨 · 通道）
+  const dx = mx(tk.x), dy = my(tk.targetY);
+  const rr9 = 9 * Math.min(1.5, Math.max(1, scale / 3));
+  ctx.save();
+  ctx.strokeStyle = `rgba(${col},${pulse})`; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(dx, dy, rr9, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = `rgba(${col},${pulse * 0.4})`; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.arc(dx, dy, rr9, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+  // 2) 每吊一条流动虚线：货车 -> 目标库位，并高亮该库位（完成吊降低亮度）
+  for (const t of batch.tasks) {
+    const sp = slotPoint(t.slot);
+    ctx.save();
+    ctx.strokeStyle = `rgba(${col},.5)`; ctx.lineWidth = 1.5;
+    ctx.setLineDash([7, 5]);
+    ctx.lineDashOffset = -(simTime * 20) % 12;
+    ctx.beginPath(); ctx.moveTo(mx(tk.x), my(tk.y)); ctx.lineTo(mx(sp.x), my(sp.y)); ctx.stroke();
+    ctx.restore();
+    const { x, y, w, h } = slotRect(t.slot);
+    markMeter(x, y, w, h, col, t.state === 'done' ? 0.22 : pulse);
+  }
+  // 3) 顶部聚焦横幅（屏幕坐标，不随缩放/平移变化）
+  const doneN = batch.tasks.filter(t => t.state === 'done').length;
+  focusBanner(`⊙ 聚焦 ${tk.plate} · ${tk.taskId} · ${inKind ? '卸货入库' : '取货出库'} · 目的地 ${SPANS[batch.span]} · ${laneNo(tk.lane)}号通道 · ${doneN}/${batch.tasks.length} 吊`, col);
+}
+function drawFocusEmptyHint() { // 聚焦开启但选中车不在场（未派车 / 已离场）
+  const txt = selVehicleId
+    ? `⊙ 聚焦 ${selVehicleId}：该车暂不在场（未派车或已离场），面板仍可回看`
+    : '⊙ 聚焦模式：请先在「车辆作业进度」选择一辆车';
+  focusBanner(txt, '114,136,179');
+}
+function focusBanner(txt, col) { // 左上角聚焦横幅（屏幕坐标，统一绘制）
+  ctx.save();
+  ctx.font = FONT(13);
+  const bw = ctx.measureText(txt).width + 24, bh = 26, bx = 12, by = 12;
+  rr(ctx, bx, by, bw, bh, 8);
+  ctx.fillStyle = 'rgba(6,14,30,.85)'; ctx.fill();
+  ctx.strokeStyle = `rgba(${col},.7)`; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = `rgba(${col},1)`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(txt, bx + 12, by + bh / 2);
+  ctx.restore();
 }
 function render() {
   computeLayout();
@@ -1802,6 +2287,9 @@ function render() {
   drawTargets();
   drawRobots();
   drawCranes();      // 天车架空，最后绘制
+  const ft = focusTruck();
+  if (ft) drawFocusOverlay(ft);
+  else if (focusMode) drawFocusEmptyHint();
   elClock.textContent = fmtClock(simTime);
 }
 function drawHChannels() { // 4 条横向通道（各宽 2m，横贯厂房全长；不计入总宽 90m）
@@ -2098,11 +2586,21 @@ function drawStorages() {
   }
 }
 function drawTrucks() { // 竖向通道内的货车（含入口外排队车辆）
+  const ft = focusTruck();
   for (const tk of trucks) {
+    if (ft && tk !== ft) continue;                 // 单车聚焦：只画聚焦车，隐藏其余货车
     const tw = 4.6, th = 13;                       // 车宽 × 车长（米，沿通道竖向）
     const px = mx(tk.x - tw / 2), py = my(tk.y - th / 2);
     const W = tw * scale, H = th * scale;
     const col = tk.kind === 'in' ? '45,212,191' : '251,146,60';
+    if (ft === tk) {                               // 聚焦车高亮描边圈（青）
+      ctx.save();
+      ctx.strokeStyle = 'rgba(56,189,248,.9)'; ctx.lineWidth = 2.5;
+      rr(ctx, px - 4, py - 4, W + 8, H + 8, Math.min(9, W / 3) + 3); ctx.stroke();
+      ctx.strokeStyle = 'rgba(56,189,248,.25)'; ctx.lineWidth = 6;
+      rr(ctx, px - 4, py - 4, W + 8, H + 8, Math.min(9, W / 3) + 3); ctx.stroke();
+      ctx.restore();
+    }
     // 车身
     rr(ctx, px, py, W, H, Math.min(6, W / 3));
     ctx.fillStyle = `rgba(${col},.16)`; ctx.fill();
@@ -2141,16 +2639,20 @@ function drawTrucks() { // 竖向通道内的货车（含入口外排队车辆�
   }
 }
 function drawCranes() { // 每跨 2 台架空桥式天车（大车沿 X，小车沿 Y）
+  const ids = focusTaskIds();
+  const rel = cr => !ids || !!(cr.job && ids.has(cr.job.taskId));   // 聚焦时只画正服务聚焦任务的天车（含其轨道）
   // 轨道（每跨上下各一条虚线）
   ctx.strokeStyle = 'rgba(244,114,182,.18)'; ctx.lineWidth = 1.5;
   ctx.setLineDash([10, 8]);
   for (const cr of cranes) {
+    if (!rel(cr)) continue;
     for (const ry of [cr.band.y0 + 0.5, cr.band.y1 - 0.5]) {
       ctx.beginPath(); ctx.moveTo(mx(0), my(ry)); ctx.lineTo(mx(300), my(ry)); ctx.stroke();
     }
   }
   ctx.setLineDash([]);
   for (const cr of cranes) {
+    if (!rel(cr)) continue;
     const t = Math.max(10, Math.min(18, scale * 4.5));
     const px = mx(cr.x), py = my(cr.y);
     // 大车梁（跨本跨 30m）
@@ -2209,8 +2711,10 @@ function drawPaths() {
   }
 }
 function drawTargets() { // 活动任务的目标库位脉冲高亮
+  const ids = focusTaskIds();
   for (const t of tasks) {
     if (t.state === 'done') continue;
+    if (ids && !ids.has(t.id)) continue;           // 单车聚焦：只高亮聚焦车相关任务的库位
     const pulse = 0.4 + 0.3 * Math.sin(simTime * 5);
     const { x, y, w, h } = slotRect(t.slot);
     if (t.robot) markMeter(x, y, w, h, hexToRgb(t.robot.color), pulse);
@@ -2228,7 +2732,11 @@ function markMeter(x, y, W, H, rgb, a) { // 像素坐标脉冲高亮框
   ctx.restore();
 }
 function drawRobots() {
-  for (const rb of robots) drawRobot(rb);
+  const ids = focusTaskIds();
+  for (const rb of robots) {
+    if (ids && !(rb.task && ids.has(rb.task.id))) continue;  // 单车聚焦：只画正服务聚焦任务的机器狗，隐藏其余设备狗
+    drawRobot(rb);
+  }
 }
 function drawRobot(rb) {
   const t = Math.max(13, Math.min(22, scale * 5.5)); // 图示放大
@@ -2336,7 +2844,97 @@ function hexToRgb(hex) {
   return `${n >> 16},${(n >> 8) & 255},${n & 255}`;
 }
 
+/* ---------------- 任务台账与时序 KPI（持久化 / 导出） ----------------
+ * 台账：任务完成即留痕（入库扫码入账 / 出库装车完成两处），含合同号与异常标记；
+ * localStorage 持久化（跨场次累计，环境不支持时静默降级）；顶栏可导出 CSV。 */
+function loadLedger() { // 启动时载入历史台账（重置仿真不清空，历史累计）
+  ledger = { tasks: [], histIn: 0, histOut: 0 };
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem('steelSimLedgerV1');
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d && Array.isArray(d.tasks)) ledger = { tasks: d.tasks.slice(-4000), histIn: d.histIn || 0, histOut: d.histOut || 0 };
+      }
+    }
+  } catch (_) { /* 隐私模式/存储损坏：降级为空台账 */ }
+}
+function ledgerPush(t) { // 任务闭环留痕：追加一条台账记录（上限 4000 条环形淘汰）
+  ledger.tasks.push({
+    id: t.id, type: t.type, spec: t.spec.name, slot: t.slot.code, stack: t.stackIdx + 1,
+    order: t.order ? t.order.id : '', created: Math.round(t.created), ended: Math.round(simTime),
+    dur: Math.round(simTime - t.created),
+    anomaly: !!(t.anomaly || (t.batch && t.batch.manifestMismatch) || t.scanRetries > 0),
+  });
+  if (ledger.tasks.length > 4000) ledger.tasks.shift();
+  if (t.type === 'in') ledger.histIn++; else ledger.histOut++;
+  window.__ledgerSize = ledger.tasks.length;
+}
+function flushLedger() { // 定期落盘（无 localStorage 的环境静默跳过）
+  try { if (typeof localStorage !== 'undefined') localStorage.setItem('steelSimLedgerV1', JSON.stringify(ledger)); } catch (_) {}
+}
+function exportLedger() { // 导出任务台账 CSV（UTF-8 BOM，Excel 直接打开）
+  if (!ledger.tasks.length) { toast('台账为空，暂无可导出记录'); return; }
+  const head = ['任务号', '类型', '规格', '库位', '垛', '合同号', '下发(仿真秒)', '完成(仿真秒)', '耗时(秒)', '异常'];
+  const rows = ledger.tasks.map(r => [r.id, r.type === 'in' ? '入库' : '出库', r.spec, r.slot, r.stack, r.order, r.created, r.ended, r.dur, r.anomaly ? '是' : ''].join(','));
+  const csv = '\ufeff' + head.join(',') + '\n' + rows.join('\n');
+  if (typeof Blob === 'undefined' || typeof URL === 'undefined' || !URL.createObjectURL) { toast('当前环境不支持文件导出'); return; }
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `库区任务台账-${ledger.tasks.length}条.csv`;
+  if (typeof a.click === 'function') a.click();
+  toast(`已导出任务台账 ${ledger.tasks.length} 条（含历史场次）`);
+}
+
 /* ---------------- 侧栏面板刷新（5Hz） ---------------- */
+function renderOrderPanel() { // 订单履约面板：在办订单按下单时间倒序，齐套计入完成数
+  const open = orders.filter(o => o.done < o.required);
+  $('orderCnt').textContent = `${open.length} 在办 · ${orders.length - open.length} 完成`;
+  const list = open.slice().sort((a, b) => b.created - a.created).slice(0, 12);
+  $('orderList').innerHTML = list.length ? list.map(o => {
+    const pct = Math.round(o.done / o.required * 100);
+    const stt = o.assigned < o.required ? '组批中' : '履约中';
+    const cls = o.assigned < o.required ? 'wait' : 'run';
+    return `<div class="orow" title="合同 ${o.id} · ${o.spec.name} · 需求 ${o.required} 捆（${(o.required * o.spec.weight).toFixed(1)}t）· 已装车 ${o.tonsLoaded.toFixed(1)}t">
+      <span class="oid">${o.id}</span>
+      <span class="ospec">${o.spec.name.replace(' ', '')}</span>
+      <span class="obar"><i style="width:${pct}%"></i></span>
+      <span class="ocnt">${o.done}/${o.required} 捆</span>
+      <span class="vchip ${cls}">${stt}</span>
+    </div>`;
+  }).join('') : '<div class="empty">暂无在办订单，等待出厂排产…</div>';
+}
+function renderKpiChart() { // 时序趋势图：库存/累计完成/排队三线（每 60 仿真秒一点）
+  const c = $('kpiChart');
+  if (!c || typeof c.getContext !== 'function') return;   // 无头自检环境无 2D 上下文，静默跳过
+  const w = c.clientWidth || 400, h = 56;
+  if (c.width !== w) c.width = w;
+  c.height = h;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, w, h);
+  const s = kpiSeries;
+  if (s.length < 2) {
+    g.fillStyle = 'rgba(148,163,184,.6)'; g.font = '10px sans-serif'; g.textBaseline = 'middle';
+    g.fillText('采样中（每 60 仿真秒记一点）…', 8, h / 2);
+    return;
+  }
+  const maxInv = Math.max(TOTAL_BUNDLE_CAP * 0.05, ...s.map(p => p.inv));
+  const maxDone = Math.max(4, ...s.map(p => p.done));
+  const maxPend = Math.max(4, ...s.map(p => p.pend));
+  const line = (key, max, color) => {
+    g.strokeStyle = color; g.lineWidth = 1.4; g.beginPath();
+    s.forEach((p, i) => {
+      const x = i / (s.length - 1) * (w - 8) + 4;
+      const y = h - 5 - (p[key] / max) * (h - 12);
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    });
+    g.stroke();
+  };
+  line('inv', maxInv, '#22d3ee');      // 当前库存（捆）
+  line('done', maxDone, '#34d399');    // 累计完成任务（捆）
+  line('pend', maxPend, '#fbbf24');    // 待处理排队（捆）
+}
 function taskPhaseText(t) { // 任务卡片子状态（车辆/摄像头/天车/机器狗协同阶段）
   const tk = t.truck;                       // 车次派车后才有货车
   if (t.type === 'in') {
@@ -2350,7 +2948,9 @@ function taskPhaseText(t) { // 任务卡片子状态（车辆/摄像头/天车/�
   }
   if (t.state === 'crane') {
     if (!tk || tk.state !== 'WORKING') return '待运单确认后装车';
+    if (t.restackWaiting) return '等待倒垛落点（压货 · 先进先出排队）';
     if (!t.cranePushed) return '等待天车分配';
+    if (t.restackLeft > 0) return `倒垛中（先移走 ${t.restackLeft} 捆上方压货）`;
     return '天车装车中（库位 -> 车）';
   }
   if (!tk) return '等待组车（凑满一车 6-10 吊）';
@@ -2369,6 +2969,7 @@ function truckStateText(tk) {
     case 'PLATE_SCAN': return '停靠 · 识别车牌';
     case 'MANIFEST': return '吊取运单';
     case 'WORKING': return '天车装卸中';
+    case 'VERIFY': return '出场复验';
     case 'LEAVE': return '离场中';
     default: return tk.state;
   }
@@ -2425,7 +3026,7 @@ function renderVehiclePanel() {
         <span class="badge" style="margin-left:0">${gone ? '已离场' : truckStateText(veh)}</span>
       </div>
       <div class="vrow2">
-        <span class="vmeta">${batch ? batch.id : veh.taskId}</span>
+        <span class="vmeta">${batch ? batch.id : veh.taskId}${batch && batch.order ? ' · ' + batch.order.id : ''}</span>
         <span class="vmeta">${SPANS[batch.span]} · ${laneNo(veh.lane)} 号通道</span>
         <span class="vmeta">共 ${loads.length} 吊</span>
       </div>
@@ -2448,7 +3049,7 @@ function refreshPanels() {
   const pending = tasks.filter(t => t.state === 'pending').length;
   const running = tasks.filter(t => t.state === 'assigned' || t.state === 'crane').length;
   $('kpiDone').textContent = done.length;
-  $('kpiDoneSub').textContent = `入 ${inDone} · 出 ${outDone} · 车次 ${trucksDone}`;
+  $('kpiDoneSub').textContent = `入 ${inDone} · 出 ${outDone} · 车次 ${trucksDone} · 订单 ${orders.filter(o => o.done >= o.required).length}`;
   $('kpiThru').textContent = simTime > 60 ? (done.length / (simTime / 3600)).toFixed(1) : '–';
   $('kpiAvg').textContent = done.length
     ? fmtDur(done.reduce((s, t) => s + (t.ended - t.created), 0) / done.length) : '–';
@@ -2499,10 +3100,11 @@ function refreshPanels() {
   elRobotCards.innerHTML = devTab === 'robot' ? dogCards
     : devTab === 'crane' ? craneCards
     : dogCards + craneCards;
-  // 任务队列
-  const active = tasks.filter(t => t.state !== 'done')
+  // 任务队列（单车聚焦时只显示聚焦车的相关任务）
+  const fids = focusTaskIds();
+  const active = tasks.filter(t => t.state !== 'done' && (!fids || fids.has(t.id)))
     .sort((a, b) => (a.robot ? 1 : 0) - (b.robot ? 1 : 0) || a.created - b.created);
-  $('taskCount').textContent = `${active.length} 个进行中`;
+  $('taskCount').textContent = fids ? `${active.length} 个进行中 · 聚焦` : `${active.length} 个进行中`;
   elTaskList.innerHTML = active.length ? active.map(t => {
     const run = !!t.robot;
     const phase = taskPhaseText(t);
@@ -2513,6 +3115,7 @@ function refreshPanels() {
       <div class="thead">
         <span class="tid">${t.id}</span>
         <span class="ttype ${t.type}">${t.type === 'in' ? '入库' : '出库'}</span>
+        ${t.order ? `<span class="tord" title="所属提货订单">${t.order.id}</span>` : ''}
         <span class="tstate ${run ? 'run' : 'wait'}">${run ? STAGE_NAMES[t.stage] : phase}</span>
         <span class="telapsed">${fmtDur(simTime - t.created)}</span>
       </div>
@@ -2522,6 +3125,10 @@ function refreshPanels() {
   }).join('') : '<div class="empty">队列为空，等待任务下发…</div>';
   // 车辆作业进度
   renderVehiclePanel();
+  // 订单履约 + 时序趋势 + 台账计数
+  renderOrderPanel();
+  renderKpiChart();
+  $('trendCnt').textContent = `台账 ${ledger.tasks.length} 条 · 历史累计`;
   // 流程链路条
   const counts = [0, 0, 0, 0, 0, 0];
   for (const t of tasks) if (t.state !== 'done' && t.stage < 6) counts[t.stage]++;
@@ -2549,6 +3156,7 @@ cv.addEventListener('mousemove', e => {
 });
 cv.addEventListener('mouseleave', () => { hoverCell = null; elTooltip.style.display = 'none'; });
 cv.addEventListener('click', e => {
+  if (suppressClick) { suppressClick = false; return; }   // 拖拽平移后不误触下单
   const p = cellFromEvent(e);
   if (!p) return;
   const t = tiles[p.r][p.c];
@@ -2568,6 +3176,39 @@ cv.addEventListener('click', e => {
     const task = createTask('in', { storage: st });
     if (task) toast(`已下发入库任务 ${task.id}：货车进场 -> ${st.code}`);
   }
+});
+/* ---------------- 视图缩放 / 平移：滚轮以光标为中心缩放，左键拖拽平移 ---------------- */
+let pan = null, suppressClick = false;
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = cv.getBoundingClientRect();
+  const px = e.clientX - rect.left, py = e.clientY - rect.top;
+  const bs = fitScale();
+  const ns = Math.min(bs * 16, Math.max(bs * 0.4, scale * Math.exp(-e.deltaY * 0.0012)));
+  const k = ns / scale;
+  userView = { scale: ns, ox: px - (px - ox) * k, oy: py - (py - oy) * k };
+}, { passive: false });
+cv.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  pan = { x: e.clientX, y: e.clientY, ox, oy, s: scale };
+  suppressClick = false;
+  cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener('pointermove', e => {
+  if (!pan) return;
+  const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+  if (!suppressClick && Math.abs(dx) + Math.abs(dy) > 5) {
+    suppressClick = true;
+    cv.style.cursor = 'grabbing';
+    elTooltip.style.display = 'none';
+  }
+  if (suppressClick) userView = { scale: pan.s, ox: pan.ox + dx, oy: pan.oy + dy };
+});
+cv.addEventListener('pointerup', e => {
+  if (!pan) return;
+  try { cv.releasePointerCapture(e.pointerId); } catch (_) {}
+  pan = null;
+  cv.style.cursor = '';
 });
 function updateTooltip(e) {
   if (!hoverCell) { elTooltip.style.display = 'none'; return; }
@@ -2680,7 +3321,15 @@ $('settingsMask').addEventListener('click', e => {
   if (e.target === $('settingsMask')) $('settingsMask').classList.remove('open');
 });
 $('btnDefaults').addEventListener('click', restoreDefaultParams);
-$('btnReset').addEventListener('click', () => { init(); toast('仿真已重置'); });
+$('btnReset').addEventListener('click', () => { init(); userView = null; toast('仿真已重置（历史台账保留）'); });
+$('btnExport').addEventListener('click', exportLedger);
+$('btnFitView').addEventListener('click', () => { userView = null; });
+$('btnFocus').addEventListener('click', () => {
+  focusMode = !focusMode; syncFocusBtn();
+  logEvent('system', focusMode
+    ? (selVehicleId ? `单车聚焦模式：开启，只看 ${selVehicleId}（目的地 + 相关任务），其余车辆设备已隐藏` : '单车聚焦模式：开启（请先在「车辆作业进度」选择一辆车）')
+    : '单车聚焦模式：关闭，恢复全景');
+});
 document.addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); togglePause(); }
   else if (e.key === 's' || e.key === 'S') $('btnStep').click();
@@ -2704,12 +3353,17 @@ function init() {
   tasks = []; trucks = []; craneJobs = [];
   batches = []; batchSeq = 0; trucksDone = 0;
   truckHistory = []; selVehicleId = null; vehPanelSig = null;
+  focusMode = false; syncFocusBtn();   // 重置后退出单车聚焦
+  orders = []; orderSeq = 0;           // 出库订单（合同）层重置（历史台账不清空，跨场次累计）
+  window.__ordersDone = 0;
+  kpiSeries = []; lastSampleAt = -1e9; lastFulfillAt = 0;
+  window.__abnormal = { scanFail: 0, manifestMismatch: 0, manualOverride: 0, verifyIssue: 0, scanAnomalyLog: 0 };
   window.__batchLoads = [];
   window.__spawnLog = [];
   buildMap();
   buildColumns();
   resetCranes();
-  // 初始库存（预置随机库存，均已扫码入账，出库任务可立即触发）
+  // 期初库存：兜底内置随机分布（DB 服务可达时随后由 loadInventoryFromDb 覆盖为实际钢材分布）
   occupiedCount = 0;
   for (let n = 0; n < CFG.initInventory; n++) {
     const st = pick(storages);
@@ -2721,6 +3375,7 @@ function init() {
     st.state = 'occupied';
     occupiedCount++;
   }
+  loadInventoryFromDb();   // 期初优先从库存数据库加载实际钢材分布（服务不可达时保留上述兜底库存）
   robots = [
     new Robot(0, 'D-01', '疾风', '#22d3ee', { r: 7, c: 7 }),
     new Robot(1, 'D-02', '闪电', '#818cf8', { r: 7, c: 19 }),
@@ -2736,10 +3391,54 @@ function init() {
   logEvent('system', '作业流程：入库 = 货车进场停靠 -> 立柱摄像头识别车牌 -> 吊取运单 -> 天车吊运落料 -> 机器狗扫码入账；出库 = 机器狗扫码核验 -> 货车进场 -> 识别车牌吊取装车计划 -> 天车装车 -> 货车离场');
   logEvent('system', '调度规则：机器狗就近分配 + 电量约束 + 先到先服务（出库先进先出）；天车限本跨作业，同跨双车区间互让；天车须待货车运单确认后才开工');
   logEvent('system', '车次规则：一车 6-10 吊（同跨装卸），凑满一车或超时按现有吊数放行；任务按吊计数，货车全部吊完才离场');
+  logEvent('system', '出库履约：出厂车 = 提货订单（合同号 + 需求捆数/吨数），按规格先进先出凑捆，压货先倒垛，合同捆齐套才闭环；货车离场前须出场复验');
   logEvent('system', `生产节奏：每日进厂 ${CFG.production.inPerDay} 辆 / 出厂 ${CFG.production.outPerDay} 辆（可在「⚙ 设备参数」调整），订单按天均匀铺开，随车运单 6-10 吊`);
-  logEvent('system', '通行规则：机器狗只沿通道（4 条 2m 横向廊道 + 3 条竖向车辆通道 + 服务带）与垛位间隙行走，不进入库位内部，扫码时从通道边进入目标库位');
+  logEvent('system', '通行规则：机器狗只沿通道（4 条 2m 横向廊道 + 3 条竖向车辆通道 + 服务带）与垛位间隙行走，不进入库位内部；走到垛位旁的通道边站定后转身面向垛位扫码');
   buildSettingsUI();
   refreshPanels();
+}
+
+/* ---------------- 期初库存：从库存数据库加载实际钢材分布 ----------------
+ * 数据源 = warehouse.db（storage_slots/stacks，分区专业化归堆，见 server/database.js）。
+ * 服务可达时用库内真实分布覆盖内置兜底库存；不可达（未启服务/无 fetch，
+ * 如 Node 无头自检环境）时静默保留兜底随机库存，仿真照常运行。 */
+function applyDbInventory(slots) {
+  const byCode = new Map(storages.map(s => [s.code, s]));
+  _invSeed = 20260824;   // 复位捆明细随机流：钢种/长度/炉号可复现（与期初兜底库存一致）
+  let total = 0;
+  for (const row of slots) {
+    const st = byCode.get(row.code);
+    if (!st) continue;
+    for (const k of st.stacks) Object.assign(k, { spec: null, count: 0, pending: 0, inTime: 0, grade: '', len: 0, heat: '' }), k.bundles.length = 0;
+    let slotTotal = 0;
+    for (const ks of row.stacks || []) {
+      if (!ks.count) continue;
+      const spec = SPECS.find(sp => sp.name === ks.spec);
+      if (!spec) continue;
+      const k = st.stacks[ks.stack_no - 1];
+      if (!k) continue;
+      k.spec = spec; k.inTime = ks.in_time ?? -3600; k.pending = ks.pending || 0;   // 期初均已扫码入账（pending=0）
+      for (let n = 0; n < ks.count; n++) { mkBundleRec(st, ks.stack_no - 1, spec, !!ks.pending, k.inTime); k.count++; }
+      slotTotal += ks.count;
+    }
+    st.state = slotTotal > 0 ? 'occupied' : 'free';
+    total += slotTotal;
+  }
+  occupiedCount = total;
+  invBump();
+  logEvent('system', `期初库存已从库存数据库加载实际钢材分布：${total} 捆 · 利用率 ${(total / TOTAL_BUNDLE_CAP * 100).toFixed(1)}%（铁姆肯=圆钢 · 大棒=螺纹钢 · 长钢=方钢 · 中棒=混区，卸货按推荐算法归堆）`);
+}
+async function loadInventoryFromDb() {
+  if (typeof fetch !== 'function') return;   // 无头自检环境无 fetch：使用兜底库存
+  try {
+    const res = await fetch(DB_API + '/api/slots');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const { slots } = await res.json();
+    if (!Array.isArray(slots) || !slots.length) throw new Error('库位数据为空');
+    applyDbInventory(slots);
+  } catch {
+    logEvent('system', `库存数据库（${DB_API}）不可达，使用内置期初库存兜底（可运行 npm run db:serve 启用真实钢材分布）`);
+  }
 }
 
 /* =====================================================================
@@ -2760,12 +3459,12 @@ function init() {
     d: s.merged ? rowY(5) + M.SPAN_W - rowY(1) : M.SPAN_W,
   });
   const invSpanName = s => s.merged ? '整跨合并' : SPANS[spanOfSlot(s)];
-  function stackCell(s, i) {   // 垛在库位内的网格：4 列(宽向) × 2 排(深向)
+  function stackCell(s, i) {   // 垛在库位内的网格：1 列(宽向) × 8 排(深向，竖着排列，与主视图一致)
     const g = slotGeo(s), dEff = Math.min(g.d, 40);
     return {
-      x: g.x + ((i % 4) - 1.5) * (g.w / 4),
-      z: g.z + ((i < 4 ? 0 : 1) - 0.5) * (dEff / 2),
-      cw: g.w / 4, cd: dEff / 2,
+      x: g.x,
+      z: g.z + (i - 3.5) * (dEff / 8),
+      cw: g.w, cd: dEff / 8,
     };
   }
   /* 捆内支数排布（自下而上每层支数；6 支 = 3+2+1 金字塔） */
@@ -3337,6 +4036,21 @@ function init() {
       plate.userData = { kind: 'slot', slot: s };
       g.add(pickable(plate));
     }
+    /* 垛位底座：每库位 8 个垛位（含空垛）全部显示，竖着一排 */
+    const posInst = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      T.mat('stackPosBase', () => new THREE.MeshStandardMaterial({ color: 0x0c1a33, roughness: .85 })),
+      storages.length * STACKS_PER_SLOT);
+    let pi = 0; const pm = new THREE.Matrix4();
+    for (const s of storages) for (let si = 0; si < STACKS_PER_SLOT; si++) {
+      const cell = stackCell(s, si);
+      pm.makeScale(cell.cw - .9, .12, cell.cd - .4);
+      pm.setPosition(WX(cell.x), .36, WZ(cell.z));
+      posInst.setMatrixAt(pi++, pm);
+    }
+    posInst.instanceMatrix.needsUpdate = true;
+    posInst.receiveShadow = true;
+    g.add(posInst);
     const occ = [];
     for (const s of storages) s.stacks.forEach((k, si) => { if (k.count > 0) occ.push({ s, si, k }); });
     if (occ.length) {
@@ -3388,7 +4102,7 @@ function init() {
     for (let si = 0; si < STACKS_PER_SLOT; si++) {
       const cell = stackCell(s, si), k = s.stacks[si];
       const base = new THREE.Mesh(
-        new THREE.BoxGeometry(cell.cw - .3, .22, cell.cd - .5),
+        new THREE.BoxGeometry(Math.max(cell.cw - .3, k.count > 0 ? k.len + .5 : 0), .22, cell.cd - .5),
         T.mat('stackBase', () => new THREE.MeshStandardMaterial({ color: 0x0c1a33, roughness: .85 })));
       base.position.set(WX(cell.x), .35, WZ(cell.z));
       base.receiveShadow = true;
@@ -3397,8 +4111,7 @@ function init() {
       const Hb = sp ? bundleH(sp) : 0;
       if (sp) {
         k.bundles.forEach((b, li) => {
-          const bm = buildBundleMesh(b);
-          bm.rotation.y = Math.PI / 2;
+          const bm = buildBundleMesh(b);   // 捆长沿库位宽度（X）横放
           const jx = (b.id.charCodeAt(3) % 7 - 3) * .025, jz = (b.id.charCodeAt(5) % 7 - 3) * .025;
           bm.position.set(WX(cell.x) + jx, .45 + li * Hb + Hb / 2, WZ(cell.z) + jz);
           bm.traverse(o => { if (o.userData.kind === 'bundle') o.userData.hidden = true; });
@@ -3427,21 +4140,20 @@ function init() {
     if (!k || k.count === 0) return;
     const cell = stackCell(s, si), sp = k.spec;
     const base = new THREE.Mesh(
-      new THREE.BoxGeometry(cell.cw - .2, .3, cell.cd - .4),
+      new THREE.BoxGeometry(Math.max(cell.cw - .2, k.len + .5), .3, cell.cd - .4),
       T.mat('stackBaseBig', () => new THREE.MeshStandardMaterial({ color: 0x0c1a33, roughness: .85 })));
     base.position.set(WX(cell.x), .15, WZ(cell.z));
     base.receiveShadow = true;
     g.add(base);
     const Hb = bundleH(sp);
     k.bundles.forEach((b, li) => {
-      const bm = buildBundleMesh(b);
-      bm.rotation.y = Math.PI / 2;
+      const bm = buildBundleMesh(b);   // 捆长沿库位宽度（X）横放
       const jx = (b.id.charCodeAt(3) % 7 - 3) * .025;
       bm.position.set(WX(cell.x) + jx, .3 + li * Hb + Hb / 2, WZ(cell.z));
       bm.traverse(o => { if (o.userData.kind === 'bundle' && !o.userData.noPick) pickable(o); });
       g.add(bm);
       const lb = makeLabel(`第${li + 1}层`, '#5f7bb0', 4.5);
-      lb.position.set(WX(cell.x) - cell.cw / 2 - 2.2, .3 + li * Hb + Hb / 2, WZ(cell.z) + b.len / 2 + 1.2);
+      lb.position.set(WX(cell.x) - b.len / 2 - 2.2, .3 + li * Hb + Hb / 2, WZ(cell.z));
       g.add(lb);
     });
     const lb = makeLabel(`${s.code} 第${si + 1}垛 · ${sp.name} ${k.grade} ${k.len}m`, sp.color, 7);
@@ -3456,12 +4168,11 @@ function init() {
     if (!b) return;
     const cell = stackCell(s, b.stackIdx), sp = SPECS[b.specIdx];
     const Hb = bundleH(sp), layer = k.bundles.indexOf(b);
-    const bm = buildBundleMesh(b, { tag: true });
-    bm.rotation.y = Math.PI / 2;
+    const bm = buildBundleMesh(b, { tag: true });   // 捆长沿库位宽度（X）横放
     bm.position.set(WX(cell.x), layer * Hb + Hb / 2 + .3, WZ(cell.z));
     g.add(bm);
     const base = new THREE.Mesh(
-      new THREE.BoxGeometry(cell.cw - .2, .3, cell.cd - .4),
+      new THREE.BoxGeometry(Math.max(cell.cw - .2, b.len + .5), .3, cell.cd - .4),
       T.mat('stackBaseBig', () => new THREE.MeshStandardMaterial({ color: 0x0c1a33, roughness: .85 })));
     base.position.set(WX(cell.x), .05, WZ(cell.z));
     g.add(base);
@@ -3509,13 +4220,13 @@ function init() {
       const s = res.slot, si = res.stackIdx, k = s.stacks[si];
       const cell = stackCell(s, si);
       if (!k || k.count === 0) return { html: `<b>${s.code} 第 ${si + 1} 垛</b><br><span class="tt-dim">空垛 · 点击查看库位</span>`,
-        box: [WX(cell.x), 1, WZ(cell.z), 2, 2, 2] };
+        box: [WX(cell.x), .8, WZ(cell.z), cell.cw - .4, 1.4, cell.cd - .4] };
       const sp = k.spec, h = k.count * bundleH(sp);
       const np = k.bundles.filter(b => b.pending).length;
       return {
         html: `<b>${s.code} · 第 ${si + 1} 垛</b><br>${sp.name} · ${k.grade} · ${k.len}m<br>` +
           `${k.count} 捆 / 20 · ${k.count * sp.rods} 支${np ? ` · <span class="tt-dim">${np} 捆待核验</span>` : ''}<br><span class="tt-dim">炉号 ${k.heat} · 点击下钻</span>`,
-        box: [WX(cell.x), h / 2 + .4, WZ(cell.z), 2.4, h + .8, Math.min(cell.cd, k.len + 1.5)],
+        box: [WX(cell.x), h / 2 + .4, WZ(cell.z), Math.min(cell.cw, k.len + 1), h + .8, cell.cd],
       };
     }
     const b = res.b, sp = SPECS[b.specIdx], s = storages[b.slotId];
@@ -3542,7 +4253,7 @@ function init() {
       const Hb = bundleH(sp), W = bundleW(sp);
       const layer = k ? k.bundles.indexOf(res.b) : 0;
       const y = (view.level === 'stack' ? .3 : .45) + Math.max(0, layer) * Hb + Hb / 2;
-      hlBox(WX(cell.x), y, WZ(cell.z), W + .35, Hb + .25, res.b.len + .35);
+      hlBox(WX(cell.x), y, WZ(cell.z), res.b.len + .35, Hb + .25, W + .35);
     } else hlBox(...info.box);
     invTooltip.innerHTML = info.html;
     invTooltip.style.display = 'block';
@@ -3567,12 +4278,14 @@ function init() {
       const dx = e.movementX || 0, dy = e.movementY || 0;
       if (Math.abs(e.clientX - down.x) + Math.abs(e.clientY - down.y) > 4) moved = true;
       if (!moved) return;
-      if (down.btn === 0 && !e.shiftKey) {
+      if (down.btn === 2 || e.shiftKey) {
+        // 右键 / Shift+左键：旋转
         cam.theta -= dx * .0052;
         cam.phi = Math.min(1.5, Math.max(.06, cam.phi - dy * .0052));
         T.autoRot = false;
         const cb = $('invAutoRot'); if (cb) cb.checked = false;
       } else {
+        // 左键：平移（与主沙盘视图一致）
         const k = cam.r * .0013;
         const fx = -Math.sin(cam.theta), fz = -Math.cos(cam.theta);
         cam.target.x += (-Math.cos(cam.theta) * -dx - fx * dy) * k * -1;
@@ -3582,7 +4295,7 @@ function init() {
     });
     cvI.addEventListener('pointerup', e => {
       T.dragging = false;
-      if (down && !moved) {
+      if (down && !moved && e.button === 0) {
         rectPos(e);
         T.raycaster.setFromCamera(T.pointer, T.camera);
         const hits = T.raycaster.intersectObjects(T.pickables, false);
@@ -3688,6 +4401,7 @@ function init() {
   };
 })();
 
+loadLedger();    // 载入历史台账（跨场次累计，重置仿真不清空）
 init();
 resizeCanvas();
 requestAnimationFrame(frame);

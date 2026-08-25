@@ -224,7 +224,7 @@
   <section id="stage">
     <div id="cvWrap">
       <canvas id="cv"></canvas>
-      <div id="hint">左键拖拽 <kbd>旋转</kbd> · 滚轮 <kbd>缩放</kbd> · 右键拖拽 <kbd>平移</kbd> · 点击库位 / 垛 / 捆下钻 · <kbd>Esc</kbd> 返回上级</div>
+      <div id="hint">左键拖拽 <kbd>平移</kbd> · 右键拖拽 <kbd>旋转</kbd> · 滚轮 <kbd>缩放</kbd> · 点击库位 / 垛 / 捆下钻 · <kbd>Esc</kbd> 返回上级</div>
       <div id="tooltip"></div>
       <div id="detail"></div>
       <div id="legend"></div>
@@ -383,13 +383,13 @@ const slots = [];
   }
 })();
 const spanName = s => s.merged ? '整跨合并' : SPAN_NAMES[SPAN_ROWS.indexOf(s.spanRow)];
-/* 垛在库位内的网格：4 列(宽向) × 2 排(深向)；垛内捆沿深度平放堆叠 */
+/* 垛在库位内的网格：1 列(宽向) × 8 排(深向，竖着排列，与主视图一致)；垛内捆沿宽度横放堆叠 */
 function stackCell(s, i) {
   const dEff = Math.min(s.d, 40);
   return {
-    x: s.x + ((i % 4) - 1.5) * (s.w / 4),
-    z: s.z + ((i < 4 ? 0 : 1) - 0.5) * (dEff / 2),
-    cw: s.w / 4, cd: dEff / 2,
+    x: s.x,
+    z: s.z + (i - 3.5) * (dEff / 8),
+    cw: s.w, cd: dEff / 8,
   };
 }
 const stackCount = st => st ? st.bundles.length : 0;
@@ -989,6 +989,21 @@ function buildYardView() {
     plate.userData = { kind: 'slot', slot: s };
     g.add(pickable(plate));
   }
+  /* 垛位底座：每库位 8 个垛位（含空垛）全部显示，竖着一排 */
+  const posInst = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    T.mat('stackPosBase', () => new THREE.MeshStandardMaterial({ color: 0x0c1a33, roughness: .85 })),
+    slots.length * STACKS_PER_SLOT);
+  let pi = 0; const pm = new THREE.Matrix4();
+  for (const s of slots) for (let si = 0; si < STACKS_PER_SLOT; si++) {
+    const cell = stackCell(s, si);
+    pm.makeScale(cell.cw - .9, .12, cell.cd - .4);
+    pm.setPosition(WX(cell.x), .36, WZ(cell.z));
+    posInst.setMatrixAt(pi++, pm);
+  }
+  posInst.instanceMatrix.needsUpdate = true;
+  posInst.receiveShadow = true;
+  g.add(posInst);
   /* 垛柱（InstancedMesh，一垛一柱，高度 ∝ 捆数，颜色 = 规格色/灰） */
   const occ = [];
   for (const s of slots) s.stacks.forEach((st, si) => { if (st) occ.push({ s, si, st }); });
@@ -1041,7 +1056,7 @@ function buildSlotView() {
   for (let si = 0; si < STACKS_PER_SLOT; si++) {
     const cell = stackCell(s, si), st = s.stacks[si];
     const base = new THREE.Mesh(
-      new THREE.BoxGeometry(cell.cw - .3, .22, cell.cd - .5),
+      new THREE.BoxGeometry(Math.max(cell.cw - .3, st ? st.len + .5 : 0), .22, cell.cd - .5),
       T.mat('stackBase', () => new THREE.MeshStandardMaterial({ color: 0x0c1a33, roughness: .85 })));
     base.position.set(WX(cell.x), .35, WZ(cell.z));
     base.receiveShadow = true;
@@ -1050,8 +1065,7 @@ function buildSlotView() {
     const Hb = sp ? bundleH(sp) : 0;
     if (st) {
       st.bundles.forEach((b, k) => {
-        const bm = buildBundleMesh(b);
-        bm.rotation.y = Math.PI / 2;                 // 长度方向 -> 库位深度（Z）
+        const bm = buildBundleMesh(b);                 // 捆长沿库位宽度（X）横放
         const jx = (b.id.charCodeAt(3) % 7 - 3) * .025, jz = (b.id.charCodeAt(5) % 7 - 3) * .025;
         bm.position.set(WX(cell.x) + jx, .45 + k * Hb + Hb / 2, WZ(cell.z) + jz);
         bm.traverse(o => { if (o.userData.kind === 'bundle') o.userData.hidden = true; });
@@ -1078,21 +1092,20 @@ function buildStackView() {
   const g = T.viewGroup, s = slots[view.slotId], si = view.stackIdx;
   const cell = stackCell(s, si), st = s.stacks[si], sp = SPECS[st.specIdx];
   const base = new THREE.Mesh(
-    new THREE.BoxGeometry(cell.cw - .2, .3, cell.cd - .4),
+    new THREE.BoxGeometry(Math.max(cell.cw - .2, st.len + .5), .3, cell.cd - .4),
     T.mat('stackBaseBig', () => new THREE.MeshStandardMaterial({ color: 0x0c1a33, roughness: .85 })));
   base.position.set(WX(cell.x), .15, WZ(cell.z));
   base.receiveShadow = true;
   g.add(base);
   const Hb = bundleH(sp);
   st.bundles.forEach((b, k) => {
-    const bm = buildBundleMesh(b);
-    bm.rotation.y = Math.PI / 2;
+    const bm = buildBundleMesh(b);   // 捆长沿库位宽度（X）横放
     const jx = (b.id.charCodeAt(3) % 7 - 3) * .025;
     bm.position.set(WX(cell.x) + jx, .3 + k * Hb + Hb / 2, WZ(cell.z));
     bm.traverse(o => { if (o.userData.kind === 'bundle' && !o.userData.noPick) pickable(o); });
     g.add(bm);
     const lb = makeLabel(`第${k + 1}层`, '#5f7bb0', 4.5);
-    lb.position.set(WX(cell.x) - cell.cw / 2 - 2.2, .3 + k * Hb + Hb / 2, WZ(cell.z) + b.len / 2 + 1.2);
+    lb.position.set(WX(cell.x) - b.len / 2 - 2.2, .3 + k * Hb + Hb / 2, WZ(cell.z));
     g.add(lb);
   });
   const lb = makeLabel(`${s.code} 第${si + 1}垛 · ${sp.name} ${st.grade} ${st.len}m`, SPECS[st.specIdx].color, 12);
@@ -1105,12 +1118,11 @@ function buildBundleView() {
   const b = bundleById.get(view.bundleId), s = slots[b.slotId];
   const cell = stackCell(s, b.stackIdx), sp = SPECS[b.specIdx];
   const Hb = bundleH(sp);
-  const bm = buildBundleMesh(b, { tag: true });
-  bm.rotation.y = Math.PI / 2;
+  const bm = buildBundleMesh(b, { tag: true });   // 捆长沿库位宽度（X）横放
   bm.position.set(WX(cell.x), b.layer * Hb + Hb / 2 + .3, WZ(cell.z));
   g.add(bm);
   const base = new THREE.Mesh(
-    new THREE.BoxGeometry(cell.cw - .2, .3, cell.cd - .4),
+    new THREE.BoxGeometry(Math.max(cell.cw - .2, b.len + .5), .3, cell.cd - .4),
     T.mat('stackBaseBig', () => new THREE.MeshStandardMaterial({ color: 0x0c1a33, roughness: .85 })));
   base.position.set(WX(cell.x), .05, WZ(cell.z));
   g.add(base);
@@ -1155,14 +1167,15 @@ function hoverInfo(res, hitPoint) {   // -> { lines: [[label,value]…], box:[x,
   }
   if (res.kind === 'stack') {
     const s = res.slot, si = res.stackIdx, st = s.stacks[si];
+    const cell = stackCell(s, si);
     if (!st) return { html: `<b>${s.code} 第 ${si + 1} 垛</b><br><span class="tt-dim">空垛 · 点击查看库位</span>`,
-      box: [WX(stackCell(s, si).x), 1, WZ(stackCell(s, si).z), 2, 2, 2] };
-    const sp = SPECS[st.specIdx], cell = stackCell(s, si);
+      box: [WX(cell.x), .8, WZ(cell.z), cell.cw - .4, 1.4, cell.cd - .4] };
+    const sp = SPECS[st.specIdx];
     const h = stackCount(st) * bundleH(sp);
     return {
       html: `<b>${s.code} · 第 ${si + 1} 垛</b><br>${sp.name} · ${st.grade} · ${st.len}m<br>` +
         `${st.bundles.length} 捆 / 20 · ${st.bundles.length * sp.rods} 支<br><span class="tt-dim">炉号 ${st.heat} · 点击下钻</span>`,
-      box: [WX(cell.x), h / 2 + .4, WZ(cell.z), 2.4, h + .8, Math.min(cell.cd, st.len + 1.5)],
+      box: [WX(cell.x), h / 2 + .4, WZ(cell.z), Math.min(cell.cw, st.len + 1), h + .8, cell.cd],
     };
   }
   const b = res.b, sp = SPECS[b.specIdx], s = slots[b.slotId];
@@ -1187,7 +1200,7 @@ function raycastHover() {
     const s = slots[res.b.slotId], cell = stackCell(s, res.b.stackIdx);
     const Hb = bundleH(sp), W = bundleW(sp);
     const y = (view.level === 'stack' ? .3 : .45) + res.b.layer * Hb + Hb / 2;
-    hlBox(WX(cell.x), y, WZ(cell.z), W + .35, Hb + .25, res.b.len + .35);
+    hlBox(WX(cell.x), y, WZ(cell.z), res.b.len + .35, Hb + .25, W + .35);
   } else hlBox(...info.box);
   elTooltip.innerHTML = info.html;
   elTooltip.style.display = 'block';
@@ -1213,12 +1226,12 @@ function bindPointer() {
     const dx = e.movementX || 0, dy = e.movementY || 0;
     if (Math.abs(e.clientX - down.x) + Math.abs(e.clientY - down.y) > 4) moved = true;
     if (!moved) return;
-    if (down.btn === 0 && !e.shiftKey) {            // 旋转
+    if (down.btn === 2 || e.shiftKey) {            // 旋转（右键 / Shift+左键）
       cam.theta -= dx * .0052;
       cam.phi = Math.min(1.5, Math.max(.06, cam.phi - dy * .0052));
       T.autoRot = false;
       const cb = $('autoRot'); if (cb) cb.checked = false;
-    } else {                                        // 平移（右键 / Shift+左键）
+    } else {                                        // 平移（左键）
       const k = cam.r * .0013;
       const fx = -Math.sin(cam.theta), fz = -Math.cos(cam.theta);
       cam.target.x += (-Math.cos(cam.theta) * -dx - fx * dy) * k * -1;
@@ -1228,7 +1241,7 @@ function bindPointer() {
   });
   cv.addEventListener('pointerup', e => {
     T.dragging = false;
-    if (down && !moved) {
+    if (down && !moved && e.button === 0) {
       rectPos(e);
       T.raycaster.setFromCamera(T.pointer, T.camera);
       const hits = T.raycaster.intersectObjects(T.pickables, false);

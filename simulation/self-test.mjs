@@ -127,6 +127,21 @@ check('规划路径全程走通道/服务带（途经格均可通行，仅终点
   !!p033 && p033.slice(0, -1).every(w => isFinite(sandbox.cellBaseCost(w.r, w.c))), '');
 check('全部 91 库位均可从横向通道抵达（通道边进入作业格）',
   sstates.every(s => !!sandbox.findPath({ r: 6, c: 10 }, { r: s.goalR, c: s.goalC })), '');
+console.log('== 阶段零点六：机器狗扫码站位（走到垛位旁通道边，转身面向垛位，不进垛位） ==');
+const st0 = sandbox.__dbg.storages[0];
+const ap0 = sandbox.approachCell(st0, { r: 6, c: 10 });
+check('扫码站位点是库位相邻的可通行格（通道/间隙，非垛位本体）',
+  !!ap0 && isFinite(sandbox.cellBaseCost(ap0.r, ap0.c))
+    && Math.abs(ap0.r - st0.goalR) + Math.abs(ap0.c - st0.goalC) === 1,
+  st0 && st0.code);
+check('全部 91 库位均有通道边站位点（含合并库位）',
+  sandbox.__dbg.storages.every(s => {
+    const ap = sandbox.approachCell(s, { r: 6, c: 10 });
+    return ap && isFinite(sandbox.cellBaseCost(ap.r, ap.c));
+  }), '');
+const pAp = sandbox.findPath({ r: 7, c: 19 }, ap0);
+check('赴扫码站位点的路径全程不穿垛位（途经格均可通行）',
+  !!pAp && pAp.every(w => isFinite(sandbox.cellBaseCost(w.r, w.c))), '');
 
 console.log('== 阶段一：手动下单 + 单步 + 设备参数（t=0 初始态，确定性） ==');
 const t1 = sandbox.createTask('in');
@@ -169,6 +184,7 @@ check('仿真时钟推进', el('clock').textContent !== '08:00:00', el('clock').
 check('自动任务已生成', logText().includes('WMS 下发'), '');
 check('调度引擎已分配（机器狗扫码）', logText().includes('调度分配'), '');
 check('路径规划已执行', logText().includes('路径规划完成'), '');
+check('到垛位旁通道边后转身面向垛位再扫码', logText().includes('已转身面向垛位'), '');
 check('扫码核验已发生', logText().includes('扫码完成'), '');
 check('库存更新已发生', logText().includes('库存更新'), '');
 check('状态回传已发生', logText().includes('状态回传'), '');

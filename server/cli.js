@@ -1,9 +1,10 @@
 // 库存数据库命令行工具
-//   npm run db:init     初始化（建库 + 布局 + 初始库存）
-//   npm run db:reset    重置为初始库存
-//   npm run db:inspect  打印库存汇总与抽样库位
-//   npm run db:serve    启动本地 HTTP API 服务
-import { openDb, seed, getInventory, getSlot, DB_PATH } from './database.js';
+//   npm run db:init      初始化（建库 + 布局 + 实际钢材分布灌库）
+//   npm run db:reset     重置为实际钢材分布
+//   npm run db:init-app  灌入主应用（三维库区）数据：库区/跨/库位/钢卷/任务
+//   npm run db:inspect   打印库存汇总与抽样库位
+//   npm run db:serve     启动本地 HTTP API 服务
+import { openDb, seed, seedAppData, getInventory, getSlot, getAppData, DB_PATH } from './database.js';
 import { startServer } from './index.js';
 
 const cmd = process.argv[2] || 'help';
@@ -24,30 +25,48 @@ function printSummary(db) {
   }
 }
 
+function printAppSummary(db) {
+  const d = getAppData(db);
+  if (!d) { console.log('主应用数据：未初始化'); return; }
+  console.log(`主应用数据：库区 ${d.warehouse.name}（${d.warehouse.numberOfSpans} 跨）· 库位 ${d.locations.length} 个 · 钢卷 ${d.coils.length} 卷 · 任务 ${d.tasks.length} 条`);
+}
+
 switch (cmd) {
   case 'init': {
     const db = openDb();
     seed(db);
     db.close();
-    console.log('已初始化数据库（91 库位 × 8 垛 × 20 捆 + 初始库存 30 捆）');
+    console.log('已初始化数据库（91 库位 × 8 垛 × 20 捆 + 分区专业化实际钢材分布）');
     printSummary(openDb());
+    break;
+  }
+  case 'init-app': {
+    const db = openDb();
+    seedAppData(db);
+    console.log('已灌入主应用数据（库区/跨/库位/钢卷/任务）');
+    printAppSummary(db);
+    db.close();
     break;
   }
   case 'reset': {
     const db = openDb();
     seed(db);
     db.close();
-    console.log('已重置为初始库存');
+    console.log('已重置为实际钢材分布（分区专业化归堆）');
     printSummary(openDb());
     break;
   }
-  case 'inspect':
-    printSummary(openDb());
+  case 'inspect': {
+    const db = openDb();
+    printSummary(db);
+    printAppSummary(db);
+    db.close();
     break;
+  }
   case 'serve':
     startServer();
     break;
   default:
-    console.log(`用法：node server/cli.js <init|reset|inspect|serve>`);
+    console.log(`用法：node server/cli.js <init|init-app|reset|inspect|serve>`);
     break;
 }

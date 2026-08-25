@@ -137,7 +137,36 @@ const leftAny = sandbox.__dbg.truckHistory.some(t => !t.inScene);
 check('已离场车辆留档（回看完成情况）', leftAny, '在场=' + sandbox.__dbg.truckHistory.filter(t => t.inScene).length
   + ' 累计=' + sandbox.__dbg.truckHistory.length);
 
-console.log('== 阶段四：重置后回到空态 ==');
+console.log('== 阶段四：单车聚焦模式（只看一辆车 + 运送目的地 + 相关任务）==');
+sandbox.restoreDefaultParams();
+sandbox.setSpeed(1);
+sandbox.createTask('in'); sandbox.createTask('in'); sandbox.createTask('out');
+sandbox.forceDispatchBatches();   // 立即派车，确保有在场车辆可供聚焦
+pump(1);
+check('零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.slice(0, 3).join('|'));
+const onScene = sandbox.__dbg.truckHistory.filter(t => t.inScene);
+check('聚焦前提：在场货车 >= 1', onScene.length >= 1, '在场 ' + onScene.length + ' 辆');
+const fTarget = onScene[0];
+sandbox.setFocusVehicle(fTarget.taskId);
+sandbox.setFocusMode(true);
+check('focusMode 已开启', sandbox.__dbg.focusMode === true, '');
+check('focusTruckId = 选中车', sandbox.__dbg.focusTruckId === fTarget.taskId,
+  '聚焦=' + sandbox.__dbg.focusTruckId + ' 选中=' + fTarget.taskId);
+const fids = sandbox.__dbg.focusTaskIds;
+const fVeh = sandbox.__dbg.truckHistory.find(t => t.taskId === fTarget.taskId);
+check('相关任务集合非空', Array.isArray(fids) && fids.length > 0, (fids ? fids.length : 0) + ' 个任务');
+check('相关任务数 = 该车吊数', !!fids && !!fVeh && fids.length === fVeh.loads,
+  '相关=' + (fids ? fids.length : '?') + ' 吊=' + (fVeh ? fVeh.loads : '?'));
+pump(0.6);                        // 触发 refreshPanels 更新任务队列
+check('任务队列已按聚焦过滤', el('taskCount').textContent.includes('聚焦'), el('taskCount').textContent);
+check('聚焦期间零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.slice(0, 3).join('|'));
+sandbox.setFocusMode(false);
+check('focusMode 已关闭', sandbox.__dbg.focusMode === false, '');
+check('退出聚焦后 focusTruckId 为 null', sandbox.__dbg.focusTruckId === null, '');
+pump(0.6);
+check('任务队列恢复全景', !el('taskCount').textContent.includes('聚焦'), el('taskCount').textContent);
+
+console.log('== 阶段五：重置后回到空态 ==');
 sandbox.init();
 pump(1);
 check('重置后零错误', sandbox.__dbg.errs.length === 0, '');

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   openDb, seed, getInventory, getSlots, getSlot, setStack,
-  STACKS_PER_SLOT, BUNDLES_PER_STACK, INIT_INVENTORY,
+  STACKS_PER_SLOT, BUNDLES_PER_STACK,
 } from './database.js';
 
 let failed = 0;
@@ -35,7 +35,10 @@ check('库位总数 91', inv.slotCount === 91, String(inv.slotCount));
 const stackCount = getSlots(db).reduce((s, x) => s + x.stacks.length, 0);
 check(`每库位 ${STACKS_PER_SLOT} 垛 -> 垛位总数 ${91 * STACKS_PER_SLOT}`, stackCount === 91 * STACKS_PER_SLOT, String(stackCount));
 check(`总库容 91×${STACKS_PER_SLOT}×${BUNDLES_PER_STACK}=${91 * STACKS_PER_SLOT * BUNDLES_PER_STACK}`, inv.totalCapacity === 14560, String(inv.totalCapacity));
-check(`初始库存 ${INIT_INVENTORY} 捆（均已入账）`, inv.totalBundles === INIT_INVENTORY, String(inv.totalBundles));
+check('初始库存为实际钢材分布（>3000 捆，利用率 30~60%，均已入账）',
+  inv.totalBundles > 3000 && inv.utilization > 0.3 && inv.utilization < 0.6 && inv.pending === 0,
+  `${inv.totalBundles} 捆 · ${(inv.utilization * 100).toFixed(1)}%`);
+check('存在空闲库位（入库缓冲位）', inv.occupiedSlots < inv.slotCount, `${inv.slotCount - inv.occupiedSlots} 个空库位`);
 check('分区统计齐全', inv.perZone.length === 4, JSON.stringify(inv.perZone.map(z => `${z.zone}:${z.slots}`)));
 
 console.log('== 写入 / 状态同步 ==');
