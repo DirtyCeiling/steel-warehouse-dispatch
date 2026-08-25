@@ -5,8 +5,13 @@ import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import {
   openDb, seed, getInventory, getSlots, getSlot, getSpecs, setStack,
-  getAppData, seedAppData, createTask, updateTaskStatus, DB_PATH,
+  getAppData, seedAppData, createTask, updateTaskStatus, getSimParams, setSimParams, DB_PATH,
 } from './database.js';
+import { PARAM_SCHEMA } from './params.js';
+import {
+  spawnIncomingVehicle, listInboundVehicles, getVehicleView,
+  adjustLoad, confirmVehicle, deleteVehicle, listCandidates, feedbackStats,
+} from './inbound.js';
 
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 3001);
@@ -46,6 +51,15 @@ export function startServer({ host = HOST, port = PORT } = {}) {
       if (req.method === 'GET' && p === '/api/slots') return json(res, 200, { slots: getSlots(db) });
       if (req.method === 'GET' && p === '/api/specs') return json(res, 200, getSpecs(db));
 
+      // 调度规划参数：主系统「调度参数」页与仿真沙盘共用（含 schema，前端按此渲染调节控件）
+      if (req.method === 'GET' && p === '/api/params') {
+        return json(res, 200, { schema: PARAM_SCHEMA, values: getSimParams(db) });
+      }
+      if (req.method === 'PUT' && p === '/api/params') {
+        const body = await readBody(req);
+        return json(res, 200, { schema: PARAM_SCHEMA, values: setSimParams(db, body.values || body) });
+      }
+
       // 主应用（三维库区）数据接口：前端启动时从这里加载全量数据
       if (req.method === 'GET' && p === '/api/app/data') {
         const data = getAppData(db);
@@ -68,6 +82,37 @@ export function startServer({ host = HOST, port = PORT } = {}) {
         return t ? json(res, 200, t) : json(res, 404, { error: '任务不存在' });
       }
 
+      // 进厂确认（管理工）：车牌/运单识别 -> 垛位分配推荐 -> 人工确认/调整（调整沉淀为权重优化）
+      if (req.method === 'GET' && p === '/api/inbound') {
+        return json(res, 200, { vehicles: listInboundVehicles(db) });
+      }
+      if (req.method === 'POST' && p === '/api/inbound/spawn') {
+        return json(res, 200, spawnIncomingVehicle(db));
+      }
+      if (req.method === 'GET' && p === '/api/inbound/stats') {
+        return json(res, 200, feedbackStats(db));
+      }
+      if (req.method === 'GET' && p === '/api/inbound/candidates') {
+        const spec = url.searchParams.get('spec') || '';
+        const bundles = Math.max(1, Number(url.searchParams.get('bundles')) || 1);
+        return json(res, 200, { candidates: listCandidates(db, spec, bundles) });
+      }
+      const mLoad = p.match(/^\/api\/inbound\/(\d+)\/loads\/(\d+)$/);
+      if (req.method === 'PUT' && mLoad) {
+        const body = await readBody(req);
+        const r = adjustLoad(db, +mLoad[1], +mLoad[2], Number(body.slotId), Number(body.stackNo));
+        return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r.vehicle);
+      }
+      const mInbound = p.match(/^\/api\/inbound\/(\d+)$/);
+      if (mInbound && req.method === 'POST') {
+        const r = confirmVehicle(db, +mInbound[1]);
+        return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r);
+      }
+      if (mInbound && req.method === 'DELETE') {
+        const r = deleteVehicle(db, +mInbound[1]);
+        return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r);
+      }
+
       const mSlot = p.match(/^\/api\/slots\/(\d+)$/);
       if (req.method === 'GET' && mSlot) {
         const s = getSlot(db, +mSlot[1]);
@@ -88,7 +133,8 @@ export function startServer({ host = HOST, port = PORT } = {}) {
       json(res, 500, { error: String((e && e.message) || e) });
     }
   });
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
+    server.once('error', e => reject(e));
     server.listen(port, host, () => {
       console.log(`[库存数据库] 已启动：http://${host}:${port}  （库文件 ${DB_PATH}）`);
       resolve(server);

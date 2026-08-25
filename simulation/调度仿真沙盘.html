@@ -55,6 +55,13 @@
   .seg button { border: none; border-radius: 0; padding: 4px 10px; }
   .seg button + button { border-left: 1px solid var(--line2); }
   .seg button.on { background: var(--cyan); color: #04121f; font-weight: 700; }
+  nav { display: flex; gap: 6px; }
+  nav a {
+    color: var(--dim); text-decoration: none; font-size: 12px;
+    border: 1px solid var(--line2); border-radius: 6px; padding: 4px 10px;
+    transition: all .15s; background: var(--panel2);
+  }
+  nav a:hover { border-color: var(--cyan); color: #fff; box-shadow: 0 0 10px rgba(56,189,248,.2); }
   .act.in { border-color: rgba(45, 212, 191, .5); color: var(--teal); }
   .act.out { border-color: rgba(251, 146, 60, .5); color: var(--orange); }
   .ghost { color: var(--dim); }
@@ -174,6 +181,7 @@
   .badge-batt { font-family: var(--mono); font-size: 11px; }
   .bbar { height: 5px; background: #0a1730; border-radius: 999px; margin: 5px 0 4px; overflow: hidden; }
   .bbar i { display: block; height: 100%; border-radius: 999px; transition: width .2s linear; }
+  .battsum { font-family: var(--mono); font-size: 10px; color: var(--dim); padding: 3px 2px 5px; }
   .rtask { font-size: 11px; color: var(--text); }
   .rtask .tid { font-family: var(--mono); color: var(--cyan); }
   .rstats { font-size: 10px; color: var(--dim); margin-top: 2px; }
@@ -282,10 +290,14 @@
     display: flex; align-items: center; gap: 10px;
   }
   .pgroup::after { content: ""; flex: 1; height: 1px; background: var(--line); }
-  .prow { display: grid; grid-template-columns: 110px 1fr 92px; gap: 12px; align-items: center; margin: 8px 0; }
+  .prow { display: grid; grid-template-columns: 110px 1fr 124px; gap: 12px; align-items: center; margin: 8px 0; }
   .prow .pl { font-size: 12.5px; }
   .prow input[type="range"] { width: 100%; accent-color: var(--cyan); cursor: pointer; }
-  .prow .pv { font-family: var(--mono); font-size: 12px; color: var(--cyan); text-align: right; white-space: nowrap; }
+  .prow .pvn { display: flex; align-items: center; gap: 5px; justify-content: flex-end; }
+  .prow .pn { width: 60px; font-family: var(--mono); font-size: 12px; color: var(--cyan); text-align: right; background: #0a1730; border: 1px solid var(--line); border-radius: 5px; padding: 2px 5px; }
+  .prow .pn:focus { outline: none; border-color: var(--cyan); }
+  .prow .pn::-webkit-inner-spin-button { opacity: .35; }
+  .prow .pu { font-size: 10.5px; color: var(--dim); white-space: nowrap; }
   /* 滚动条 */
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-thumb { background: #1b3260; border-radius: 99px; }
@@ -396,6 +408,29 @@
   #invListRows .c-ton { color: var(--amber); }
   #invListRows .c-day { color: var(--dim); }
   #invListEmpty { padding: 30px 0; text-align: center; color: var(--dim); font-size: 12px; display: none; }
+  /* ============ 机器狗视图（第一人称追踪视角 + 参数 + 任务队列） ============ */
+  #dogRoot { display: none; flex: 1; gap: 12px; padding: 12px 14px; min-height: 0; }
+  #dogRoot.on { display: flex; }
+  #dogStage { flex: 1; display: flex; min-width: 0; }
+  #dogCvWrap { flex: 1; position: relative; min-height: 0; border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden; background: #060e1e; }
+  #dogCv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #dogSel { margin: 2px 0 8px; }
+  #dogSel button { flex: 1; white-space: nowrap; }
+  .dpgrid { display: grid; grid-template-columns: 44px 1fr; row-gap: 5px; column-gap: 8px; font-size: 12px; align-items: center; }
+  .dpgrid .dl { color: var(--dim); }
+  .dpgrid .dv { font-family: var(--mono); font-size: 11.5px; }
+  .bbar.inline { display: inline-block; width: 64px; height: 6px; vertical-align: middle; margin: 0 4px 0 0; }
+  .dt-row { font-size: 12px; margin: 3px 0; }
+  .dt-prog { height: 6px; background: #0a1730; border-radius: 999px; overflow: hidden; margin: 6px 0 4px; }
+  .dt-prog i { display: block; height: 100%; background: var(--cyan); border-radius: 999px; transition: width .2s linear; }
+  .dt-stage { font-size: 10.5px; color: var(--dim); }
+  .dt-empty, .dq-empty { color: var(--dim); font-size: 12px; padding: 8px 0; }
+  .dq-row { border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; margin-bottom: 5px; font-size: 11px; background: var(--panel2); }
+  .dq-row.mine { border-color: var(--cyan); background: rgba(56,189,248,.08); }
+  .dq-row .tid { font-family: var(--mono); color: var(--cyan); margin-right: 6px; }
+  .dq-row .dq-t { color: var(--text); }
+  .dq-row .dq-s { color: var(--dim); font-size: 10.5px; margin-top: 1px; }
 </style>
 </head>
 <body>
@@ -408,10 +443,15 @@
       <p title="长 300m × 宽 90m · 三跨（A/B/C，每跨 30m）· 3 条竖向车辆进出通道 · 91 库位（每库位 8 垛 × 20 捆）· 3 台机器狗（扫码核验）+ 6 台天车（每跨 2 台）· 一车 6-10 吊（单跨装卸）· 流程：货车进场停靠 -> 跨上立柱摄像头识别车牌 -> 物流系统吊取运单 -> 天车吊运装卸 -> 机器狗扫码确认 -> 库存更新">长 300m × 宽 90m · 三跨（A/B/C，每跨 30m）· 3 条竖向车辆进出通道 · 91 库位（每库位 8 垛 × 20 捆）· 3 台机器狗（扫码核验）+ 6 台天车（每跨 2 台）· 一车 6-10 吊（单跨装卸）· 流程：货车进场停靠 -> 跨上立柱摄像头识别车牌 -> 物流系统吊取运单 -> 天车吊运装卸 -> 机器狗扫码确认 -> 库存更新</p>
     </div>
   </div>
-  <div class="seg" id="viewTabs" title="切换视图：仿真沙盘 / 库存三维">
+  <div class="seg" id="viewTabs" title="切换视图：仿真沙盘 / 库存三维 / 机器狗视角">
     <button data-view="sim" class="on">🗺 仿真沙盘</button>
     <button data-view="inv">🧱 库存三维</button>
+    <button data-view="dog">🐕 机器狗</button>
   </div>
+  <nav title="调度系统页面">
+    <a href="/inbound">🚚 进厂确认</a>
+    <a href="/params">⚙ 调度参数</a>
+  </nav>
   <div class="clock"><span id="clock">08:00:00</span><small>仿真时间</small></div>
   <div class="controls">
     <button id="btnPause">⏸ 暂停</button>
@@ -454,7 +494,7 @@
       <span class="li"><span class="sw" style="border-color:#f472b6;background:rgba(244,114,182,.2)"></span>天车(架空)</span>
       <span class="li hint">横置布局：左 = 南端（1 号区 · 铁姆肯区）-> 右 = 北端（33 号区）；货车由通道北端入口进场，停靠目标跨，离场顺路前行驶出南端出口</span>
       <span class="li hint">货车停靠后：跨上立柱摄像头识别车牌 -> 凭车牌从物流系统吊取运单（该车送的捆/规格）-> 天车开始吊运</span>
-      <span class="li hint">机器狗不搬运钢材：天车负责吊运装卸，机器狗前往库位扫码确认入/出库</span>
+      <span class="li hint">机器狗不搬运钢材：天车负责吊运装卸，机器狗经库位间空道到垛位前扫码确认入/出库</span>
       <span class="li hint">货车一车 6-10 吊（同跨装卸）：凑满一车发车，低峰期超时按现有吊数放行</span>
       <span class="li hint">点击空闲库位 -> 入库上架 · 点击有料库位 -> 下发出库</span>
       <span class="li hint"><kbd>空格</kbd>暂停 <kbd>S</kbd>单步 · <kbd>滚轮</kbd>缩放 <kbd>拖拽</kbd>平移</span>
@@ -478,6 +518,7 @@
         <button data-tab="robot">机器狗</button>
         <button data-tab="crane">天车</button>
       </div>
+      <div class="battsum" id="battSum">–</div>
       <div class="scroll" id="robotCards"></div>
     </div>
 
@@ -570,6 +611,28 @@
   </aside>
 </section>
 
+<!-- ============ 机器狗视图（第一人称追踪视角 + 设备参数 + 当前任务 + 任务队列） ============ -->
+<section id="dogRoot">
+  <div id="dogStage">
+    <div id="dogCvWrap"><canvas id="dogCv"></canvas></div>
+  </div>
+  <aside>
+    <div class="panel" style="flex:none">
+      <h2>机器狗 <span class="cnt" id="dogCnt"></span></h2>
+      <div class="seg" id="dogSel"></div>
+      <div id="dogParams"></div>
+    </div>
+    <div class="panel" style="flex:none">
+      <h2>当前任务 <span class="cnt" id="dogTaskCnt"></span></h2>
+      <div id="dogTask"></div>
+    </div>
+    <div class="panel" style="flex:1;min-height:0">
+      <h2>任务队列 <span class="cnt" id="dogQueueCnt"></span></h2>
+      <div class="scroll" id="dogQueue"></div>
+    </div>
+  </aside>
+</section>
+
 <div id="settingsMask">
   <div id="settingsPanel">
     <div class="phead">
@@ -599,14 +662,21 @@ window.__dbg = {
   get codes() { return storages.map(s => s.code); },
   get storageStates() { return storages.map(s => ({ code: s.code, state: s.state, goalR: s.goalR, goalC: s.goalC })); },
   get mapOK() { return tiles.length === M.ROWS && tiles[0].length === M.COLS; },
+  get navDims() { return { rows: NAV.ROWS, cols: NAV.COLS }; },   // 机器狗导航栅格尺寸（自检）
   get layout() { return { ox, oy, scale }; },
   get trucks() { return trucks.map(t => ({ taskId: t.taskId, kind: t.kind, lane: t.lane, state: t.state, loaded: t.loaded, plate: t.plate, plateScanned: !!(t.batch && t.batch.plateScanned), manifestFetched: !!(t.batch && t.batch.manifestFetched), loads: t.batch ? t.batch.tasks.length : 0, remaining: t.remaining })); },
   get batches() { return batches.map(b => ({ id: b.id, kind: b.kind, span: b.span, loads: b.tasks.length, dispatched: !!b.truck, plateScanned: !!b.plateScanned, manifestFetched: !!b.manifestFetched, createdAt: b.created })); },
   get columns() { return columns.map(c => ({ span: c.span, active: c.active })); },
   get activeCams() { return columns.filter(c => c.active).length; },
   get batchLoads() { return window.__batchLoads || []; },
+  get recLog() { return window.__recLog || []; },   // 卸货推荐留痕（自检：不受日志窗口 260 条上限影响）
+  get mergeLog() { return window.__mergeLog || []; },   // 同车归并留痕（自检：整车同规格沿用同垛）
+  get placementCfg() { return { ...CFG.placement }; },   // 归堆评分权重快照（自检/调试）
+  get truckCfg() { return { ...CFG.truck }; },           // 组车规则快照（自检/调试）
   get trucksDone() { return trucksDone; },
   get craneStates() { return cranes.map(c => ({ name: c.name, span: c.span, state: c.state, jobsDone: c.jobsDone })); },
+  get robots() { return robots; },   // 机器狗引用（专项探针：续航/充电循环测试）
+  get robotCfg() { return { ...CFG.robot, drainPerM: drainPerM(), chargePerS: chargePerS() }; },   // 电量模型快照（含每米电耗/每秒充电折算）
   /* 捆级明细一致性探针（库存三维视图数据基础） */
   get bundleSyncOK() { // 每垛 bundles 数恒等于 count，且全库捆记录总数恒等于 occupiedCount
     return storages.every(s => s.stacks.every(k => k.bundles.length === k.count))
@@ -671,13 +741,14 @@ window.__dbg = {
  *   通道：3 条竖向车辆进出通道（28|27 号间、17|16 号间、6|5 号间，横贯三跨，
  *         北端开口为车辆入口、南端开口为车辆出口，单向直行不原路倒回）
  *         + 4 条 2m 横向通道（机器狗主廊道）
+ *         + 库位之间的空道（机器狗入跨通道，通至各垛位正前方）
  *         + 南端 1/2 号区 B 跨入口通道
  *   天车：每跨 2 台架空桥式天车，共 6 台（TC-A1/A2 · TC-B1/B2 · TC-C1/C2），
  *         限本跨作业（大车沿本跨轨道行走）；同跨双车按作业区间互让，不相撞
  *   充电服务带（厂房外侧 C 跨一路）：充电桩 ×3，对齐三条横向通道
- *   通行规则：机器狗只能在通道（4 条 2m 横向廊道 + 3 条竖向车辆通道 + 服务带）
- *         和垛位之间的间隙行走，不进入库位内部；扫码时走到垛位旁的通道边，
- *         转身面向垛位扫码。
+ *   通行规则：机器狗沿 4 条 2m 横向廊道长向机动，转入库位之间的空道深入跨内，
+ *         不进入库位内部；扫码时最终站到目标垛前的库位间空道站位（两侧库位
+ *         之间的空道里、垛位正前方），转身面向垛位扫码。
  * 模块：地图/库位 · 货车（通道进场）· 天车（吊运装卸）· 机器狗（扫码）·
  *       调度引擎 · 任务流 · KPI · 事件日志
  * ===================================================================== */
@@ -689,8 +760,8 @@ const CFG = {
     assignTime: 0.5, planTime: 0.8,    // 接单确认 / 路径规划耗时
     scanTime: 3.0,                     // 扫码核验耗时（二维码扫描 + 信息比对）
     reportTime: 0.6,                   // 状态回传耗时
-    drain: 0.05,                       // 电耗 %/m
-    chargeRate: 1.6,                   // 充电 %/秒
+    endurance: 3,                      // 满电续航（小时）：满电按额定速度连续作业可运行 3 小时
+    chargeHours: 2,                    // 充满电耗时（小时）：电量从 0 充到 100% 约需 2 小时
     lowBattery: 25, fullBattery: 98,   // 返航充电阈值 / 满电阈值
     interruptCharge: 85,               // 充电中可被派单打断的电量
     critical: 12,                      // 临界告警电量
@@ -704,9 +775,18 @@ const CFG = {
     speed: 8.0,                     // 货车场内行驶速度（m/s）
     minLoads: 6, maxLoads: 10,      // 一车 6-10 吊（单跨装卸）
     maxWait: 150,                   // 凑不满 6 吊时，等待该时长后按现有吊数放行（秒）
+    mixedSpecPct: 25,               // 混装车比例 %：整车默认单一规格（钢厂按规格整车发运），部分车混装第二种规格
     plateScanTime: 2.0,             // 跨上立柱摄像头识别车牌耗时（秒）
     manifestTime: 1.2,              // 凭车牌从物流系统吊取运单耗时（秒）
     verifyTime: 1.5,                // 出场复验耗时（装卸数量与运单复核，秒）
+  },
+  placement: {                       // 卸货归堆推荐评分权重（「⚙ 设备参数」/ 主系统「调度参数」页可调，实时生效）
+    sameSpecBase: 60, sameSpecFill: 20,   // ① 同规格归堆：基础分 + 按垛填充率加励（先填满旧垛）
+    emptyBase: 20, emptyPenalty: 3,       // ② 空垛兜底：基础分 - 本库位空垛数 × 扣减（空垛是稀缺资源）
+    famBonus: 5, mixPenalty: 8,           // ③ 库位同质性：同族垛加分/垛，异族垛扣分/垛
+    nearBonus: 4, nearCap: 20,            // ④ 邻位聚簇：相邻库位同规格垛加分/垛（上限）
+    pendPenalty: 3,                       // ⑤ 扫码干扰：待扫码垛扣分/垛
+    spanBonus: 10,                        // ⑥ 跨匹配加分
   },
   task: { maxPending: 48, maxOpenOrders: 16 },   // 待处理任务上限 / 在办出库订单上限（防队列失控）
   production: {                          // 生产节奏：按天定量，订单全天铺开，不一次性下完
@@ -725,6 +805,22 @@ const CFG = {
 
 /* 库存数据库服务（npm run db:serve 启动）：期初优先从这里加载实际钢材分布 */
 const DB_API = 'http://127.0.0.1:3001';
+
+/* 电量模型：满电续航 endurance 小时（按当前行进速度连续作业折算）。
+ * 每米电耗 = 100% ÷ (续航小时 × 3600s × 速度 m/s)，速度参数调整后续航时长保持不变。 */
+function drainPerM() { return 100 / (CFG.robot.endurance * 3600 * CFG.robot.speed); }
+/* 充电速率（%/秒）= 100% ÷ (充满小时 × 3600s) */
+function chargePerS() { return 100 / (CFG.robot.chargeHours * 3600); }
+/* 剩余续航（小时）= 当前电量% × 满电续航 */
+function fmtEndurance(battery) {
+  const h = battery / 100 * CFG.robot.endurance;
+  return h >= 1 ? `${h.toFixed(1)}h` : `${Math.max(1, Math.round(h * 60))}min`;
+}
+/* 预计充满耗时：从当前电量充到满电阈值 */
+function fmtChargeLeft(battery) {
+  const h = Math.max(0, CFG.robot.fullBattery - battery) / 100 * CFG.robot.chargeHours;
+  return h >= 1 ? `${h.toFixed(1)}h` : `${Math.max(1, Math.round(h * 60))}min`;
+}
 
 /* 棒材规格（颜色用于地图渲染与图例） */
 const SPECS = [
@@ -759,15 +855,30 @@ function ringDur(state) { // 作业进度环时长（实时读取参数，支持
 const PARAM_DEFS = [
   { sec: 'robot', key: 'speed',      label: '行进速度',     min: 1,   max: 10, step: 0.1, unit: 'm/s' },
   { sec: 'robot', key: 'scanTime',   label: '扫码核验时间', min: 0.5, max: 10, step: 0.1, unit: '秒' },
-  { sec: 'robot', key: 'chargeRate', label: '充电速率',     min: 0.2, max: 5,  step: 0.1, unit: '%/秒' },
+  { sec: 'robot', key: 'chargeHours', label: '充满电时间',  min: 0.5, max: 6,  step: 0.5, unit: '小时' },
+  { sec: 'robot', key: 'endurance',  label: '满电续航',     min: 0.5, max: 8,  step: 0.5, unit: '小时' },
   { sec: 'crane', key: 'speed',      label: '行进速度',     min: 0.5, max: 10, step: 0.1, unit: 'm/s' },
-  { sec: 'crane', key: 'hoistTime',  label: '吊取时间',     min: 0.5, max: 10, step: 0.1, unit: '秒' },
-  { sec: 'crane', key: 'lowerTime',  label: '放下时间',     min: 0.5, max: 10, step: 0.1, unit: '秒' },
+  { sec: 'crane', key: 'hoistTime',  label: '吊取时间',     min: 0.5, max: 180, step: 0.1, unit: '秒' },
+  { sec: 'crane', key: 'lowerTime',  label: '放下时间',     min: 0.5, max: 180, step: 0.1, unit: '秒' },
+  { sec: 'truck', key: 'minLoads',     label: '每车最少吊数', min: 2,   max: 10, step: 1,   unit: '吊' },
+  { sec: 'truck', key: 'maxLoads',     label: '每车最多吊数', min: 4,   max: 16, step: 1,   unit: '吊' },
+  { sec: 'truck', key: 'maxWait',      label: '组车等待上限', min: 30,  max: 600, step: 10, unit: '秒' },
+  { sec: 'truck', key: 'mixedSpecPct', label: '混装车比例',   min: 0,   max: 100, step: 5,  unit: '%' },
   { sec: 'truck', key: 'plateScanTime', label: '车牌识别时间', min: 0.5, max: 8,  step: 0.1, unit: '秒' },
   { sec: 'truck', key: 'manifestTime',  label: '运单吊取时间', min: 0.3, max: 6,  step: 0.1, unit: '秒' },
   { sec: 'truck', key: 'verifyTime',    label: '出场复验时间', min: 0.5, max: 8,  step: 0.1, unit: '秒' },
   { sec: 'production', key: 'inPerDay',  label: '每日进厂车辆', min: 10, max: 600, step: 5, unit: '辆/日' },
   { sec: 'production', key: 'outPerDay', label: '每日出厂车辆', min: 10, max: 600, step: 5, unit: '辆/日' },
+  { sec: 'placement', key: 'sameSpecBase', label: '同规格归堆基础分', min: 0, max: 200, step: 5, unit: '分' },
+  { sec: 'placement', key: 'sameSpecFill', label: '填充率加励系数',   min: 0, max: 100, step: 5, unit: '分' },
+  { sec: 'placement', key: 'emptyBase',    label: '空垛兜底基础分',   min: 0, max: 100, step: 5, unit: '分' },
+  { sec: 'placement', key: 'emptyPenalty', label: '空垛扣减/垛',      min: 0, max: 20,  step: 1, unit: '分' },
+  { sec: 'placement', key: 'famBonus',     label: '库位同族加励/垛',  min: 0, max: 30,  step: 1, unit: '分' },
+  { sec: 'placement', key: 'mixPenalty',   label: '库位异族惩罚/垛',  min: 0, max: 50,  step: 1, unit: '分' },
+  { sec: 'placement', key: 'nearBonus',    label: '邻位聚簇加励/垛',  min: 0, max: 20,  step: 1, unit: '分' },
+  { sec: 'placement', key: 'nearCap',      label: '邻位聚簇上限',     min: 0, max: 60,  step: 5, unit: '分' },
+  { sec: 'placement', key: 'pendPenalty',  label: '扫码干扰扣减/垛',  min: 0, max: 20,  step: 1, unit: '分' },
+  { sec: 'placement', key: 'spanBonus',    label: '跨匹配加分',       min: 0, max: 50,  step: 1, unit: '分' },
   { sec: 'abnormal', key: 'scanFailPct',        label: '扫码失败率',   min: 0, max: 50, step: 1, unit: '%' },
   { sec: 'abnormal', key: 'manifestMismatchPct', label: '运单差异率',   min: 0, max: 50, step: 1, unit: '%' },
   { sec: 'abnormal', key: 'verifyIssuePct',      label: '复验异常率',   min: 0, max: 50, step: 1, unit: '%' },
@@ -777,18 +888,19 @@ const DEFAULT_PARAMS = {
   crane: { ...CFG.crane },
   truck: { ...CFG.truck },
   production: { ...CFG.production },
+  placement: { ...CFG.placement },
   abnormal: { ...CFG.abnormal },
 };
-const SEC_NAMES = { robot: '机器狗', crane: '天车', truck: '货车', production: '生产节奏', abnormal: '异常注入' };
+const SEC_NAMES = { robot: '机器狗', crane: '天车', truck: '货车', production: '生产节奏', placement: '归堆策略', abnormal: '异常注入' };
 const SEC_GROUPS = {
   robot: '机器狗（3 台 · D-01 ~ D-03 · 扫码核验）',
   crane: '天车（6 台 · 每跨 2 台 · TC-A1~TC-C2 · 吊运装卸）',
-  truck: '货车（3 条竖向通道 · 立柱摄像头识别车牌 / 物流系统吊取运单）',
+  truck: '货车（3 条竖向通道 · 组车规则：一车最少/最多吊数 · 混装车比例 · 立柱摄像头识别车牌 / 物流系统吊取运单）',
   production: '生产节奏（每日进厂 / 出厂车辆数 · 订单全天均匀铺开，不一次下完）',
+  placement: '归堆策略权重（卸货推荐评分 · 同车同规格归并同一垛 · 权重越大越优先，实时生效）',
   abnormal: '异常注入（扫码失败 / 运单差异 / 复验异常概率 · 0 = 关闭）',
 };
 const paramId = d => `param-${d.sec}-${d.key}`;
-const fmtParam = (d, v) => `${(+v).toFixed(1)} ${d.unit}`;
 function setDeviceParam(sec, key, value) { // 写入并夹取到滑杆范围
   const d = PARAM_DEFS.find(x => x.sec === sec && x.key === key);
   if (!d) return null;
@@ -805,31 +917,79 @@ function buildSettingsUI() {
     rows.push(`<div class="prow">
       <span class="pl">${d.label}</span>
       <input type="range" id="${paramId(d)}" min="${d.min}" max="${d.max}" step="${d.step}">
-      <span class="pv" id="${paramId(d)}-v"></span>
+      <span class="pvn">
+        <input type="number" class="pn" id="${paramId(d)}-n" min="${d.min}" max="${d.max}" step="${d.step}">
+        <span class="pu">${d.unit}</span>
+      </span>
     </div>`);
   }
   $('paramRows').innerHTML = rows.join('');
   for (const d of PARAM_DEFS) {
-    const input = $(paramId(d));
-    input.value = CFG[d.sec][d.key];
-    $(paramId(d) + '-v').textContent = fmtParam(d, CFG[d.sec][d.key]);
-    input.addEventListener('input', () => {
-      const v = setDeviceParam(d.sec, d.key, +input.value);
-      $(paramId(d) + '-v').textContent = fmtParam(d, v);
-    });
-    input.addEventListener('change', () => {
-      logEvent('system', `参数调整：${SEC_NAMES[d.sec] || d.sec} ${d.label} -> ${CFG[d.sec][d.key]} ${d.unit}`);
+    const slider = $(paramId(d));
+    const num = $(paramId(d) + '-n');   // 数字输入栏：与滑杆双向同步，回车/失焦生效并夹取到范围内
+    const apply = (raw, log) => {
+      const v = setDeviceParam(d.sec, d.key, raw);
+      slider.value = v;
+      num.value = v;
+      if (log) {
+        logEvent('system', `参数调整：${SEC_NAMES[d.sec] || d.sec} ${d.label} -> ${CFG[d.sec][d.key]} ${d.unit}`);
+        pushParamsToDb();   // 写回库存数据库：与主系统「调度参数」页保持同一份调度规划参数
+      }
+    };
+    slider.value = CFG[d.sec][d.key];
+    num.value = CFG[d.sec][d.key];
+    slider.addEventListener('input', () => apply(+slider.value, false));
+    slider.addEventListener('change', () => apply(+slider.value, true));
+    num.addEventListener('change', () => apply(+num.value, true));
+    num.addEventListener('keydown', e => {   // 输入栏回车立即生效（不等失焦）
+      if (e.key === 'Enter') { apply(+num.value, true); num.blur(); }
     });
   }
 }
 function restoreDefaultParams() {
   for (const d of PARAM_DEFS) {
     const v = setDeviceParam(d.sec, d.key, DEFAULT_PARAMS[d.sec][d.key]);
-    const input = $(paramId(d));
-    input.value = v;
-    $(paramId(d) + '-v').textContent = fmtParam(d, v);
+    $(paramId(d)).value = v;
+    $(paramId(d) + '-n').value = v;
   }
   logEvent('system', '设备参数已恢复默认值');
+  pushParamsToDb();
+}
+
+/* ---------------- 调度参数持久化：与主系统「调度参数」页共用库存数据库 ----------------
+ * 启动时 GET /api/params 加载（覆盖内置默认并同步到滑杆）；本页调整 / 恢复默认后
+ * PUT 写回（防抖 400ms）。两端始终操作同一份调度规划参数。
+ * 服务不可达（未启动 npm run sim / 无头自检环境）时静默沿用内置默认。 */
+async function loadParamsFromDb() {
+  if (typeof fetch !== 'function') return;
+  try {
+    const res = await fetch(DB_API + '/api/params');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const { values } = await res.json();
+    let n = 0;
+    for (const d of PARAM_DEFS) {
+      const v = values && values[d.sec] && values[d.sec][d.key];
+      if (typeof v !== 'number') continue;
+      CFG[d.sec][d.key] = Math.min(d.max, Math.max(d.min, v));   // 夹取到滑杆范围
+      const slider = $(paramId(d)), num = $(paramId(d) + '-n');
+      if (slider) slider.value = CFG[d.sec][d.key];
+      if (num) num.value = CFG[d.sec][d.key];
+      n++;
+    }
+    if (n) logEvent('system', `调度参数已从库存数据库加载（${n} 项 · 与主系统「调度参数」页同源，本页调整即时写回）`);
+  } catch { /* 服务不可达：沿用内置默认参数 */ }
+}
+let _paramPushTimer = null;
+function pushParamsToDb() {
+  if (typeof fetch !== 'function') return;
+  clearTimeout(_paramPushTimer);   // 连续拖动滑杆时防抖，落定后一次性写回
+  _paramPushTimer = setTimeout(() => {
+    const values = {};
+    for (const d of PARAM_DEFS) (values[d.sec] = values[d.sec] || {})[d.key] = CFG[d.sec][d.key];
+    fetch(DB_API + '/api/params', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values }),
+    }).catch(() => {});
+  }, 400);
 }
 
 /* ---------------- 布局常量 ----------------
@@ -837,8 +997,10 @@ function restoreDefaultParams() {
  *   列 c：0-1 厂房西墙外（不可通行）；2-37 厂房内（x = (c-2)×8.33m ~ 300m，
  *         自左向右依次对应 1~33 号区与通道列）
  *   行 r：0/2/4/6 = 4 条横向通道（各 2m，横贯全长，机器狗主廊道）；
- *         1/3/5 = A/B/C 跨（各 30m，垛位列，不可穿行）；7 = 厂房外充电服务带（3m）
- * 米制坐标：x = (c-2)×CELL_L 起算；y = ROW_TOP[r] 起算（行顶缘）。 */
+ *         1/3/5 = A/B/C 跨（各 30m，垛位列）；7 = 厂房外充电服务带（3m）
+ * 米制坐标：x = (c-2)×CELL_L 起算；y = ROW_TOP[r] 起算（行顶缘）。
+ * 注：宏观栅格服务地图绘制/货车/天车；机器狗导航另有细分导航栅格
+ *     （见"机器狗导航栅格"：跨内按 8 垛分层 + 库位间空道列）。 */
 const M = {
   L: 300, W: 90, CELL_L: 300 / 36, SPAN_W: 30,
   CH_W: 2,                         // 横向通道宽（4 条，不计入总宽 90m）
@@ -995,7 +1157,7 @@ function nearestCam(tk) { // 距货车最近的同跨立柱摄像头
 /* ---------------- 垛位（每库位 8 垛 · 每垛 20 捆）辅助 ---------------- */
 /* 捆级明细（库存三维视图展示用）：bundles 与 count/pending 同步维护，
  * 元数据（钢种/长度/炉号）用独立随机流 invRnd，不消耗 Math.random，保证仿真时序确定性 */
-function newStack() { return { spec: null, count: 0, pending: 0, inTime: 0, bundles: [], grade: '', len: 0, heat: '' }; }
+function newStack() { return { spec: null, count: 0, pending: 0, reserved: 0, inTime: 0, bundles: [], grade: '', len: 0, heat: '' }; }
 const SPEC_META = {   // 规格展示元数据（直径/形状/可选长度/可选钢种/9m 基准单捆吨位 = SPECS.weight）
   '螺纹钢 Φ20': { dia: 20, shape: 'rebar',  lengths: [9, 12], grades: ['HRB400E', 'HRB500E'] },
   '螺纹钢 Φ25': { dia: 25, shape: 'rebar',  lengths: [9, 12], grades: ['HRB400E', 'HRB500E'] },
@@ -1062,7 +1224,7 @@ function pickOutStack(st) { // 出库目标垛：先进先出（垛内最早入�
  * 落点优先级（与设计方案 5.2 一致）：本库位同规格垛 > 本库位空垛 > 同跨同规格垛 > 同跨空垛；
  * 规划时以 simCap 模拟落点容量递增，同一批倒垛捆尽量集中码入同一目标垛。 */
 function pickRestackDest(srcSt, srcStackIdx, spec, simCap) {
-  const remain = (s, i) => BUNDLES_PER_STACK - (simCap.get(s.id + ':' + i) ?? s.stacks[i].count);
+  const remain = (s, i) => BUNDLES_PER_STACK - (simCap.get(s.id + ':' + i) ?? (s.stacks[i].count + (s.stacks[i].reserved || 0)));   // 容量扣除组车预占
   const L1 = [], L2 = [], L3 = [], L4 = [];   // 本位同规格 / 本位空垛 / 同跨同规格 / 同跨空垛
   const span = spanOfSlot(srcSt);
   for (const s of storages) {
@@ -1156,15 +1318,53 @@ function buildMap() {
   }
 }
 
+/* ---------------- 机器狗导航栅格（跨内细分：8 垛层 + 库位间空道） ----------------
+ * 宏观栅格（38×8）服务地图绘制/货车/天车；机器狗导航在细分导航栅格上进行：
+ *   行（29）：4 条横向通道行（各 2m）+ 每跨 8 个垛层行（各 30/8 = 3.75m）
+ *             交替 + 末端服务带行（3m），y 与宏观行几何连续铺满 0~101m
+ *   列（75）：库位列（偶数列 = 宏观库位列中心，垛位本体不可穿行）与
+ *             库位间空道列（奇数列 = 相邻库位的分界线，机器狗可通行）交替
+ * 通行规则：机器狗沿 4 条横向廊道长向机动，转入库位之间的空道深入跨内，
+ *   站到目标垛所在垛层行的空道格上（垛位正前方）转身面向垛位扫码；
+ *   垛位本体（库位列×跨内垛层行）与西墙外恒不可穿行，仅起终点格兜底放行。 */
+const NAV = {
+  ROWS: 4 + 3 * STACKS_PER_SLOT + 1,     // 4 通道行 + 3 跨×8 垛层 + 服务带 = 29
+  COLS: M.COLS * 2 - 1,                  // 库位列与空道列交替 = 75
+  STACK_H: M.SPAN_W / STACKS_PER_SLOT,   // 垛层高 3.75m
+};
+const NAV_ROW_H = [], NAV_ROW_TOP = [], navMacroRow = [];
+for (let mr = 0; mr < M.ROWS; mr++) {
+  const hs = SPAN_ROWS.includes(mr) ? Array(STACKS_PER_SLOT).fill(NAV.STACK_H) : [ROW_H[mr]];
+  for (const h of hs) { navMacroRow.push(mr); NAV_ROW_H.push(h); }
+}
+NAV_ROW_H.reduce((acc, h) => (NAV_ROW_TOP.push(acc), acc + h), 0);
+const navRowOfMacro = mr => navMacroRow.indexOf(mr);  // 宏观行 -> 导航行（跨行取跨首垛层）
+function navOf(mr, mc) { return { r: navRowOfMacro(mr), c: mc * 2 }; }  // 宏观格 -> 导航格
+function navCX(c) {   // 导航列中心 x（米）：偶=库位列中心 / 奇=库位间空道（分界线）
+  return (c % 2 === 0) ? cellCX(c / 2) : (cellCX((c - 1) / 2) + cellCX((c + 1) / 2)) / 2;
+}
+function navCY(r) { return NAV_ROW_TOP[r] + NAV_ROW_H[r] / 2; }   // 导航行中心 y（米）
+function navRowOfY(y) {          // y(米) -> 导航行（垛层行/通道行/服务带行）
+  for (let r = NAV.ROWS - 1; r > 0; r--) if (y >= NAV_ROW_TOP[r]) return r;
+  return 0;
+}
+function navColOfX(x) { return Math.max(0, Math.min(NAV.COLS - 1, Math.round(x / M.CELL_L * 2 + 3))); }
+function navBaseCost(r, c) {
+  const mr = navMacroRow[r];
+  if (c % 2 === 0) return cellBaseCost(mr, c / 2);   // 库位列沿用宏观通行性（跨内垛位本体 ∞）
+  const a = (c - 1) / 2, b = (c + 1) / 2;            // 空道列：分界两侧均在厂内方可通行
+  if (a < 2 || b >= M.COLS) return Infinity;
+  return mr === M.ROWS - 1 ? 1.35 : 1;               // 服务带内的空道按开放区计价
+}
+
 /* ---------------- 寻路（加权 Dijkstra + 视线平滑，米制代价） ----------------
- * 通行规则：机器狗只能在通道和垛位之间的间隙行走，不进入库位内部。
- *   通道（4 条横向廊道 + 3 条竖向车辆通道 + 南端入口）1.0 / 服务带与开放区 1.35 /
- *   库位格（垛位本体，无论空闲与否）∞ 不可穿行；
- *   仅起点/终点格强制放行（兜底）；扫码任务的规划终点取库位旁的通道
- *   作业点（approachCell）——狗走到垛位旁边站定，再转身面向垛位扫码。
- * 边代价 = 基础代价 × 步长（横向 8.33m / 纵向 16m=相邻行高各半）。 */
+ * 在机器狗导航栅格上求解：通道/库位间空道 1.0 / 服务带 1.35 / 垛位本体与墙外 ∞；
+ * 仅起点/终点格强制放行（兜底）。扫码任务的规划终点取 approachCell 给出的
+ * 库位间空道作业点——狗沿横向廊道机动、转入空道走到垛位正前方站定，
+ * 再转身面向垛位扫码。
+ * 边代价 = 基础代价 × 步长（横向相邻导航列 8.33/2m / 纵向相邻导航行行高各半）。 */
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-function cellBaseCost(r, c) {
+function cellBaseCost(r, c) {   // 宏观栅格基础通行代价（导航栅格库位列直接复用）
   const t = tiles[r][c];
   if (t.type === 'wall') return Infinity;                       // 厂房外（西墙外）不可通行
   if (t.type === 'storage') return Infinity;                    // 垛位本体不可穿行（仅起终点格兜底放行）
@@ -1172,11 +1372,11 @@ function cellBaseCost(r, c) {
   return 1.35;
 }
 function findPath(start, goal) {
-  const { COLS, ROWS } = M;
+  const COLS = NAV.COLS, ROWS = NAV.ROWS;
   const sIdx = start.r * COLS + start.c, gIdx = goal.r * COLS + goal.c;
   const force = new Set([sIdx, gIdx]); // 起点/终点格（库位作业格）恒可通行
   const stepCost = (r, c, step) => {
-    const base = force.has(r * COLS + c) ? 1 : cellBaseCost(r, c);
+    const base = force.has(r * COLS + c) ? 1 : navBaseCost(r, c);
     return base * step;
   };
   const N = COLS * ROWS;
@@ -1221,7 +1421,7 @@ function findPath(start, goal) {
     for (const [dr, dc] of DIRS) {
       const nr = r + dr, nc = c + dc;
       if (nr < 0 || nc < 0 || nr >= ROWS || nc >= COLS) continue;
-      const ec = stepCost(nr, nc, dr !== 0 ? (ROW_H[r] + ROW_H[nr]) / 2 : M.CELL_L);
+      const ec = stepCost(nr, nc, dr !== 0 ? (NAV_ROW_H[r] + NAV_ROW_H[nr]) / 2 : M.CELL_L / 2);
       if (!isFinite(ec)) continue;
       const nIdx = nr * COLS + nc, nd = d + ec;
       if (nd < dist[nIdx] - 1e-9) { dist[nIdx] = nd; prev[nIdx] = idx; push(nd, nIdx); }
@@ -1236,7 +1436,7 @@ function findPath(start, goal) {
     cur = prev[cur];
   }
   cells.shift(); // 去掉起点格
-  return smoothPath(start, cells, (r, c) => force.has(r * COLS + c) ? 1 : cellBaseCost(r, c));
+  return smoothPath(start, cells, (r, c) => force.has(r * COLS + c) ? 1 : navBaseCost(r, c));
 }
 function losClear(a, b, baseCost) {
   const steps = Math.max(1, Math.ceil(Math.hypot(b.r - a.r, b.c - a.c) * 2.5));
@@ -1261,12 +1461,12 @@ function smoothPath(start, cells, baseCost) { // 拉直可见的冗余折线
   }
   return out.length ? out : cells;
 }
-function pathLen(a, b) { // 实际米数（沿平滑后路径，按格中心米制坐标）
+function pathLen(a, b) { // 实际米数（沿平滑后路径，按导航格中心米制坐标）
   const p = findPath(a, b);
   if (!p) return Infinity;
-  let d = 0, px = cellCX(a.c), py = cellCY(a.r);
+  let d = 0, px = navCX(a.c), py = navCY(a.r);
   for (const w of p) {
-    const wx = cellCX(w.c), wy = cellCY(w.r);
+    const wx = navCX(w.c), wy = navCY(w.r);
     d += Math.hypot(wx - px, wy - py);
     px = wx; py = wy;
   }
@@ -1274,20 +1474,23 @@ function pathLen(a, b) { // 实际米数（沿平滑后路径，按格中心米�
 }
 
 /* ---------------- 位置描述 ---------------- */
-const slotCell = st => ({ r: st.goalR, c: st.goalC });
-const slotPoint = st => ({ x: cellCX(st.goalC), y: cellCY(st.goalR) });
-/* 作业接近点：机器狗只能站在与库位相邻的通道/间隙格上（不进垛位本体），
- * 扫码时停在垛位旁边、转身面向垛位。候选格多于一个时，取从当前位置出发
- * 沿通道走过去最近的一个，避免绕远。 */
-function approachCell(st, from) {
-  const { r, c } = slotCell(st);
+const slotPoint = st => ({ x: cellCX(st.goalC), y: cellCY(st.goalR) });  // 库位中心（天车吊装参考）
+function stackCenterY(st, k) {   // 第 k 垛中心 y：普通位=本跨 8 垛层 / 合并位=三跨纵深 8 垛层
+  const y0 = st.merged ? rowY(SPAN_ROWS[0]) : rowY(st.row);
+  const h = st.merged ? (rowY(SPAN_ROWS[2]) + M.SPAN_W - y0) : M.SPAN_W;
+  return y0 + h * (k + 0.5) / STACKS_PER_SLOT;
+}
+function stackPoint(st, k) { return { x: cellCX(st.col), y: stackCenterY(st, k) }; }  // 垛中心（机器狗扫码朝向点）
+/* 作业接近点：目标垛所在垛层行 × 库位旁的库位间空道列——机器狗最终站位在
+ * 垛位正前方、两侧库位之间的空道里（不进垛位本体，不占横向人行通道）。
+ * 左/右两侧空道候选取从当前位置出发绕行更近的一侧。 */
+function approachCell(st, stackIdx, from) {
+  const r = navRowOfY(stackCenterY(st, stackIdx));
   let best = null, bestLen = Infinity;
-  for (const [dr, dc] of DIRS) {
-    const nr = r + dr, nc = c + dc;
-    if (nr < 0 || nc < 0 || nr >= M.ROWS || nc >= M.COLS) continue;
-    if (!isFinite(cellBaseCost(nr, nc))) continue;        // 仅取可通行格：通道/间隙/服务带
-    const L = from ? pathLen(from, { r: nr, c: nc }) : 0;
-    if (!best || L < bestLen) { best = { r: nr, c: nc }; bestLen = L; }
+  for (const nc of [st.col * 2 - 1, st.col * 2 + 1]) {   // 库位与左/右邻位之间的空道列
+    if (nc < 0 || nc >= NAV.COLS || !isFinite(navBaseCost(r, nc))) continue;
+    const L = from ? pathLen(from, { r, c: nc }) : 0;
+    if (L < bestLen) { best = { r, c: nc }; bestLen = L; }
   }
   return best;
 }
@@ -1303,17 +1506,18 @@ function locName(loc) {
 class Robot {
   constructor(id, name, nick, color, charger) {
     this.id = id; this.name = name; this.nick = nick; this.color = color;
-    this.charger = charger; this.chargerNo = tiles[charger.r][charger.c].no;
-    this.x = cellCX(charger.c); this.y = cellCY(charger.r);   // 米
+    this.chargerNo = tiles[charger.r][charger.c].no;
+    this.charger = navOf(charger.r, charger.c);        // 导航栅格充电桩格
+    this.x = navCX(this.charger.c); this.y = navCY(this.charger.r);   // 米
     this.heading = -Math.PI / 2;
     this.state = 'CHARGING'; this.timer = 0;
-    this.battery = rand(78, 96);
+    this.battery = rand(88, 98);   // 班次开始电量充足（>= 派单打断阈值 85%，可立即接单）
     this.task = null;
     this.path = null; this.pathIdx = 0; this.walkPhase = 0;
     this.busyTime = 0; this.tasksDone = 0; this.distTotal = 0; this.scans = 0;
     this._warned = false; this._warnBlocked = false;
   }
-  cell() { return { r: rowOfY(this.y), c: Math.floor(this.x / M.CELL_L) + 2 }; }
+  cell() { return { r: navRowOfY(this.y), c: navColOfX(this.x) }; }   // 导航栅格格位
   atCharger() {
     const c = this.cell();
     return c.r === this.charger.r && c.c === this.charger.c;
@@ -1351,7 +1555,7 @@ class Robot {
         }
         break;
       case 'CHARGING':
-        this.battery = Math.min(100, this.battery + R.chargeRate * dt);
+        this.battery = Math.min(100, this.battery + chargePerS() * dt);
         if (this.battery >= R.fullBattery) {
           this.battery = R.fullBattery;
           this.setState('IDLE');
@@ -1361,34 +1565,35 @@ class Robot {
         break;
       case 'ASSIGN':
         if (this.timer >= R.assignTime) {
-          const ap = approachCell(this.task.slot, this.cell());   // 垛位旁的通道站位点（不进库位内部）
+          const t = this.task;
+          const ap = approachCell(t.slot, t.stackIdx, this.cell());   // 库位间空道 · 目标垛前站位点
           this.path = ap ? findPath(this.cell(), ap) : null;
           this.pathIdx = 0;
           if (!this.path) { this.abortTask(); break; }
           this.setState('PLAN'); this.task.stage = 2;
-          logEvent('plan', `${this.name} 路径规划完成：当前位置 -> 库位 ${this.task.slot.code} 通道边，全程 ${Math.round(pathLen(this.cell(), ap))}m`);
+          logEvent('plan', `${this.name} 路径规划完成：当前位置 -> 库位 ${t.slot.code} 第${t.stackIdx + 1}垛前空道站位（经库位间空道入跨），全程 ${Math.round(pathLen(this.cell(), ap))}m`);
         }
         break;
       case 'PLAN':
         if (this.timer >= R.planTime) {
           this.setState('NAV'); this.task.stage = 3;
-          logEvent('robot', `${this.name} 出发前往库位 ${this.task.slot.code} 扫码`);
+          logEvent('robot', `${this.name} 出发前往库位 ${this.task.slot.code} 扫码（经库位间空道至垛位前）`);
         }
         break;
       case 'NAV':
         if (this.moveAlong(dt)) {
-          this.setState('TURN');   // 抵达垛位旁通道站位：先转身面向垛位，再扫码（不进垛位）
+          this.setState('TURN');   // 抵达垛位前空道站位：先转身面向垛位，再扫码（不进垛位）
         }
         break;
       case 'TURN': {
-        const sp = slotPoint(this.task.slot);
+        const sp = stackPoint(this.task.slot, this.task.stackIdx);
         const want = Math.atan2(sp.y - this.y, sp.x - this.x);
         this.heading = lerpAngle(this.heading, want, Math.min(1, dt * 10));
         const dAng = Math.atan2(Math.sin(want - this.heading), Math.cos(want - this.heading));
         if (Math.abs(dAng) < 0.06 || this.timer >= 2) {
           this.heading = want;
           this.setState('SCAN'); this.task.stage = 4;
-          logEvent('robot', `${this.name} 抵达库位 ${this.task.slot.code} 通道边，已转身面向垛位，开始扫码核验（二维码）`);
+          logEvent('robot', `${this.name} 抵达库位 ${this.task.slot.code} 第${this.task.stackIdx + 1}垛前（库位间空道），已转身面向垛位，开始扫码核验（二维码）`);
         }
         break;
       }
@@ -1441,7 +1646,7 @@ class Robot {
     let remain = R.speed * dt, moved = 0;
     while (remain > 1e-9 && this.pathIdx < this.path.length) {
       const wp = this.path[this.pathIdx];
-      const tx = cellCX(wp.c), ty = cellCY(wp.r);
+      const tx = navCX(wp.c), ty = navCY(wp.r);
       const dx = tx - this.x, dy = ty - this.y;
       const d = Math.hypot(dx, dy);
       if (d <= remain) {
@@ -1453,7 +1658,7 @@ class Robot {
     }
     this.walkPhase += moved / 1.8;
     this.distTotal += moved;
-    this.battery = Math.max(0, this.battery - moved * R.drain);
+    this.battery = Math.max(0, this.battery - moved * drainPerM());
     if (this.battery <= R.critical && !this._warned) {
       this._warned = true;
       logEvent('charge', `${this.name} 电量临界 (${this.battery | 0}%)，任务完成后立即返航充电`);
@@ -1466,8 +1671,9 @@ class Robot {
     this.tasksDone++;
     if (t.type === 'in') { // 入库：落料正式入账，任务闭环
       const k = t.slot.stacks[t.stackIdx];
-      if (k) k.pending = 0;
+      if (k) k.pending = Math.max(0, k.pending - 1);   // 计数制：同车多吊集中同垛时，每扫码一捆减一
       confirmBundleRec(t.slot, t.stackIdx);           // 捆级明细：最早待核验捆转为在库
+      pushStackToDb(t.slot, t.stackIdx);              // 写回库存数据库（垛待扫码清零）
       t.state = 'done'; t.stage = 6; t.ended = simTime;
       ledgerPush(t);                                   // 任务台账留痕（持久化/导出用）
       logEvent('robot', `${this.name} 状态回传：${t.id} 完成，耗时 ${fmtDur(simTime - t.created)}`);
@@ -1759,6 +1965,7 @@ function updateCranes(dt) {
             st.state = slotBundles(st) === 0 ? 'free' : 'occupied';
             st.lockSpec = null; st.lockStack = null;
             occupiedCount--;
+            pushStackToDb(st, j.task.stackIdx);                // 写回库存数据库（垛扣减/清空）
             logEvent('crane', `天车吊取：${j.spec.name}（库位 ${st.code} 第${j.task.stackIdx + 1}垛 · ${cr.name}）`);
             logEvent('inventory', `库存更新：${st.code} 出库核销 ${j.spec.name}（库存 ${occupiedCount}/${TOTAL_BUNDLE_CAP}）`);
           }
@@ -1777,12 +1984,14 @@ function updateCranes(dt) {
             const k = st.stacks[j.task.stackIdx];
             if (k) {
               if (k.count === 0) { k.spec = j.spec; k.inTime = simTime; } // 垛内首捆记入库时间（FIFO）
-              k.count++; k.pending = 1;                                  // 刚落料待扫码
+              k.count++; k.pending++;                                    // 刚落料待扫码（计数制：同车多吊集中落同垛时逐捆累计）
+              if (k.reserved > 0) k.reserved--;                          // 组车预占转实落
               mkBundleRec(st, j.task.stackIdx, j.spec, true, simTime);   // 捆级明细：登记待核验捆
             }
             st.state = 'occupied'; st.lockSpec = null; st.lockStack = null;
             occupiedCount++;
             j.task.materialReady = true;
+            pushStackToDb(st, j.task.stackIdx);                // 写回库存数据库（垛新增待扫码捆）
             logEvent('crane', `天车吊放完成：${j.spec.name} 落位库位 ${st.code} 第${j.task.stackIdx + 1}垛（${cr.name}）`);
             logEvent('inventory', `库位 ${st.code} 第${j.task.stackIdx + 1}垛 落料 ${j.spec.name}（物理库存 ${occupiedCount}/${TOTAL_BUNDLE_CAP} · 待机器狗扫码入账）`);
           } else if (j.kind === 'restack') { // 倒垛落位：压货自源垛顶移入目标垛顶（台账总数不变，仅位置迁移）
@@ -1802,6 +2011,8 @@ function updateCranes(dt) {
             if (j.dest !== st && j.dest.state === 'free') j.dest.state = 'occupied';
             if (t.restackLeft > 0) t.restackLeft--;
             invBump();
+            pushStackToDb(st, j.fromStack);                   // 写回库存数据库：源垛扣减
+            pushStackToDb(j.dest, j.destStack);               // 写回库存数据库：目标垛新增
             logEvent('crane', `倒垛完成：${j.spec.name} 库位 ${st.code} 第${j.fromStack + 1}垛 -> ${j.dest.code} 第${j.destStack + 1}垛（${cr.name} · ${t.id} 剩 ${t.restackLeft} 吊）`);
             logEvent('inventory', `倒垛更新：${st.code} 第${j.fromStack + 1}垛 压货一捆移至 ${j.dest.code} 第${j.destStack + 1}垛（库存总量不变 ${occupiedCount}/${TOTAL_BUNDLE_CAP}）`);
           } else { // 装车完成：出库任务闭环（订单履约推进 + 台账留痕），最后一吊装毕后货车转出场复验
@@ -1837,19 +2048,23 @@ function updateCranes(dt) {
  * 车次（Batch）分组层：同类型 + 同跨的任务凑满 6-10 吊组成一车，共享一辆货车；
  * 货车停靠一次（目标跨车道），该跨天车逐一吊运，全部吊完货车才离场。 */
 /* ---------------- 卸货（入库）推荐算法 ----------------
- * 核心原则：相同/相似货物归堆放一起，不随机荐垛。对所有候选（库位,垛）综合评分，
- * 选出最优卸货落点，并把推荐过程（最优候选得分分解 + 次选候选）写入事件日志。
- * 评分项（见 scoreInCandidates）：
- *   ① 同规格归堆 +60 起步，按垛内填充率加励：优先码入已有同规格垛，先填满旧垛、
- *      把空垛留给新规格；
- *   ② 空垛兜底 +20 起步：无同规格垛才用空垛；本库位空垛越多扣分越多（空垛是稀缺资源）；
- *   ③ 库位同质性：库位内同族（同形状）垛 +5/垛，异族垛 -8/垛（避免异类混入归堆区）；
- *   ④ 邻位聚簇：同号区相邻库位（area±1）内同规格垛 +4/垛（上限 20），延展连片聚簇；
- *   ⑤ 扫码干扰：库位内待扫码垛 -3/垛（不打扰机器狗核验队列）；待扫码垛本身不作落点；
- *   ⑥ 跨匹配 +10：匹配待组车车次的跨（天车限本跨、货车按跨组车，短倒运距）。
- * 硬规则：同垛不混异规格；不荐被锁定库位；满垛/待扫码垛不作落点。 */
+ * 核心原则：相同/相似货物归堆放一起，不随机荐垛。
+ *   ⓪ 同车归并（createTask 内先行）：同一车次上相同规格的吊，沿用本车次已配的
+ *      目标垛集中码放（容量按 已码捆 count + 组车预占 reserved 计），垛满才另荐；
+ *   ①~⑥ 对其余入库任务，对所有候选（库位,垛）综合评分选出最优落点，并把推荐
+ *      过程（最优候选得分分解 + 次选候选）写入事件日志。评分权重集中在
+ *      CFG.placement（「⚙ 设备参数」/ 主系统「调度参数」页可调，实时生效）：
+ *   ① 同规格归堆 sameSpecBase 起步，按垛内填充率加励（sameSpecFill）：优先码入
+ *      已有同规格垛，先填满旧垛、把空垛留给新规格；
+ *   ② 空垛兜底 emptyBase 起步：无同规格垛才用空垛；本库位空垛越多扣分越多（emptyPenalty/垛）；
+ *   ③ 库位同质性：库位内同族（同形状）垛 +famBonus/垛，异族垛 -mixPenalty/垛；
+ *   ④ 邻位聚簇：同号区相邻库位（area±1）内同规格垛 +nearBonus/垛（上限 nearCap）；
+ *   ⑤ 扫码干扰：库位内待扫码垛 -pendPenalty/垛（不打扰机器狗核验队列）；待扫码垛本身不作落点；
+ *   ⑥ 跨匹配 +spanBonus：匹配待组车车次的跨（天车限本跨、货车按跨组车，短倒运距）。
+ * 硬规则：同垛不混异规格；不荐被锁定库位；满垛（含组车预占）/待扫码垛不作落点。 */
 const specFamily = spec => SPEC_META[spec.name].shape;   // 规格族（形状）：rebar / round / square
 function scoreInCandidates(spec, fam, spanHint) { // 全库候选（库位,垛）评分；返回 [{st, stackIdx, sc, parts}]
+  const W = CFG.placement;                        // 评分权重（实时读取，支持运行时调整）
   const cands = [];
   for (const s of storages) {
     if (s.state === 'locked') continue;
@@ -1869,22 +2084,23 @@ function scoreInCandidates(spec, fam, spanHint) { // 全库候选（库位,垛�
       for (const k of o.stacks) if (k.spec === spec && k.count > 0) nearN++;
     }
     s.stacks.forEach((k, i) => {
-      if (k.count >= BUNDLES_PER_STACK || k.pending > 0) return;   // 满垛/待扫码垛不作落点
-      if (k.count > 0 && k.spec !== spec) return;                  // 硬规则：同垛不混异规格
+      const fill = k.count + (k.reserved || 0);           // 已码捆 + 本车次组车预占（预占捆必将落本垛）
+      if (fill >= BUNDLES_PER_STACK || k.pending > 0) return;   // 满垛/待扫码垛不作落点
+      if (fill > 0 && k.spec !== spec) return;                  // 硬规则：同垛不混异规格（含他车预占垛）
       const parts = [];
       let sc = 0;
       if (k.spec === spec) {                                       // ① 同规格归堆（按填充率加励，先填旧垛）
-        const g = 60 + Math.round(20 * k.count / BUNDLES_PER_STACK);
-        sc += g; parts.push(`同规格归堆 ${g}（${k.count}/${BUNDLES_PER_STACK}）`);
+        const g = W.sameSpecBase + Math.round(W.sameSpecFill * fill / BUNDLES_PER_STACK);
+        sc += g; parts.push(`同规格归堆 ${g}（${fill}/${BUNDLES_PER_STACK}）`);
       } else {                                                     // ② 空垛兜底（空垛多则惜用）
-        const g = Math.max(0, 20 - emptyN * 3);
+        const g = Math.max(0, W.emptyBase - emptyN * W.emptyPenalty);
         sc += g; parts.push(`空垛兜底 ${g}`);
       }
-      if (famN) { sc += famN * 5; parts.push(`库位同族 ${famN * 5}`); }     // ③ 同质性奖励
-      if (mixN) { sc -= mixN * 8; parts.push(`库位异族 -${mixN * 8}`); }    // ③ 异类混入惩罚
-      if (nearN) { const g = Math.min(nearN * 4, 20); sc += g; parts.push(`邻位聚簇 ${g}`); }  // ④
-      if (pendN) { sc -= pendN * 3; parts.push(`扫码干扰 -${pendN * 3}`); } // ⑤
-      if (spanHint != null) { sc += 10; parts.push('跨匹配 10'); }          // ⑥ 已按跨筛选，匹配即加分
+      if (famN) { sc += famN * W.famBonus; parts.push(`库位同族 ${famN * W.famBonus}`); }     // ③ 同质性奖励
+      if (mixN) { sc -= mixN * W.mixPenalty; parts.push(`库位异族 -${mixN * W.mixPenalty}`); }    // ③ 异类混入惩罚
+      if (nearN) { const g = Math.min(nearN * W.nearBonus, W.nearCap); sc += g; parts.push(`邻位聚簇 ${g}`); }  // ④
+      if (pendN) { sc -= pendN * W.pendPenalty; parts.push(`扫码干扰 -${pendN * W.pendPenalty}`); } // ⑤
+      if (spanHint != null) { sc += W.spanBonus; parts.push(`跨匹配 ${W.spanBonus}`); }          // ⑥ 已按跨筛选，匹配即加分
       cands.push({ st: s, stackIdx: i, sc, parts });
     });
   }
@@ -1897,9 +2113,11 @@ function recommendInPlacement(spec, spanHint = null) { // 卸货推荐：返回 
   if (!cands.length) return null;
   cands.sort((a, b) => b.sc - a.sc);
   const best = cands[0];
-  logEvent('task', `卸货推荐：${spec.name} -> 库位 ${best.st.code} 第${best.stackIdx + 1}垛（综合 ${best.sc} 分 · ${best.parts.join(' + ')}）`);
   const runners = cands.slice(1, 3).map(c => `${c.st.code} 第${c.stackIdx + 1}垛 ${c.sc}分`).join('；');
+  logEvent('task', `卸货推荐：${spec.name} -> 库位 ${best.st.code} 第${best.stackIdx + 1}垛（综合 ${best.sc} 分 · ${best.parts.join(' + ')}）`);
   if (runners) logEvent('task', `卸货推荐次选：${runners}（同规格归堆 + 库位同质 + 邻位聚簇综合评分）`);
+  window.__recLog = window.__recLog || [];   // 推荐留痕（自检/调试：日志窗口仅留近 260 条，计数不受挤出影响）
+  window.__recLog.push({ t: simTime, spec: spec.name, code: best.st.code, stackIdx: best.stackIdx, sc: best.sc, parts: best.parts, runners });
   return { st: best.st, stackIdx: best.stackIdx };
 }
 function pickInStorage(spec, spanHint = null) { // 兼容入口：转由推荐算法选库位（仅返回库位，垛由调用方再定）
@@ -2005,12 +2223,26 @@ function createTask(type, opts = {}) {
     : batches.find(b => b.kind === type && !b.truck && b.tasks.length < CFG.truck.maxLoads);
   const spanHint = open ? open.span : null;
   if (type === 'in') {
-    const rec = opts.storage
+    // ⓪ 同车归并：本车次（同跨组车中）已有同规格入库任务 -> 沿用其目标垛集中码放，
+    //    容量按「已码捆 count + 组车预占 reserved」计，垛满才另荐新垛——整车同规格不散落多垛。
+    let rec = null, merged = false;
+    const mate = !opts.storage && open
+      ? [...open.tasks].reverse().find(t => t.type === 'in' && t.spec === spec) : null;
+    if (mate) {
+      const mk = mate.slot.stacks[mate.stackIdx];
+      if (mk && (!mk.spec || mk.spec === spec) && mk.count + (mk.reserved || 0) < BUNDLES_PER_STACK) {
+        rec = { st: mate.slot, stackIdx: mate.stackIdx };
+        merged = true;
+      }
+    }
+    if (!rec) rec = opts.storage
       ? { st: opts.storage, stackIdx: pickInStack(opts.storage, spec) }
       : recommendInPlacement(spec, spanHint);
     if (!rec || rec.stackIdx < 0) { warn('⚠ 库区库位已满（各垛均达 20 捆上限）或指定库位无可用垛，无法入库'); return null; }
     const st = rec.st, stackIdx = rec.stackIdx;
     st.state = 'locked'; st.lockSpec = spec; st.lockStack = stackIdx;
+    const k0 = st.stacks[stackIdx];
+    k0.reserved = (k0.reserved || 0) + 1;   // 组车预占：本吊必将落本垛（天车落料时转实扣减），供同车归并与推荐算法计算容量
     task = {
       id: `T-${String(++taskSeq).padStart(4, '0')}`, type, spec, slot: st, stackIdx,
       state: 'pending', stage: 0, created: simTime, robot: null,
@@ -2018,7 +2250,13 @@ function createTask(type, opts = {}) {
       cranePushed: false, truck: null, batch: null,
     };
     const b = routeToBatch(type, task);
-    logEvent('task', `WMS 下发入库任务 ${task.id}：${spec.name} ${spec.weight}t -> 库位 ${st.code} 第${stackIdx + 1}垛（锁定）`);
+    if (merged) {
+      logEvent('task', `WMS 下发入库任务 ${task.id}：${spec.name} ${spec.weight}t -> 库位 ${st.code} 第${stackIdx + 1}垛（同车归并：沿用车次 ${b.id} 已配垛位，整车同规格集中码放 · 垛内已计划 ${k0.count + k0.reserved}/${BUNDLES_PER_STACK} 捆）`);
+      window.__mergeLog = window.__mergeLog || [];   // 同车归并留痕（自检/调试）
+      window.__mergeLog.push({ t: simTime, task: task.id, spec: spec.name, code: st.code, stackIdx, batch: b.id });
+    } else {
+      logEvent('task', `WMS 下发入库任务 ${task.id}：${spec.name} ${spec.weight}t -> 库位 ${st.code} 第${stackIdx + 1}垛（锁定）`);
+    }
     logEvent('truck', `${task.id} 加入车次 ${b.id}（${SPANS[b.span]} · ${b.tasks.length}/${CFG.truck.maxLoads} 吊 · 待组车）`);
   } else {
     let order = opts.order || null;
@@ -2072,11 +2310,12 @@ function scheduler() {
     let best = null, bestCost = 0;
     for (const rb of robots) {
       if (!rb.available()) continue;
-      const goal = slotCell(t.slot);
+      const goal = approachCell(t.slot, t.stackIdx, rb.cell());   // 目标垛前的库位间空道站位
+      if (!goal) continue;
       const d1 = pathLen(rb.cell(), goal);
       if (d1 === Infinity) continue;
       const d3 = pathLen(goal, rb.charger); // 保证任务后能返桩充电
-      const need = (d1 + d3) * R.drain;
+      const need = (d1 + d3) * drainPerM();
       if (rb.battery < need + R.reserve) continue;
       if (!best || d1 < bestCost) { best = rb; bestCost = d1; }
     }
@@ -2088,7 +2327,8 @@ function assign(rb, t) {
   const wasCharging = rb.state === 'CHARGING';
   rb.task = t;
   rb.setState('ASSIGN');
-  const d1 = pathLen(rb.cell(), slotCell(t.slot));
+  const goal = approachCell(t.slot, t.stackIdx, rb.cell());
+  const d1 = goal ? pathLen(rb.cell(), goal) : Infinity;
   logEvent('dispatch', `调度分配：${t.id} -> ${rb.name}（扫码路程 ${Math.round(d1)}m · 电量 ${rb.battery | 0}%）`);
   if (wasCharging) logEvent('charge', `${rb.name} 中断充电（${rb.battery | 0}%），接受任务`);
 }
@@ -2127,11 +2367,17 @@ function spawnVehicleManifest(type) {
     }
     return made;
   }
+  // 进厂车随车运单：整车按 1~2 种规格配载——钢厂按规格整车发运为主，
+  // 仅 mixedSpecPct 比例的车混装第二种规格；同车同规格由 createTask 归并到同一垛。
   const n = Math.round(rand(CFG.truck.minLoads, CFG.truck.maxLoads));
+  const main = pick(SPECS);
+  const second = Math.random() * 100 < CFG.truck.mixedSpecPct ? pick(SPECS.filter(s => s !== main)) : null;
+  const mainN = second ? Math.max(1, n - Math.max(1, Math.round(n * rand(0.25, 0.45)))) : n;
   let made = 0;
-  for (let i = 0; i < n; i++) if (createTask(type, { silent: true })) made++;
+  for (let i = 0; i < n; i++) if (createTask(type, { silent: true, spec: i < mainN ? main : second })) made++;
   if (made) {
-    logEvent('task', `生产排产：进厂车 1 辆，随车运单 ${made} 吊（入库卸货）`);
+    const manifest = second ? `${main.name} ×${Math.min(mainN, made)} + ${second.name} ×${Math.max(0, made - mainN)}（混装）` : `${main.name} ×${made}（整车单规格）`;
+    logEvent('task', `生产排产：进厂车 1 辆，随车运单 ${made} 吊（入库卸货 · ${manifest}）`);
     window.__spawnLog = window.__spawnLog || [];
     window.__spawnLog.push({ t: simTime, type, made });   // 排产留痕（自检/调试：验证按天铺开节奏）
   }
@@ -2196,6 +2442,7 @@ function frame(now) {
   uiAcc += rdt;
   if (uiAcc >= 0.2) { uiAcc = 0; refreshPanels(); }
   render();
+  if (dogActive) drawDogView();   // 机器狗视图激活时绘制追踪视角画布
   requestAnimationFrame(frame);
 }
 
@@ -2301,7 +2548,7 @@ function drawHChannels() { // 4 条横向通道（各宽 2m，横贯厂房全长
   ctx.font = FONT(Math.max(6, scale * 1.3));
   ctx.fillStyle = 'rgba(110,231,183,.6)';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('横向通道 ×4（2m · 不计入总宽）', mx(150), my(HCH_Y[0] + M.CH_W / 2));
+  ctx.fillText('横向通道 ×4（2m · 机器狗主廊道 · 经库位间空道至各垛位前）', mx(150), my(HCH_Y[0] + M.CH_W / 2));
 }
 function drawBase() {
   // 厂房地面（x 0~300, y 0~98：90m 三跨 + 4 条 2m 横向通道）
@@ -2316,6 +2563,19 @@ function drawBase() {
     ctx.fillStyle = `rgba(${z.tint},.045)`;
     ctx.fillRect(mx(colX(c)), my(0), M.CELL_L * scale, HALL_W * scale);
   }
+  // 库位间空道（相邻库位分界线，机器狗入跨通道）：跨内淡虚线示意
+  ctx.strokeStyle = 'rgba(125,211,252,.16)'; ctx.lineWidth = 1;
+  ctx.setLineDash([5, 4]);
+  for (let nc = 5; nc < NAV.COLS; nc += 2) {   // 奇数导航列 = 库位间空道
+    const ax = mx(navCX(nc));
+    for (const sr of SPAN_ROWS) {
+      ctx.beginPath();
+      ctx.moveTo(ax, my(rowY(sr)));
+      ctx.lineTo(ax, my(rowY(sr) + M.SPAN_W));
+      ctx.stroke();
+    }
+  }
+  ctx.setLineDash([]);
   // 车辆通道（绿色）：3 条竖向进出通道 + 南端 B 跨入口通道
   ctx.fillStyle = 'rgba(52,211,153,.20)';
   for (const c of LANE_COLS) ctx.fillRect(mx(colX(c)), my(0), M.CELL_L * scale, HALL_W * scale);
@@ -2447,7 +2707,7 @@ function drawBase() {
   ctx.fillText('30 m', mx(M.X_MIN + 30), yB + 5);
   ctx.textAlign = 'left';
   ctx.font = FONT(9);
-  ctx.fillText('　总面积 27,000 ㎡ · 机器狗图示放大 · 库位列宽 8.33m', mx(M.X_MIN + 36), yB);
+  ctx.fillText('　总面积 27,000 ㎡ · 机器狗图示放大 · 库位列宽 8.33m · 库位间空道（淡虚线）供机器狗通行', mx(M.X_MIN + 36), yB);
 }
 function drawColumns() { // 跨上立柱摄像头：每跨上/下边缘立柱，柱顶摄像头识别车牌时高亮 + 扫描线
   const cs = Math.max(2.2, scale * 0.65);
@@ -2704,7 +2964,7 @@ function drawPaths() {
     ctx.beginPath();
     ctx.moveTo(mx(rb.x), my(rb.y));
     for (let i = rb.pathIdx; i < rb.path.length; i++) {
-      ctx.lineTo(mx(cellCX(rb.path[i].c)), my(cellCY(rb.path[i].r)));
+      ctx.lineTo(mx(navCX(rb.path[i].c)), my(navCY(rb.path[i].r)));
     }
     ctx.stroke();
     ctx.restore();
@@ -2777,7 +3037,7 @@ function drawRobot(rb) {
 
   // 扫码波束（SCAN 状态：向库位方向扩散的扫描环）
   if (rb.state === 'SCAN' && rb.task) {
-    const sp = slotPoint(rb.task.slot);
+    const sp = stackPoint(rb.task.slot, rb.task.stackIdx);   // 扫码波束指向垛位中心
     const tx = mx(sp.x), ty = my(sp.y);
     ctx.save();
     ctx.strokeStyle = hexA(rb.color, 0.55);
@@ -2811,6 +3071,11 @@ function drawRobot(rb) {
     rr(ctx, bx + 1, by + 1, Math.max(2, (bw - 2) * rb.battery / 100), bh - 2, 1.5);
     ctx.fillStyle = bcol; ctx.fill();
   }
+  // 电量百分比（电池条右侧）
+  ctx.font = FONT(7.5);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = bcol;
+  ctx.fillText(`${rb.battery | 0}%`, bx + bw + 3, by + bh / 2 + 0.5);
   // 名称
   ctx.font = FONTM(9);
   ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
@@ -3064,19 +3329,27 @@ function refreshPanels() {
   const dogBusy = robots.filter(r => BUSY_STATES.includes(r.state)).length;
   const craneBusy = cranes.filter(c => c.state !== 'IDLE').length;
   $('robotCnt').textContent = `狗 ${dogBusy}/${robots.length} · 天车 ${craneBusy}/${cranes.length} 作业`;
+  // 车队电量汇总：均值 + 最低电量狗（折算剩余续航，满电续航 CFG.robot.endurance 小时）
+  const avgB = robots.reduce((s, r) => s + r.battery, 0) / robots.length;
+  const minRb = robots.reduce((a, b) => (a.battery < b.battery ? a : b));
+  const sumCol = minRb.battery > 50 ? '#34d399' : minRb.battery > 25 ? '#fbbf24' : '#f87171';
+  const chargingN = robots.filter(r => r.state === 'CHARGING').length;
+  $('battSum').innerHTML = `🔋 机器狗电量：均值 ${avgB | 0}% · 最低 <b style="color:${sumCol}">${minRb.name} ${minRb.battery | 0}%</b>`
+    + `（续航 ${fmtEndurance(minRb.battery)}）· 满电续航 ${CFG.robot.endurance}h · 充满 ${CFG.robot.chargeHours}h`
+    + (chargingN ? ` · ${chargingN} 台充电中` : '');
   const dogCards = robots.map(rb => {
     const bcol = rb.battery > 50 ? '#34d399' : rb.battery > 25 ? '#fbbf24' : '#f87171';
     const bcls = rb.state === 'IDLE' || rb.state === 'CHARGING' ? '' :
       (rb.state === 'SCAN' ? 'b-scan' : 'b-go');
     const taskLine = rb.task
       ? `<span class="tid">${rb.task.id}</span> · ${navStateText(rb)} · 库位 ${rb.task.slot.code}（${rb.task.type === 'in' ? '入库扫码' : '出库核验'}）`
-      : '空闲待命';
+      : (rb.state === 'CHARGING' ? `充电桩 #${rb.chargerNo} 充电中 · 约 ${fmtChargeLeft(rb.battery)} 充满` : '空闲待命');
     return `<div class="rcard">
       <div class="rhead">
         <span class="rname" style="color:${rb.color}">● ${rb.name}</span>
         <span class="rnick">${rb.nick} · 扫码</span>
         <span class="badge ${bcls}">${navStateText(rb)}</span>
-        <span class="badge-batt" style="color:${bcol}">${rb.battery | 0}%</span>
+        <span class="badge-batt" style="color:${bcol}">${rb.battery | 0}% · 续航 ${fmtEndurance(rb.battery)}</span>
       </div>
       <div class="bbar"><i style="width:${rb.battery}%;background:${bcol}"></i></div>
       <div class="rtask">${taskLine}</div>
@@ -3139,6 +3412,7 @@ function refreshPanels() {
     return `<div class="${cls}" title="${n}"><span class="fn">${n}</span><span class="fc">${val}</span></div>`;
   });
   $('flowStrip').innerHTML = nodes.join('<span class="farrow">-></span>');
+  if (dogActive) updateDogPanel();   // 机器狗视图右侧面板随刷新节流更新
 }
 
 /* ---------------- 交互：悬停提示 / 点击下单 ---------------- */
@@ -3217,7 +3491,7 @@ function updateTooltip(e) {
   const isHCh = t.type === 'channel' && r % 2 === 0 && r < 7;   // 4 条横向通道廊道行
   let html = '';
   if (isHCh) {
-    html = `<div><b>横向通道</b></div><div class="tt-dim">宽 2m · 机器狗主廊道 · 不计入总宽 90m（共 4 条）</div>`;
+    html = `<div><b>横向通道</b></div><div class="tt-dim">宽 2m · 机器狗主廊道 · 经库位间空道抵达各垛位前 · 不计入总宽 90m（共 4 条）</div>`;
   } else if (t.type === 'storage') {
     const st = storages[t.slotId];
     const task = st.state === 'locked' ? tasks.find(x => x.state !== 'done' && x.slot === st) : null;
@@ -3251,8 +3525,8 @@ function updateTooltip(e) {
             <div class="tt-dim">宽 8.3m · 货车经北端入口进场，停靠目标跨由天车装卸</div>
             ${tk ? `<div>停靠货车：<b>${tk.taskId}</b>（${tk.plate} · ${tk.kind === 'in' ? '入库载料' : '出库空车'} · ${tk.batch ? tk.batch.tasks.length : 0} 吊${stTxt ? ` · ${stTxt}` : ''}）</div>` : '<div class="tt-dim">当前无货车停靠</div>'}`;
   } else if (t.type === 'charger') {
-    const rb = robots.find(x => x.state === 'CHARGING' && x.atCharger() && x.cell().r === r && x.cell().c === c);
-    html = `<div><b>充电桩 #${t.no}</b></div>${rb ? `<div class="tt-dim">${rb.name} 充电中 · ${rb.battery | 0}%</div>` : '<div class="tt-dim">当前空闲</div>'}`;
+    const rb = robots.find(x => x.state === 'CHARGING' && x.atCharger() && x.chargerNo === t.no);
+    html = `<div><b>充电桩 #${t.no}</b></div>${rb ? `<div class="tt-dim">${rb.name} 充电中 · ${rb.battery | 0}% · 约 ${fmtChargeLeft(rb.battery)} 充满</div>` : '<div class="tt-dim">当前空闲</div>'}`;
   } else if (t.type === 'channel') {
     html = `<div><b>南端入口通道</b></div><div class="tt-dim">1~2 号区 B 跨 · 机器狗通行</div>`;
   } else if (t.type === 'service') {
@@ -3346,6 +3620,331 @@ function resizeCanvas() {
 new ResizeObserver(resizeCanvas).observe($('cvWrap'));
 window.addEventListener('resize', resizeCanvas);
 
+/* ================= 机器狗视图（第一人称追踪视角） =================
+ * 左侧画布：追踪镜头——以选中机器狗为中心、其朝向恒朝屏幕上方旋转地图；
+ *   扇形 = 扫码相机视野（±32°），扫码时显示指向目标垛位的波束与扩散环。
+ * 右侧面板：狗狗切换 + 实时参数（电量/续航/位置/朝向/统计）+ 当前任务 + 任务队列。 */
+let dogActive = false, selDogIdx = 0;
+let dvCanvas = null, dvCtx = null;
+
+window.dogViewSetActive = v => {   // 由视图标签切换调用（switchView 在库存 IIFE 内）
+  dogActive = !!v;
+  const root = $('dogRoot');
+  if (root && root.classList) root.classList.toggle('on', dogActive);
+  if (dogActive) updateDogPanel();
+};
+
+function dogProj(rb, wx, wy, cx, cy, ds) {   // 世界(米) -> 追踪画布屏幕坐标（用于不随地图旋转的标签）
+  const dx = wx - rb.x, dy = wy - rb.y;
+  const a = -rb.heading - Math.PI / 2;
+  const ca = Math.cos(a), sa = Math.sin(a);
+  return { x: cx + (dx * ca - dy * sa) * ds, y: cy + (dx * sa + dy * ca) * ds };
+}
+
+function drawDogView() {
+  if (!dogActive) return;
+  if (!dvCanvas) {
+    dvCanvas = $('dogCv');
+    dvCtx = dvCanvas && dvCanvas.getContext ? dvCanvas.getContext('2d') : null;   // 无头自检桩无 getContext，安全跳过
+  }
+  const g = dvCtx;
+  if (!g || !robots.length) return;
+  const wrap = $('dogCvWrap');
+  const W = (wrap && wrap.clientWidth) || 900, H = (wrap && wrap.clientHeight) || 620;
+  const dpr = window.devicePixelRatio || 1;
+  const pw = Math.max(1, Math.round(W * dpr)), ph = Math.max(1, Math.round(H * dpr));
+  if (dvCanvas.width !== pw) dvCanvas.width = pw;
+  if (dvCanvas.height !== ph) dvCanvas.height = ph;
+  const rb = robots[Math.min(selDogIdx, robots.length - 1)];
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = '#060e1e'; g.fillRect(0, 0, W, H);
+
+  const cx = W / 2, cy = H * 0.60;
+  const ds = Math.min(W / 76, H / 58);        // px/米：视野约 76m × 58m
+  const lw = 1 / ds;                          // 1 屏幕 px 的世界线宽
+
+  /* ---- 世界层（狗居中，朝向 = 屏幕上方） ---- */
+  g.save();
+  g.translate(cx, cy);
+  g.scale(ds, ds);
+  g.rotate(-rb.heading - Math.PI / 2);
+  g.translate(-rb.x, -rb.y);
+  // 地面 + 充电服务带
+  g.fillStyle = '#0a1730'; g.fillRect(0, 0, 300, HALL_W);
+  g.fillStyle = '#10224a'; g.fillRect(0, rowY(7), 300, M.SVC_W);
+  // 横向通道 ×4 + 竖向车辆通道 ×3
+  g.fillStyle = 'rgba(52,211,153,.16)';
+  for (const y of HCH_Y) g.fillRect(0, y, 300, M.CH_W);
+  g.fillStyle = 'rgba(52,211,153,.10)';
+  for (const c of LANE_COLS) g.fillRect(colX(c), 0, M.CELL_L, MAP_BOT);
+  // 库位 + 逐垛
+  for (const st of storages) {
+    const sx = colX(st.col);
+    const y0 = st.merged ? rowY(SPAN_ROWS[0]) : rowY(st.row);
+    const hh = st.merged ? rowY(SPAN_ROWS[2]) + M.SPAN_W - y0 : M.SPAN_W;
+    g.fillStyle = 'rgba(20,40,78,.4)';
+    g.fillRect(sx + 0.2, y0 + 0.2, M.CELL_L - 0.4, hh - 0.4);
+    const sh = hh / STACKS_PER_SLOT;
+    for (let i = 0; i < STACKS_PER_SLOT; i++) {
+      const k = st.stacks[i];
+      if (k.count > 0) {
+        g.fillStyle = hexA(k.spec.color, 0.15 + 0.7 * Math.min(1, k.count / BUNDLES_PER_STACK));
+        g.fillRect(sx + 0.35, y0 + sh * i + 0.12, M.CELL_L - 0.7, sh - 0.24);
+      }
+      if (k.pending > 0) {   // 已落料待扫码：白色虚线
+        g.save();
+        g.strokeStyle = 'rgba(226,232,240,.85)'; g.lineWidth = lw * 1.4;
+        g.setLineDash([0.6, 0.5]); g.lineDashOffset = -(simTime * 1.5) % 1.1;
+        g.strokeRect(sx + 0.45, y0 + sh * i + 0.22, M.CELL_L - 0.9, sh - 0.44);
+        g.restore();
+      }
+    }
+    if (st.state === 'locked') {   // 锁定：黄色蚂蚁线
+      g.save();
+      g.strokeStyle = 'rgba(251,191,36,.85)'; g.lineWidth = lw * 1.6;
+      g.setLineDash([0.9, 0.7]); g.lineDashOffset = -(simTime * 2) % 1.6;
+      g.strokeRect(sx + 0.3, y0 + 0.3, M.CELL_L - 0.6, hh - 0.6);
+      g.restore();
+    }
+  }
+  // 充电桩
+  for (const [r, c] of CHARGER_CELLS) {
+    g.fillStyle = 'rgba(196,181,253,.30)';
+    g.fillRect(colX(c) + 0.5, rowY(r) + 0.4, M.CELL_L - 1, M.SVC_W - 0.8);
+    g.strokeStyle = 'rgba(196,181,253,.7)'; g.lineWidth = lw * 1.5;
+    g.strokeRect(colX(c) + 0.5, rowY(r) + 0.4, M.CELL_L - 1, M.SVC_W - 0.8);
+  }
+  // 货车（沿竖向通道，纵向长条）
+  for (const t of trucks) {
+    g.fillStyle = t.kind === 'in' ? 'rgba(163,230,53,.5)' : 'rgba(251,146,60,.5)';
+    g.fillRect(t.x - 2.1, t.y - 6, 4.2, 12);
+  }
+  // 天车（架空桥架：横跨本跨 30m 的粉色横杠）
+  for (const cr of cranes) {
+    g.strokeStyle = 'rgba(244,114,182,.75)'; g.lineWidth = lw * 3;
+    g.beginPath(); g.moveTo(cr.x, cr.band.y0 + 1); g.lineTo(cr.x, cr.band.y1 - 1); g.stroke();
+    g.fillStyle = '#f472b6';
+    g.beginPath(); g.arc(cr.x, cr.y, 0.9, 0, Math.PI * 2); g.fill();
+  }
+  // 其他机器狗
+  for (const o of robots) {
+    if (o === rb) continue;
+    g.fillStyle = hexA(o.color, 0.9);
+    g.beginPath(); g.arc(o.x, o.y, 1.1, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = hexA(o.color, 0.5); g.lineWidth = lw * 1.5;
+    g.beginPath(); g.arc(o.x, o.y, 1.7, 0, Math.PI * 2); g.stroke();
+  }
+  // 剩余规划路径（虚线）
+  if (rb.path && rb.pathIdx < rb.path.length) {
+    g.save();
+    g.strokeStyle = hexA(rb.color, 0.75); g.lineWidth = lw * 1.6;
+    g.setLineDash([1.2, 0.9]); g.lineDashOffset = -(simTime * 4) % 2.1;
+    g.beginPath(); g.moveTo(rb.x, rb.y);
+    for (let i = rb.pathIdx; i < rb.path.length; i++) g.lineTo(navCX(rb.path[i].c), navCY(rb.path[i].r));
+    g.stroke();
+    g.restore();
+  }
+  // 任务目标库位：脉冲框
+  if (rb.task) {
+    const st = rb.task.slot;
+    const sx = colX(st.col);
+    const y0 = st.merged ? rowY(SPAN_ROWS[0]) : rowY(st.row);
+    const hh = st.merged ? rowY(SPAN_ROWS[2]) + M.SPAN_W - y0 : M.SPAN_W;
+    const pulse = 0.5 + 0.4 * Math.sin(simTime * 5);
+    g.strokeStyle = hexA(rb.color, pulse); g.lineWidth = lw * 2.5;
+    g.strokeRect(sx + 0.15, y0 + 0.15, M.CELL_L - 0.3, hh - 0.3);
+  }
+  // 扫码波束（SCAN：指向目标垛中心 + 扩散环）
+  if (rb.state === 'SCAN' && rb.task) {
+    const sp = stackPoint(rb.task.slot, rb.task.stackIdx);
+    g.save();
+    g.strokeStyle = hexA(rb.color, 0.6); g.lineWidth = lw * 1.4;
+    g.setLineDash([0.5, 0.45]);
+    g.beginPath(); g.moveTo(rb.x, rb.y); g.lineTo(sp.x, sp.y); g.stroke();
+    g.setLineDash([]);
+    for (let i = 0; i < 3; i++) {
+      const p = (simTime * 1.4 + i / 3) % 1;
+      g.strokeStyle = hexA(rb.color, 0.55 * (1 - p)); g.lineWidth = lw * 1.8;
+      g.beginPath(); g.arc(sp.x, sp.y, 0.4 + p * 2.4, 0, Math.PI * 2); g.stroke();
+    }
+    g.restore();
+  }
+  g.restore();
+
+  /* ---- 屏幕层：视野扇形（扫码相机 FOV ±32°，恒朝上方） ---- */
+  const fovR = Math.min(W, H) * 0.42, halfA = 0.56;
+  g.save();
+  const scanning = rb.state === 'SCAN';
+  g.fillStyle = hexA(rb.color, scanning ? 0.13 : 0.055);
+  g.beginPath(); g.moveTo(cx, cy);
+  g.arc(cx, cy, fovR, -Math.PI / 2 - halfA, -Math.PI / 2 + halfA);
+  g.closePath(); g.fill();
+  g.strokeStyle = hexA(rb.color, scanning ? 0.7 : 0.35); g.lineWidth = 1.2;
+  g.setLineDash([5, 4]); g.lineDashOffset = -(simTime * 10) % 9;
+  for (const s of [-1, 1]) {
+    g.beginPath(); g.moveTo(cx, cy);
+    g.lineTo(cx + Math.sin(halfA) * s * fovR, cy - Math.cos(halfA) * fovR);
+    g.stroke();
+  }
+  g.setLineDash([]);
+  g.restore();
+
+  /* ---- 狗本体（屏幕中央，头朝上） ---- */
+  const t = 17;
+  g.save();
+  g.translate(cx, cy);
+  const swing = Math.sin(rb.walkPhase * Math.PI * 2) * t * 0.06;
+  g.fillStyle = rb.color;   // 四足（对角步态）
+  for (const [lx, ly, k] of [[-0.22, -0.24, 1], [-0.22, 0.24, -1], [0.22, -0.24, -1], [0.22, 0.24, 1]]) {
+    rr(g, lx * t - t * 0.05, ly * t + swing * k - t * 0.045, t * 0.10, t * 0.09, t * 0.03);
+    g.fill();
+  }
+  rr(g, -t * 0.17, -t * 0.34, t * 0.34, t * 0.68, t * 0.12);   // 躯干（头朝上 = -y）
+  g.fillStyle = '#0d1f3c'; g.fill();
+  g.strokeStyle = rb.color; g.lineWidth = 1.6; g.stroke();
+  rr(g, -t * 0.11, -t * 0.52, t * 0.22, t * 0.18, t * 0.06);   // 头部相机模组
+  g.fillStyle = '#122a52'; g.fill(); g.stroke();
+  g.fillStyle = '#eaf6ff';   // 双目镜头
+  for (const ex of [-0.05, 0.05]) {
+    g.beginPath(); g.arc(ex * t, -t * 0.46, t * 0.025, 0, Math.PI * 2); g.fill();
+  }
+  g.strokeStyle = rb.color;   // 尾部天线
+  g.beginPath(); g.moveTo(0, t * 0.34); g.lineTo(0, t * 0.46); g.stroke();
+  g.fillStyle = rb.color;
+  g.beginPath(); g.arc(0, t * 0.48, t * 0.035, 0, Math.PI * 2); g.fill();
+  g.restore();
+  // 名称
+  g.font = FONTM(10); g.textAlign = 'center'; g.textBaseline = 'top';
+  g.fillStyle = rb.color;
+  g.fillText(`${rb.name} · ${rb.nick}`, cx, cy + t * 0.62);
+
+  /* ---- HUD ---- */
+  const batt = rb.battery | 0;
+  const bcol = rb.battery > 50 ? '#34d399' : rb.battery > 25 ? '#fbbf24' : '#f87171';
+  // 左上状态卡
+  g.save();
+  rr(g, 10, 10, 236, 66, 9);
+  g.fillStyle = 'rgba(6,14,30,.85)'; g.fill();
+  g.strokeStyle = hexA(rb.color, 0.5); g.lineWidth = 1; g.stroke();
+  g.textAlign = 'left'; g.textBaseline = 'middle';
+  g.font = FONTM(12); g.fillStyle = rb.color;
+  g.fillText(`● ${rb.name} ${rb.nick}`, 20, 24);
+  g.font = FONT(11); g.fillStyle = 'rgba(219,231,255,.9)';
+  g.fillText(navStateText(rb) + (rb.task ? ` · ${rb.task.id}` : ''), 20, 40);
+  rr(g, 20, 54, 120, 7, 3);   // 电量条
+  g.fillStyle = 'rgba(10,23,48,.9)'; g.fill();
+  if (rb.battery > 3) {
+    rr(g, 21, 55, Math.max(2, 118 * rb.battery / 100), 5, 2);
+    g.fillStyle = bcol; g.fill();
+  }
+  g.font = FONTM(10); g.fillStyle = bcol;
+  g.fillText(`${batt}% · 续航 ${fmtEndurance(rb.battery)}`, 146, 58);
+  g.restore();
+  // 右上罗盘（指针 = 厂房北端方向，随镜头旋转）
+  g.save();
+  const cpx = W - 46, cpy = 48, cr = 24;
+  const northA = -rb.heading - Math.PI / 2;   // 世界 +x（北端）在屏幕上的角度
+  g.beginPath(); g.arc(cpx, cpy, cr, 0, Math.PI * 2);
+  g.fillStyle = 'rgba(6,14,30,.85)'; g.fill();
+  g.strokeStyle = 'rgba(114,136,179,.6)'; g.lineWidth = 1; g.stroke();
+  g.strokeStyle = '#f59e0b'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(cpx, cpy);
+  g.lineTo(cpx + Math.cos(northA) * (cr - 6), cpy + Math.sin(northA) * (cr - 6)); g.stroke();
+  g.font = FONT(9); g.fillStyle = '#fbbf24';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('北', cpx + Math.cos(northA) * (cr + 9), cpy + Math.sin(northA) * (cr + 9));
+  g.fillStyle = 'rgba(219,231,255,.7)';
+  g.fillText(`${(((rb.heading * 180 / Math.PI) % 360) + 360) % 360 | 0}°`, cpx, cpy + cr + 12);
+  g.restore();
+  // 底部提示 + 坐标
+  g.font = FONT(10.5); g.textAlign = 'left'; g.textBaseline = 'bottom';
+  g.fillStyle = 'rgba(143,167,214,.85)';
+  g.fillText('🐕 追踪视角：机器狗朝向 = 屏幕上方 · 扇形 = 扫码相机视野（±32°）· 虚线 = 规划路径', 12, H - 10);
+  g.textAlign = 'right';
+  g.fillText(`x ${rb.x.toFixed(1)}m · y ${rb.y.toFixed(1)}m`, W - 12, H - 10);
+  // 目标库位标签（屏幕投影，不随地图旋转）
+  if (rb.task) {
+    const sp = stackPoint(rb.task.slot, rb.task.stackIdx);
+    const p = dogProj(rb, sp.x, sp.y, cx, cy, ds);
+    if (p.x > 30 && p.x < W - 30 && p.y > 30 && p.y < H - 30) {
+      g.font = FONTM(10); g.textAlign = 'center'; g.textBaseline = 'bottom';
+      g.fillStyle = hexA(rb.color, 0.95);
+      g.fillText(`▼ 目标 ${rb.task.slot.code} 第${rb.task.stackIdx + 1}垛`, p.x, p.y - 8);
+    }
+  }
+}
+
+/* ---- 机器狗视图右侧面板（refreshPanels 驱动，0.2s 节流） ---- */
+function updateDogPanel() {
+  if (!dogActive || !robots.length) return;
+  selDogIdx = Math.min(Math.max(0, selDogIdx), robots.length - 1);
+  const rb = robots[selDogIdx];
+  $('dogCnt').textContent = `${robots.filter(r => BUSY_STATES.includes(r.state)).length}/${robots.length} 作业`;
+  // 狗狗选择器
+  $('dogSel').innerHTML = robots.map((r, i) =>
+    `<button data-i="${i}" class="${i === selDogIdx ? 'on' : ''}"><span style="color:${r.color}">●</span> ${r.name} ${r.nick}</button>`).join('');
+  // 实时参数
+  const deg = ((rb.heading * 180 / Math.PI) % 360 + 360) % 360;
+  const dirWord = deg < 45 || deg >= 315 ? '北端 →' : deg < 135 ? 'C跨侧 ↓' : deg < 225 ? '南端 ←' : 'A跨侧 ↑';
+  const batt = rb.battery | 0;
+  const bcol = rb.battery > 50 ? '#34d399' : rb.battery > 25 ? '#fbbf24' : '#f87171';
+  const util = simTime > 5 ? (rb.busyTime / simTime * 100).toFixed(1) + '%' : '–';
+  const chargeLeft = rb.state === 'CHARGING' ? ` · 约 ${fmtChargeLeft(rb.battery)} 充满` : '';
+  $('dogParams').innerHTML = `<div class="dpgrid">
+    <span class="dl">状态</span><span class="dv"><b style="color:${rb.color}">${navStateText(rb)}</b>${rb.state === 'CHARGING' ? ' ⚡' : ''}</span>
+    <span class="dl">电量</span><span class="dv"><span class="bbar inline"><i style="width:${rb.battery}%;background:${bcol}"></i></span><b style="color:${bcol}">${batt}%</b> · 续航 ${fmtEndurance(rb.battery)}${chargeLeft}</span>
+    <span class="dl">位置</span><span class="dv">x ${rb.x.toFixed(1)}m · y ${rb.y.toFixed(1)}m</span>
+    <span class="dl">朝向</span><span class="dv">${deg.toFixed(0)}°（${dirWord}，0° = 厂房北端）</span>
+    <span class="dl">速度</span><span class="dv">${CFG.robot.speed} m/s · 续航 ${CFG.robot.endurance}h · 充满 ${CFG.robot.chargeHours}h</span>
+    <span class="dl">充电桩</span><span class="dv">#${rb.chargerNo}（C跨南侧服务带）</span>
+    <span class="dl">累计</span><span class="dv">扫码 ${rb.scans} 次 · 完成任务 ${rb.tasksDone} · 行驶 ${Math.round(rb.distTotal)} m</span>
+    <span class="dl">作业</span><span class="dv">${fmtDur(rb.busyTime)} · 利用率 ${util}</span>
+  </div>`;
+  // 当前任务
+  const t = rb.task;
+  $('dogTaskCnt').textContent = t ? t.id : '无';
+  if (t) {
+    const pct = Math.min(100, t.stage / 6 * 100);
+    $('dogTask').innerHTML = `
+      <div class="dt-row"><span class="tid" style="font-family:var(--mono);color:var(--cyan)">${t.id}</span> ${t.type === 'in' ? '入库扫码' : '出库核验'} · ${t.spec.name}</div>
+      <div class="dt-row">目标库位 <b>${t.slot.code}</b> 第${t.stackIdx + 1}垛</div>
+      <div class="dt-prog"><i style="width:${pct}%"></i></div>
+      <div class="dt-stage">阶段 ${t.stage}/6 · ${STAGE_NAMES[t.stage] || ''} · 已耗时 ${fmtDur(simTime - t.created)}</div>`;
+  } else {
+    $('dogTask').innerHTML = `<div class="dt-empty">${rb.state === 'CHARGING' ? `⚡ 充电桩 #${rb.chargerNo} 充电中 · 约 ${fmtChargeLeft(rb.battery)} 充满` : rb.state === 'TO_CHARGER' ? '返航充电中…' : '空闲待命，等待调度分配'}</div>`;
+  }
+  // 任务队列：当前狗任务置顶 -> 待分配（先到先服务）-> 其他执行中
+  const open = tasks.filter(x => x.state !== 'done');
+  const pend = open.filter(x => x.state === 'pending').sort((a, b) => a.created - b.created);
+  const working = open.filter(x => x.state !== 'pending' && x !== t);
+  $('dogQueueCnt').textContent = `待分配 ${pend.length} · 执行中 ${working.length + (t ? 1 : 0)}`;
+  const row = x => {
+    const mine = x === t;
+    const who = x.robot ? `${x.robot.name} · ${navStateText(x.robot)}` : (x.state === 'crane' ? '待天车装车' : '待调度分配');
+    return `<div class="dq-row${mine ? ' mine' : ''}">
+      <div><span class="tid">${x.id}</span>${x.type === 'in' ? '入库扫码' : '出库核验'} · 库位 ${x.slot.code} · ${x.spec.name}</div>
+      <div class="dq-s">${who} · 等待 ${fmtDur(simTime - x.created)}</div>
+    </div>`;
+  };
+  $('dogQueue').innerHTML = ((t ? row(t) : '') + pend.map(row).join('') + working.map(row).join(''))
+    || '<div class="dq-empty">暂无任务，等待 WMS 下发</div>';
+}
+$('dogSel').addEventListener('click', e => {
+  const b = e.target && e.target.closest ? e.target.closest('button[data-i]') : null;
+  if (b) { selDogIdx = +b.dataset.i; updateDogPanel(); }
+});
+/* 自检钩子（只读） */
+window.__dogDbg = {
+  get active() { return dogActive; },
+  get sel() { return selDogIdx; },
+  get segHTML() { return $('dogSel').innerHTML; },
+  get paramsHTML() { return $('dogParams').innerHTML; },
+  get taskHTML() { return $('dogTask').innerHTML; },
+  get queueHTML() { return $('dogQueue').innerHTML; },
+  select(i) { selDogIdx = i; updateDogPanel(); },
+  draw: drawDogView,
+};
+
 /* ---------------- 初始化 ---------------- */
 function init() {
   simTime = 0; taskSeq = 0; logTotal = 0;
@@ -3391,10 +3990,12 @@ function init() {
   logEvent('system', '作业流程：入库 = 货车进场停靠 -> 立柱摄像头识别车牌 -> 吊取运单 -> 天车吊运落料 -> 机器狗扫码入账；出库 = 机器狗扫码核验 -> 货车进场 -> 识别车牌吊取装车计划 -> 天车装车 -> 货车离场');
   logEvent('system', '调度规则：机器狗就近分配 + 电量约束 + 先到先服务（出库先进先出）；天车限本跨作业，同跨双车区间互让；天车须待货车运单确认后才开工');
   logEvent('system', '车次规则：一车 6-10 吊（同跨装卸），凑满一车或超时按现有吊数放行；任务按吊计数，货车全部吊完才离场');
+  logEvent('system', '归堆规则：进厂车按规格整车配载（少量混装），同车同规格归并同一垛集中码放，垛满才另荐；其余入库按推荐评分归堆（权重见「⚙ 设备参数」归堆策略，与主系统「调度参数」页同源）');
   logEvent('system', '出库履约：出厂车 = 提货订单（合同号 + 需求捆数/吨数），按规格先进先出凑捆，压货先倒垛，合同捆齐套才闭环；货车离场前须出场复验');
   logEvent('system', `生产节奏：每日进厂 ${CFG.production.inPerDay} 辆 / 出厂 ${CFG.production.outPerDay} 辆（可在「⚙ 设备参数」调整），订单按天均匀铺开，随车运单 6-10 吊`);
-  logEvent('system', '通行规则：机器狗只沿通道（4 条 2m 横向廊道 + 3 条竖向车辆通道 + 服务带）与垛位间隙行走，不进入库位内部；走到垛位旁的通道边站定后转身面向垛位扫码');
+  logEvent('system', '通行规则：机器狗沿 4 条 2m 横向廊道 + 3 条竖向车辆通道 + 服务带机动，并可转入库位之间的空道深入跨内（不进库位内部）；到目标垛前的库位间空道站位站定，转身面向垛位扫码');
   buildSettingsUI();
+  loadParamsFromDb();   // 调度参数：从库存数据库加载（与主系统「调度参数」页同源；服务不可达时沿用内置默认）
   refreshPanels();
 }
 
@@ -3409,7 +4010,8 @@ function applyDbInventory(slots) {
   for (const row of slots) {
     const st = byCode.get(row.code);
     if (!st) continue;
-    for (const k of st.stacks) Object.assign(k, { spec: null, count: 0, pending: 0, inTime: 0, grade: '', len: 0, heat: '' }), k.bundles.length = 0;
+    st.dbId = row.id;   // 记录数据库侧库位 id：写回（pushStackToDb）按此寻址，防两端 id 错位
+    for (const k of st.stacks) Object.assign(k, { spec: null, count: 0, pending: 0, reserved: 0, inTime: 0, grade: '', len: 0, heat: '' }), k.bundles.length = 0;
     let slotTotal = 0;
     for (const ks of row.stacks || []) {
       if (!ks.count) continue;
@@ -3437,8 +4039,34 @@ async function loadInventoryFromDb() {
     if (!Array.isArray(slots) || !slots.length) throw new Error('库位数据为空');
     applyDbInventory(slots);
   } catch {
-    logEvent('system', `库存数据库（${DB_API}）不可达，使用内置期初库存兜底（可运行 npm run db:serve 启用真实钢材分布）`);
+    logEvent('system', `库存数据库（${DB_API}）不可达，使用内置期初库存兜底（npm run sim / npm run db:serve 启用真实钢材分布并持久化出入库）`);
   }
+}
+
+/* ---------------- 库存写回：出入库/倒垛后同步到库存数据库 ----------------
+ * 每次某垛变更（天车落垛/吊取、扫码入账、倒垛迁移）即推送该垛最新状态。
+ * fire-and-forget：服务未启动（或无 fetch 的无头自检环境）时静默跳过，
+ * 仅首次失败提示一次，不影响仿真运行；下次重启即从数据库恢复上次库存。 */
+let _dbPushWarned = false;
+function pushStackToDb(st, stackIdx) {
+  if (typeof fetch !== 'function') return;
+  const k = st.stacks[stackIdx];
+  if (!k) return;
+  const id = st.dbId != null ? st.dbId : st.id;   // 以数据库侧库位 id 为准（加载时记录）
+  const body = JSON.stringify({
+    spec: k.count > 0 && k.spec ? k.spec.name : null,
+    count: k.count,
+    pending: k.pending,
+    in_time: k.count > 0 && k.inTime != null ? k.inTime : null,
+  });
+  fetch(`${DB_API}/api/slots/${id}/stacks/${stackIdx + 1}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body,
+  }).catch(() => {
+    if (!_dbPushWarned) {
+      _dbPushWarned = true;
+      logEvent('system', '库存数据库写回失败（服务未启动？），本次运行的出入库不会持久化');
+    }
+  });
 }
 
 /* =====================================================================
@@ -4358,13 +4986,14 @@ async function loadInventoryFromDb() {
       右侧库存列表 / 筛选 / 统计仍可正常使用</div>`;
   }
 
-  /* ---------------- 标签切换（仿真沙盘 <-> 库存三维） ---------------- */
+  /* ---------------- 标签切换（仿真沙盘 <-> 库存三维 <-> 机器狗视角） ---------------- */
   let invActive = false, invInited = false;
   function switchView(which) {
     invActive = which === 'inv';
     document.querySelectorAll('#viewTabs button').forEach(b => b.classList.toggle('on', b.dataset.view === which));
-    $('simMain').style.display = invActive ? 'none' : 'flex';
+    $('simMain').style.display = which === 'sim' ? 'flex' : 'none';
     $('invRoot').classList.toggle('on', invActive);
+    if (window.dogViewSetActive) window.dogViewSetActive(which === 'dog');   // 机器狗视图（主作用域模块）
     if (!invActive) return;
     if (!invInited) {
       invInited = true;

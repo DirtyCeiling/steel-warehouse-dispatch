@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
 import { generateSlots, SPECS } from './layout.js';
+import { paramDefaults, clampParam } from './params.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -93,12 +94,87 @@ function migrate(db) {
       create_time      TEXT NOT NULL,
       complete_time    TEXT
     );
+    -- 调度规划参数（主系统「调度参数」页 / 仿真沙盘共用，key 形如 placement.sameSpecBase）
+    CREATE TABLE IF NOT EXISTS sim_params (
+      key   TEXT PRIMARY KEY,
+      value REAL NOT NULL
+    );
+    -- 进厂车辆（管理工「进厂确认」页）：车牌/运单识别结果 + 垛位分配确认状态
+    CREATE TABLE IF NOT EXISTS inbound_vehicles (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      plate          TEXT NOT NULL,
+      waybill        TEXT NOT NULL,
+      mill           TEXT NOT NULL,
+      arrive_time    TEXT NOT NULL,
+      state          TEXT NOT NULL DEFAULT 'pending',   -- pending / confirmed
+      confirmed_time TEXT
+    );
+    -- 进厂车辆的垛位分配（一组 = 同规格连续吊装、集中码放同一垛，垛满拆多组）
+    CREATE TABLE IF NOT EXISTS inbound_loads (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      vehicle_id   INTEGER NOT NULL REFERENCES inbound_vehicles(id),
+      spec         TEXT NOT NULL,
+      bundles      INTEGER NOT NULL CHECK (bundles > 0),
+      rec_slot_id  INTEGER NOT NULL,
+      rec_stack_no INTEGER NOT NULL,
+      rec_score    REAL NOT NULL DEFAULT 0,
+      rec_parts    TEXT NOT NULL DEFAULT '[]',        -- 推荐评分分解 JSON
+      slot_id      INTEGER,                           -- 最终垛位（未调整为空，取推荐值）
+      stack_no     INTEGER,
+      adjusted     INTEGER NOT NULL DEFAULT 0
+    );
+    -- 人工确认/调整留痕：调整组的推荐落点 vs 实际落点 + 触发的权重优化量
+    CREATE TABLE IF NOT EXISTS placement_feedback (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      time           TEXT NOT NULL,
+      vehicle_id     INTEGER,
+      plate          TEXT,
+      spec           TEXT NOT NULL,
+      bundles        INTEGER NOT NULL,
+      action         TEXT NOT NULL,                   -- confirmed / adjusted
+      rec_code       TEXT,
+      rec_stack_no   INTEGER,
+      final_code     TEXT,
+      final_stack_no INTEGER,
+      deltas         TEXT NOT NULL DEFAULT '[]'       -- 权重变化 [{key,label,from,to}]
+    );
   `);
+}
+
+/* ================= 调度规划参数（sim_params 表） ================= */
+
+/** 读取调度参数：schema 默认值 + 库内覆盖值合并，返回 { sec: { key: value } } */
+export function getSimParams(db) {
+  const values = paramDefaults();
+  for (const r of db.prepare('SELECT key, value FROM sim_params').all()) {
+    const dot = String(r.key).indexOf('.');
+    if (dot < 0) continue;
+    const sec = r.key.slice(0, dot), key = r.key.slice(dot + 1);
+    if (values[sec] && key in values[sec]) values[sec][key] = r.value;
+  }
+  return values;
+}
+
+/** 更新调度参数：patch = { sec: { key: value } }，按 schema 夹取并 upsert；返回合并后的全量值 */
+export function setSimParams(db, patch = {}) {
+  const up = db.prepare(
+    'INSERT INTO sim_params (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
+  const tx = db.transaction(() => {
+    for (const [sec, kv] of Object.entries(patch || {})) {
+      if (!kv || typeof kv !== 'object') continue;
+      for (const [key, raw] of Object.entries(kv)) {
+        const v = clampParam(sec, key, raw);
+        if (v !== null) up.run(`${sec}.${key}`, v);
+      }
+    }
+  });
+  tx();
+  return getSimParams(db);
 }
 
 /* ================= 主应用（三维库区）数据 ================= */
 
-const APP_SEED_DIR = join(__dirname, '..', 'src', 'data');
+const APP_SEED_DIR = join(__dirname, 'data');
 
 function readSeedJson(file) {
   return JSON.parse(readFileSync(join(APP_SEED_DIR, file), 'utf8'));
@@ -115,7 +191,7 @@ export function hasAppData(db) {
   return db.prepare('SELECT COUNT(*) n FROM app_warehouse').get().n > 0;
 }
 
-/** 从 src/data/*.json 灌入主应用数据（重建）；无 JSON 文件则保持现状 */
+/** 从 server/data/*.json 灌入主应用数据（重建）；无 JSON 文件则保持现状 */
 export function seedAppData(db) {
   if (!appSeedFilesExist()) return;
   const warehouse = readSeedJson('warehouse.json');
@@ -212,6 +288,7 @@ const SPEC_FAMILY = {   // 规格族（形状）：同族视为"相似货物"，
   '圆钢 Φ50': 'round', '圆钢 Φ60': 'round',
   '方钢 40×40': 'square',
 };
+export { SPEC_FAMILY };
 function mulberry32(seed) {
   return function () {
     seed |= 0; seed = (seed + 0x6D2B79F5) | 0;

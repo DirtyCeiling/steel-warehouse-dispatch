@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>进厂确认 · 钢厂棒材库区调度系统</title>
+<style>
+  :root {
+    --bg: #050b1a; --bg2: #071021;
+    --panel: #0b1730; --panel2: #0e1d3a;
+    --line: #16294f; --line2: #1f3a6b;
+    --text: #dbe7ff; --dim: #7288b3;
+    --cyan: #38bdf8; --teal: #2dd4bf; --amber: #fbbf24;
+    --orange: #fb923c; --violet: #a78bfa; --red: #f87171; --green: #34d399;
+    --mono: "Cascadia Mono", Consolas, "Courier New", monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(1200px 600px at 70% -10%, #0a1a38 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    display: flex; flex-direction: column; min-width: 1180px;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; padding: 8px 14px;
+    border-bottom: 1px solid var(--line); background: rgba(8, 18, 38, .7); flex: none;
+  }
+  .brand { display: flex; align-items: center; gap: 8px; }
+  .logo {
+    width: 30px; height: 30px; border-radius: 8px; flex: none;
+    background: linear-gradient(135deg, #0ea5e9, #1d4ed8);
+    display: flex; align-items: center; justify-content: center; font-size: 15px;
+    box-shadow: 0 0 14px rgba(56, 189, 248, .35);
+  }
+  .brand h1 { font-size: 14px; font-weight: 700; letter-spacing: .5px; }
+  nav { display: flex; gap: 6px; margin-left: 10px; }
+  nav a {
+    color: var(--dim); text-decoration: none; font-size: 12px;
+    border: 1px solid var(--line2); border-radius: 6px; padding: 4px 10px;
+    transition: all .15s; background: var(--panel2);
+  }
+  nav a:hover { border-color: var(--cyan); color: #fff; }
+  nav a.on { background: var(--cyan); color: #04121f; font-weight: 700; border-color: var(--cyan); }
+  .actions { margin-left: auto; display: flex; gap: 6px; }
+  button {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line2);
+    border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+    font-family: inherit; transition: all .15s;
+  }
+  button:hover { border-color: var(--cyan); color: #fff; box-shadow: 0 0 10px rgba(56,189,248,.2); }
+  button:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+  button.primary { border-color: rgba(56, 189, 248, .5); color: var(--cyan); }
+  button.danger:hover { border-color: var(--red); color: var(--red); }
+  main { flex: 1; overflow-y: auto; padding: 16px; }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  .desc { font-size: 12px; color: var(--dim); line-height: 1.7; margin-bottom: 12px; max-width: 900px; }
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
+  /* ---- 车辆卡片 ---- */
+  .veh { background: rgba(11, 23, 48, .75); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+  .veh.confirmed { opacity: .88; }
+  .vhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .plate { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .plate b { font-family: var(--mono); font-size: 16px; letter-spacing: 1px; }
+  .tag { font-size: 11px; border: 1px solid var(--line2); background: rgba(5, 11, 26, .7); border-radius: 4px; padding: 1px 7px; color: var(--text); }
+  .tag.pend { border-color: rgba(251, 191, 36, .45); background: rgba(251, 191, 36, .08); color: var(--amber); }
+  .tag.done { border-color: rgba(52, 211, 153, .45); background: rgba(52, 211, 153, .08); color: var(--green); }
+  .meta { font-size: 11px; color: var(--dim); margin-top: 5px; }
+  .vbtns { display: flex; gap: 6px; }
+  .loads { margin-top: 8px; }
+  .load { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid rgba(22, 41, 79, .6); flex-wrap: wrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .spec { width: 96px; flex: none; font-size: 12.5px; }
+  .qty { width: 46px; flex: none; font-size: 11px; color: var(--dim); }
+  .rec {
+    font-size: 11px; border: 1px solid var(--line2); background: rgba(14, 29, 58, .8);
+    border-radius: 4px; padding: 2px 7px; color: var(--dim); cursor: help; flex: none;
+  }
+  .rec.isrec { border-color: rgba(56, 189, 248, .45); background: rgba(56, 189, 248, .08); color: var(--cyan); }
+  .moved { font-size: 11px; color: var(--amber); flex: none; }
+  .load .right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  select {
+    max-width: 240px; background: rgba(5, 11, 26, .8); border: 1px solid var(--line2);
+    border-radius: 6px; color: var(--text); font-size: 11.5px; padding: 3px 6px; outline: none;
+  }
+  select:focus { border-color: var(--cyan); }
+  select:disabled { opacity: .45; }
+  .spin { display: inline-block; animation: r 1s linear infinite; color: var(--cyan); }
+  @keyframes r { to { transform: rotate(360deg); } }
+  /* ---- 横幅/提示 ---- */
+  .banner { border-radius: 8px; padding: 8px 12px; font-size: 12.5px; margin-top: 10px; border: 1px solid; }
+  .banner.ok { border-color: rgba(52, 211, 153, .4); background: rgba(52, 211, 153, .08); color: var(--green); }
+  .banner.opt { border-color: rgba(56, 189, 248, .4); background: rgba(56, 189, 248, .07); }
+  .banner .t { margin-bottom: 5px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip {
+    font-size: 11px; font-family: var(--mono); border: 1px solid var(--line2);
+    background: rgba(5, 11, 26, .7); border-radius: 4px; padding: 1px 7px; color: var(--text);
+  }
+  .chip b { color: var(--cyan); font-weight: 700; }
+  .msg { border-radius: 8px; padding: 8px 12px; font-size: 12.5px; margin-bottom: 12px; border: 1px solid; }
+  .msg.ok { border-color: rgba(52, 211, 153, .4); background: rgba(52, 211, 153, .08); color: var(--green); }
+  .msg.err { border-color: rgba(248, 113, 113, .4); background: rgba(248, 113, 113, .08); color: var(--red); }
+  .msg.err button { margin-left: 6px; color: var(--cyan); border: none; background: none; text-decoration: underline; padding: 0; }
+  /* ---- 右栏学习面板 ---- */
+  .panel { background: rgba(11, 23, 48, .75); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+  .panel h3 { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .panel .pdesc { font-size: 11px; color: var(--dim); line-height: 1.6; margin-bottom: 10px; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .tile { background: rgba(5, 11, 26, .7); border: 1px solid var(--line); border-radius: 8px; padding: 9px 4px; text-align: center; }
+  .tile b { display: block; font-size: 18px; font-family: var(--mono); }
+  .tile span { font-size: 10.5px; color: var(--dim); }
+  .fb { padding: 7px 0; border-top: 1px solid rgba(22, 41, 79, .6); }
+  .fb .t1 { font-size: 10.5px; color: var(--dim); }
+  .fb .t2 { font-size: 11.5px; margin-top: 2px; }
+  .fb .to { color: var(--amber); }
+  .fb .chips { margin-top: 4px; }
+  .chip.acc { border-color: rgba(56, 189, 248, .35); color: var(--cyan); font-size: 10px; padding: 0 5px; }
+  .foot { font-size: 11px; color: var(--dim); line-height: 1.7; }
+  .foot a { color: var(--cyan); }
+  .empty { border: 1px dashed var(--line2); border-radius: 10px; text-align: center; padding: 60px 0; color: var(--dim); font-size: 12.5px; }
+  .empty .big { font-size: 30px; margin-bottom: 8px; }
+  h2.sub { font-size: 12px; color: var(--dim); font-weight: 600; margin: 16px 0 8px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo">🚚</div>
+    <div><h1>进厂确认 · 管理工工作台</h1></div>
+  </div>
+  <nav>
+    <a href="/">🗺 仿真沙盘</a>
+    <a href="/inbound" class="on">🚚 进厂确认</a>
+    <a href="/params">⚙ 调度参数</a>
+  </nav>
+  <div class="actions">
+    <button id="btnSpawn" class="primary">🚚 模拟车辆进厂</button>
+    <button id="btnRefresh">↻ 刷新</button>
+  </div>
+</header>
+<main>
+  <div class="wrap">
+    <p class="desc">
+      车辆进厂并识别到钢材物流信息后，系统按归堆策略生成垛位分配推荐；请逐组核对，可在下拉框中直接改垛
+      （容量 / 同垛不混规格约束实时校验）。确认即下发调度，人工调整会与推荐逐维度对比、自动微调归堆策略权重，
+      让下次推荐更贴近现场经验。
+    </p>
+    <div id="msg"></div>
+    <div class="cols">
+      <div id="vehicles"></div>
+      <div id="learning"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+'use strict';
+// 库存数据库 API；本地多实例调试可用 ?api=http://127.0.0.1:3101 覆盖
+const DB_API = new URLSearchParams(location.search).get('api') || 'http://127.0.0.1:3001';
+
+const SPEC_COLORS = {
+  '螺纹钢 Φ20': '#f59e0b', '螺纹钢 Φ25': '#fb923c',
+  '圆钢 Φ50': '#38bdf8', '圆钢 Φ60': '#7dd3fc', '方钢 40×40': '#a78bfa',
+};
+const specColor = s => SPEC_COLORS[s] || '#94a3b8';
+const stackKey = (slotId, stackNo) => slotId + ':' + stackNo;
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtFull = iso => new Date(iso).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+const fmtClock = iso => new Date(iso).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+
+const state = { vehicles: [], stats: null, cands: {}, banners: {}, busyVid: null, spawning: false, phase: 'loading' };
+
+const $vehicles = document.getElementById('vehicles');
+const $learning = document.getElementById('learning');
+const $msg = document.getElementById('msg');
+const btnSpawn = document.getElementById('btnSpawn');
+const btnRefresh = document.getElementById('btnRefresh');
+
+async function api(path, opts, errLabel) {
+  const res = await fetch(DB_API + path, opts);
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error((data && data.error) || (errLabel + '：HTTP ' + res.status));
+  return data;
+}
+const loadAll = () => Promise.all([api('/api/inbound', {}, '加载进厂车辆失败'), api('/api/inbound/stats', {}, '加载统计失败')]);
+
+function showMsg(ok, text, retry) {
+  $msg.innerHTML = '';
+  if (!text) return;
+  const div = document.createElement('div');
+  div.className = 'msg ' + (ok ? 'ok' : 'err');
+  div.textContent = text;
+  if (retry) {
+    const b = document.createElement('button');
+    b.textContent = '重试';
+    b.onclick = load;
+    div.appendChild(b);
+  }
+  $msg.appendChild(div);
+}
+
+const patchVehicle = nv => { state.vehicles = state.vehicles.map(v => (v.id === nv.id ? nv : v)); };
+const curSlot = l => (l.slotId != null ? l.slotId : l.recSlotId);
+const curStack = l => (l.stackNo != null ? l.stackNo : l.recStackNo);
+
+function ensureCands(spec) {
+  if (state.cands[spec]) return;
+  state.cands[spec] = [];
+  api('/api/inbound/candidates?spec=' + encodeURIComponent(spec) + '&bundles=1', {}, '加载候选垛位失败')
+    .then(r => { state.cands[spec] = r.candidates; renderVehicles(); })
+    .catch(() => showMsg(false, '候选垛位加载失败（' + spec + '），暂无法调整该规格落点'));
+}
+
+/* ---------------- 渲染：车辆列表 ---------------- */
+
+function loadRowHTML(l, pending) {
+  const cands = state.cands[l.spec] || [];
+  const isRec = curSlot(l) === l.recSlotId && curStack(l) === l.recStackNo;
+  const busy = state.busyVid != null;
+  let opts = '';
+  const hasCur = cands.some(c => stackKey(c.slotId, c.stackNo) === stackKey(curSlot(l), curStack(l)));
+  if (isRec && !hasCur) {
+    opts += `<option value="${stackKey(curSlot(l), curStack(l))}" selected>${esc(l.code)} 第${curStack(l)}垛（当前）</option>`;
+  }
+  for (const c of cands) {
+    const rec = c.slotId === l.recSlotId && c.stackNo === l.recStackNo;
+    const fit = c.free >= l.bundles;
+    const cur = stackKey(c.slotId, c.stackNo) === stackKey(curSlot(l), curStack(l));
+    opts += `<option value="${stackKey(c.slotId, c.stackNo)}"${cur ? ' selected' : ''}${fit ? '' : ' disabled'}>` +
+      `${rec ? '★ ' : ''}${esc(c.code)} 第${c.stackNo}垛 · ${Math.round(c.score)}分 · 余${c.free}捆${fit ? '' : '（容量不足）'}</option>`;
+  }
+  const curCand = cands.find(c => stackKey(c.slotId, c.stackNo) === stackKey(curSlot(l), curStack(l)));
+  const title = esc((curCand ? curCand.parts : l.recParts).join('；'));
+  return `<div class="load">
+    <span class="dot" style="background:${specColor(l.spec)}"></span>
+    <span class="spec">${esc(l.spec)}</span>
+    <span class="qty">×${l.bundles}捆</span>
+    <span class="rec${isRec ? ' isrec' : ''}" title="推荐评分：${esc(l.recParts.join('；'))}">推荐 ${esc(l.recCode)} 第${l.recStackNo}垛 · ${Math.round(l.recScore)}分</span>
+    <span class="right">
+      ${!isRec ? `<span class="moved">➜ 改至 ${esc(l.code)} 第${curStack(l)}垛</span>` : ''}
+      <select data-veh="${state._curVid}" data-load="${l.id}" title="${title}"${pending ? '' : ' disabled'}${busy ? ' disabled' : ''}>${opts}</select>
+      ${busy && state.busyVid === state._curVid ? '<span class="spin">◌</span>' : ''}
+    </span>
+  </div>`;
+}
+
+function bannerHTML(deltas) {
+  if (!deltas || !deltas.length) {
+    return '<div class="banner ok">✓ 已按推荐方案确认下发，调度权重无需调整。</div>';
+  }
+  const chips = deltas.map(d =>
+    `<span class="chip">${esc(d.label)} ${d.from} <b>→ ${d.to}</b></span>`).join('');
+  return `<div class="banner opt"><div class="t" style="color:var(--green)">✓ 已确认下发。人工调整已沉淀为归堆策略优化：</div><div class="chips">${chips}</div></div>`;
+}
+
+function vehicleHTML(v) {
+  const pending = v.state === 'pending';
+  const busy = state.busyVid === v.id;
+  state._curVid = v.id;
+  const loads = v.loads.length
+    ? `<div class="loads">${v.loads.map(l => loadRowHTML(l, pending)).join('')}</div>`
+    : '<p style="color:var(--red);font-size:12.5px;padding:8px 0">⚠ 库区无合法落点，未能生成垛位分配，请释放库容后重新识别。</p>';
+  const actions = pending
+    ? `<div class="vbtns">
+         <button class="danger" data-del="${v.id}"${busy ? ' disabled' : ''}>🗑 删除</button>
+         <button class="primary" data-confirm="${v.id}"${busy || !v.loads.length ? ' disabled' : ''}>${busy ? '处理中…' : '✓ 确认下发'}</button>
+       </div>`
+    : (state.banners[v.id] ? bannerHTML(state.banners[v.id].deltas) : '');
+  return `<div class="veh${pending ? '' : ' confirmed'}">
+    <div class="vhead">
+      <div>
+        <div class="plate">🚚 <b>${esc(v.plate)}</b>
+          <span class="tag">运单 ${esc(v.waybill)}</span>
+          <span class="tag">${esc(v.mill)}</span>
+          <span class="tag ${pending ? 'pend' : 'done'}">${pending ? '待确认' : '已下发'}</span>
+        </div>
+        <p class="meta">进厂时间 ${fmtFull(v.arriveTime)} · 共 ${v.bundles} 捆 / ${v.loads.length} 组垛位分配</p>
+      </div>
+      ${actions}
+    </div>
+    ${loads}
+  </div>`;
+}
+
+function renderVehicles() {
+  for (const v of state.vehicles) if (v.state === 'pending') (v.loads.reduce((set, l) => set.add(l.spec), new Set())).forEach(ensureCands);
+  const pend = state.vehicles.filter(v => v.state === 'pending');
+  const done = state.vehicles.filter(v => v.state !== 'pending');
+  let html = '';
+  if (!state.vehicles.length) {
+    html = `<div class="empty"><div class="big">🚚</div>暂无进厂车辆<br><span style="font-size:11px">点击右上角「模拟车辆进厂」触发车牌 / 运单识别流程。</span></div>`;
+  } else {
+    html += pend.map(vehicleHTML).join('');
+    if (done.length) html += '<h2 class="sub">已下发货车（台账）</h2>' + done.map(vehicleHTML).join('');
+  }
+  $vehicles.innerHTML = html;
+  delete state._curVid;
+  // 事件绑定（改垛 / 确认 / 删除）
+  $vehicles.querySelectorAll('select[data-load]').forEach(sel => {
+    sel.onchange = () => {
+      const [slotId, stackNo] = sel.value.split(':').map(Number);
+      adjust(+sel.dataset.veh, +sel.dataset.load, slotId, stackNo);
+    };
+  });
+  $vehicles.querySelectorAll('button[data-confirm]').forEach(b => { b.onclick = () => confirmVeh(+b.dataset.confirm); });
+  $vehicles.querySelectorAll('button[data-del]').forEach(b => { b.onclick = () => delVeh(+b.dataset.del); });
+}
+
+/* ---------------- 渲染：学习面板 ---------------- */
+
+function renderLearning() {
+  const s = state.stats;
+  if (!s) { $learning.innerHTML = ''; return; }
+  const pct = Math.round(s.totals.adjustRate * 100);
+  const list = s.recent.slice(0, 8).map(r => {
+    const move = r.action === 'adjusted' && r.recCode
+      ? `${esc(r.recCode)} 第${r.recStackNo}垛 ➜ <span class="to">${esc(r.finalCode)} 第${r.finalStackNo}垛</span>`
+      : `<span style="color:var(--dim)">${esc(r.finalCode)} 第${r.finalStackNo}垛（按推荐）</span>`;
+    const chips = (r.deltas || []).map(d =>
+      `<span class="chip acc">${esc(d.label)} ${d.from}→${d.to}</span>`).join('');
+    return `<div class="fb">
+      <div class="t1">${fmtClock(r.time)} · ${esc(r.plate || '')}</div>
+      <div class="t2">${esc(r.spec)} ×${r.bundles}捆：${move}</div>
+      ${chips ? `<div class="chips">${chips}</div>` : ''}
+    </div>`;
+  }).join('');
+  $learning.innerHTML = `
+    <div class="panel">
+      <h3>📈 人工反馈 → 算法优化</h3>
+      <p class="pdesc">每次人工改垛都会与推荐落点逐维度对比，自动微调「归堆策略权重」，让下次推荐更贴近现场经验。</p>
+      <div class="tiles">
+        <div class="tile"><b>${s.totals.vehicles}</b><span>已确认车次</span></div>
+        <div class="tile"><b>${s.totals.groups}</b><span>分配组数</span></div>
+        <div class="tile"><b style="${pct > 0 ? 'color:var(--amber)' : ''}">${pct}%</b><span>人工调整率</span></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>近期确认留痕</h3>
+      ${s.recent.length ? list : '<p class="pdesc">暂无记录：确认第一辆进厂车辆后，这里会展示每组的落点与触发的权重变化。</p>'}
+    </div>
+    <p class="foot">优化后的权重与 <a href="/params">「调度参数」页</a> 同源存储，卸货推荐与仿真沙盘自动生效。</p>`;
+}
+
+/* ---------------- 数据动作 ---------------- */
+
+async function load() {
+  state.phase = 'loading';
+  $vehicles.innerHTML = '<p class="empty"><span class="spin" style="font-size:16px">◌</span> 正在从数据库加载进厂车辆…</p>';
+  $learning.innerHTML = '';
+  try {
+    const [v, s] = await loadAll();
+    state.vehicles = v.vehicles;
+    state.stats = s;
+    state.phase = 'ready';
+    showMsg(null, null);
+    renderVehicles();
+    renderLearning();
+  } catch {
+    state.phase = 'error';
+    $vehicles.innerHTML = '';
+    showMsg(false, '进厂数据加载失败：数据库服务未启动（请先执行 npm run db:serve 或 npm run sim）。', true);
+  }
+}
+
+async function spawn() {
+  state.spawning = true;
+  btnSpawn.disabled = true;
+  btnSpawn.textContent = '◌ 识别中…';
+  try {
+    const v = await api('/api/inbound/spawn', { method: 'POST' }, '车辆进厂识别失败');
+    state.vehicles.unshift(v);
+    renderVehicles();
+    showMsg(true, `已识别进厂车辆 ${v.plate}（运单 ${v.waybill}，${v.mill}，${v.bundles} 捆），请核对垛位分配后确认下发。`);
+  } catch (e) {
+    showMsg(false, String(e.message || e));
+  } finally {
+    state.spawning = false;
+    btnSpawn.disabled = false;
+    btnSpawn.textContent = '🚚 模拟车辆进厂';
+  }
+}
+
+async function adjust(vid, lid, slotId, stackNo) {
+  state.busyVid = vid;
+  renderVehicles();
+  try {
+    patchVehicle(await api(`/api/inbound/${vid}/loads/${lid}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slotId, stackNo }),
+    }, '调整垛位失败'));
+  } catch (e) {
+    showMsg(false, String(e.message || e));
+  } finally {
+    state.busyVid = null;
+    renderVehicles();
+  }
+}
+
+async function confirmVeh(vid) {
+  state.busyVid = vid;
+  renderVehicles();
+  try {
+    const r = await api(`/api/inbound/${vid}`, { method: 'POST' }, '确认失败');
+    patchVehicle(r.vehicle);
+    state.banners[vid] = { deltas: r.deltas };
+    api('/api/inbound/stats', {}, '').then(s => { state.stats = s; renderLearning(); }).catch(() => {});
+  } catch (e) {
+    showMsg(false, String(e.message || e));
+  } finally {
+    state.busyVid = null;
+    renderVehicles();
+  }
+}
+
+async function delVeh(vid) {
+  const v = state.vehicles.find(x => x.id === vid);
+  if (!v || !window.confirm(`删除进厂车辆 ${v.plate}（${v.waybill}）及其垛位分配？`)) return;
+  state.busyVid = vid;
+  renderVehicles();
+  try {
+    await api(`/api/inbound/${vid}`, { method: 'DELETE' }, '删除失败');
+    state.vehicles = state.vehicles.filter(x => x.id !== vid);
+    renderVehicles();
+  } catch (e) {
+    showMsg(false, String(e.message || e));
+  } finally {
+    state.busyVid = null;
+    renderVehicles();
+  }
+}
+
+btnSpawn.onclick = spawn;
+btnRefresh.onclick = load;
+load();
+</script>
+</body>
+</html>

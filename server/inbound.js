@@ -1,0 +1,419 @@
+// 进厂车辆垛位分配确认模块（管理工「进厂确认」页后端）
+// 流程：车辆进厂 -> 车牌/运单识别（本模块模拟生成，接口留待真实识别接入）->
+//       按归堆策略权重（sim_params.placement，与「调度参数」页/仿真沙盘同源）
+//       生成垛位分配推荐 -> 管理工确认或调整 -> 调整结果沉淀为权重优化。
+// 权重优化规则（感知机式微调）：对被人工改动的组，分别在推荐落点与实际落点上
+// 复算各评分维度，人工选择在某维度上更优则该维度权重 +STEP、更劣则 -STEP，
+// 按 schema 夹取——下一次同类取舍时算法即偏向管理工的选择。
+import {
+  STACKS_PER_SLOT, BUNDLES_PER_STACK, getSimParams, setSimParams, SPEC_FAMILY,
+} from './database.js';
+import { PARAM_SCHEMA } from './params.js';
+
+export const SPAN_LABELS = ['A跨', 'B跨', 'C跨', '整跨合并'];
+const MILLS = ['承德建龙', '新兴铸管', '唐山瑞丰', '敬业集团', '首钢迁安', '石钢京诚'];
+const PROVINCES = ['冀', '京', '津', '鲁', '豫', '晋', '辽', '陕', '蒙'];
+
+/* 「调度参数」schema 中 placement 段的中文标签（反馈留痕/前端展示用） */
+const PLACEMENT_LABELS = {};
+for (const s of PARAM_SCHEMA) {
+  if (s.sec === 'placement') for (const d of s.defs) PLACEMENT_LABELS[d.key] = d.label;
+}
+
+/** 学习维度 -> 对应权重 key：人工选择在该维度更优 => 权重向该方向微调 */
+const LEARN_DIMS = [
+  ['sameSpec', 'sameSpecBase'],   // 同规格归堆 vs 空垛兜底的取向
+  ['empty',    'emptyBase'],
+  ['family',   'famBonus'],       // 库位同质/异族
+  ['near',     'nearBonus'],      // 邻位聚簇
+  ['pend',     'pendPenalty'],    // 扫码干扰规避
+];
+const LEARN_STEP = 2;             // 单次确认每个维度的最大步长（分）
+
+const nowIso = () => new Date().toISOString();
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+const randint = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+
+/* ================= 归堆推荐引擎（与仿真沙盘评分口径一致的服务端移植） ================= */
+
+function loadYard(db) {
+  const slots = db.prepare('SELECT * FROM storage_slots ORDER BY id').all()
+    .map(s => ({ ...s, stacks: [] }));
+  const byId = new Map(slots.map(s => [s.id, s]));
+  for (const k of db.prepare('SELECT * FROM stacks ORDER BY slot_id, stack_no').all()) {
+    const st = byId.get(k.slot_id);
+    if (st) st.stacks.push(k);
+  }
+  return slots;
+}
+
+/** 库位级统计：空垛/同族/异族/待扫码垛数 + 邻位聚簇数（供评分各维度） */
+function analyzeYard(yard, spec) {
+  const fam = SPEC_FAMILY[spec];
+  const an = new Map();
+  for (const s of yard) {
+    let emptyN = 0, famN = 0, mixN = 0, pendN = 0;
+    for (const k of s.stacks) {
+      if (k.pending > 0) pendN++;
+      if (k.count === 0 && k.pending === 0) { emptyN++; continue; }
+      if (k.spec === spec || (k.spec && SPEC_FAMILY[k.spec] === fam)) famN++;
+      else if (k.spec) mixN++;
+    }
+    an.set(s.id, { emptyN, famN, mixN, pendN });
+  }
+  const nearOf = new Map();
+  for (const s of yard) {
+    let nearN = 0;
+    for (const o of yard) {
+      if (o === s || Math.abs(o.area - s.area) > 1) continue;
+      for (const k of o.stacks) if (k.spec === spec && k.count > 0) nearN++;
+    }
+    nearOf.set(s.id, nearN);
+  }
+  return { an, nearOf };
+}
+
+/**
+ * 单个候选（库位,垛）的评分与分维得分；不合法落点返回 null。
+ * comps 各维度独立记录，供人工调整后的权重学习对比。
+ */
+function scoreStack(W, st, k, ctx, spec, spanHint) {
+  const fill = k.count;
+  if (fill >= BUNDLES_PER_STACK || k.pending > 0) return null;   // 满垛/待扫码垛不作落点
+  if (fill > 0 && k.spec !== spec) return null;                  // 硬规则：同垛不混异规格
+  const { an, nearOf } = ctx;
+  const agg = an.get(st.id);
+  const nearN = nearOf.get(st.id);
+  const comps = {
+    sameSpec: 0, empty: 0, family: 0, near: 0, pend: 0,
+  };
+  const parts = [];
+  if (fill > 0) {                                                // ① 同规格归堆（按填充率加励）
+    comps.sameSpec = W.sameSpecBase + Math.round(W.sameSpecFill * fill / BUNDLES_PER_STACK);
+    parts.push(`同规格归堆 ${comps.sameSpec}（${fill}/${BUNDLES_PER_STACK}）`);
+  } else {                                                       // ② 空垛兜底（空垛多则惜用）
+    comps.empty = Math.max(0, W.emptyBase - agg.emptyN * W.emptyPenalty);
+    parts.push(`空垛兜底 ${comps.empty}`);
+  }
+  comps.family = agg.famN * W.famBonus - agg.mixN * W.mixPenalty;              // ③ 库位同质性
+  if (agg.famN) parts.push(`库位同族 ${agg.famN * W.famBonus}`);
+  if (agg.mixN) parts.push(`库位异族 -${agg.mixN * W.mixPenalty}`);
+  comps.near = Math.min(nearN * W.nearBonus, W.nearCap);                       // ④ 邻位聚簇
+  if (comps.near) parts.push(`邻位聚簇 ${comps.near}`);
+  comps.pend = -agg.pendN * W.pendPenalty;                                     // ⑤ 扫码干扰
+  if (agg.pendN) parts.push(`扫码干扰 -${agg.pendN * W.pendPenalty}`);
+  const spanMatch = spanHint != null && !st.merged && st.span === spanHint;
+  const spanBonus = spanMatch ? W.spanBonus : 0;                               // ⑥ 跨匹配
+  if (spanBonus) parts.push(`跨匹配 ${spanBonus}`);
+  const score = comps.sameSpec + comps.empty + comps.family + comps.near + comps.pend + spanBonus;
+  return { score, parts, comps };
+}
+
+/** 在指定落点上复算评分（学习对比用）；落点已不合法返回 null */
+function scoreAt(db, W, yard, spec, slotId, stackNo) {
+  const st = yard.find(s => s.id === slotId);
+  const k = st && st.stacks.find(x => x.stack_no === stackNo);
+  if (!st || !k || st.state === 'locked') return null;
+  return scoreStack(W, st, k, analyzeYard(yard, spec), spec, null);
+}
+
+/**
+ * 为一组（spec × bundles 捆）生成垛位分配推荐：
+ * 贪心取最优候选垛，装满后再荐次优（同车同规格集中码放、垛满另荐），返回分配数组。
+ */
+export function recommendAllocation(db, spec, bundles) {
+  const W = getSimParams(db).placement;
+  const yard = loadYard(db);
+  const ctx = analyzeYard(yard, spec);
+  const out = [];
+  const claimed = new Map();   // 本轮已占用量（slotId,stackNo）-> 捆数
+  let left = bundles;
+  while (left > 0) {
+    const cands = [];
+    for (const st of yard) {
+      if (st.state === 'locked') continue;
+      for (const k of st.stacks) {
+        const r = scoreStack(W, st, k, ctx, spec, null);
+        if (!r) continue;
+        const free = BUNDLES_PER_STACK - k.count - (claimed.get(`${st.id}:${k.stack_no}`) || 0);
+        if (free <= 0) continue;
+        cands.push({ st, k, ...r, free });
+      }
+    }
+    if (!cands.length) break;                       // 全库无合法落点（库满）
+    cands.sort((a, b) => b.score - a.score);
+    const best = cands[0];
+    const take = Math.min(left, best.free);
+    claimed.set(`${best.st.id}:${best.k.stack_no}`, (claimed.get(`${best.st.id}:${best.k.stack_no}`) || 0) + take);
+    out.push({
+      slotId: best.st.id, code: best.st.code, zone: best.st.zone,
+      area: best.st.area, span: best.st.span, stackNo: best.k.stack_no,
+      bundles: take, score: best.score, parts: best.parts,
+    });
+    left -= take;
+  }
+  return { allocations: out, shortfall: left };
+}
+
+/** 候选落点列表（调整下拉框用）：按综合分降序，含剩余容量与评分分解 */
+export function listCandidates(db, spec, bundles, limit = 20) {
+  const W = getSimParams(db).placement;
+  const yard = loadYard(db);
+  const ctx = analyzeYard(yard, spec);
+  const cands = [];
+  for (const st of yard) {
+    if (st.state === 'locked') continue;
+    for (const k of st.stacks) {
+      const r = scoreStack(W, st, k, ctx, spec, null);
+      if (!r) continue;
+      const free = BUNDLES_PER_STACK - k.count;
+      if (free <= 0) continue;
+      cands.push({
+        slotId: st.id, stackNo: k.stack_no, code: st.code, zone: st.zone,
+        area: st.area, spanLabel: st.merged ? SPAN_LABELS[3] : SPAN_LABELS[st.span],
+        score: r.score, parts: r.parts, free, enough: free >= bundles,
+      });
+    }
+  }
+  cands.sort((a, b) => (b.enough - a.enough) || (b.score - a.score));
+  return cands.slice(0, limit);
+}
+
+/* ================= 车辆进厂（车牌/运单识别模拟） ================= */
+
+function makePlate() {
+  const letters = 'ABCDEFGHJKMNPQRSTUVWXYZ';
+  const tail = Array.from({ length: 5 }, () => pick((letters + '0123456789').split(''))).join('');
+  return `${pick(PROVINCES)}${pick(letters.split(''))}·${tail}`;
+}
+
+/** 模拟一车进厂：识别车牌/运单 -> 生成物流信息 + 垛位分配推荐（返回完整视图） */
+export function spawnIncomingVehicle(db) {
+  const params = getSimParams(db);
+  const minLoads = Math.round(params.truck.minLoads);
+  const maxLoads = Math.round(params.truck.maxLoads);
+  const specs = [...new Set(Object.keys(SPEC_FAMILY))];
+  const total = randint(minLoads, maxLoads);          // 一车吊数与仿真组车规则一致
+  const groups = [];
+  const primary = pick(specs);
+  const mixed = Math.random() * 100 < params.truck.mixedSpecPct;
+  if (mixed) {
+    const second = pick(specs.filter(s => s !== primary));
+    const g1 = Math.max(minLoads - 1, Math.ceil(total * (0.55 + Math.random() * 0.2)));
+    groups.push({ spec: primary, bundles: g1 }, { spec: second, bundles: total - g1 });
+  } else {
+    groups.push({ spec: primary, bundles: total });
+  }
+
+  const insVeh = db.prepare(
+    'INSERT INTO inbound_vehicles (plate, waybill, mill, arrive_time, state) VALUES (?, ?, ?, ?, \'pending\')');
+  const insLoad = db.prepare(`
+    INSERT INTO inbound_loads
+      (vehicle_id, spec, bundles, rec_slot_id, rec_stack_no, rec_score, rec_parts)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`);
+  const vehId = db.transaction(() => {
+    const id = insVeh.run(makePlate(), `YD26-${randint(10000, 99999)}`, pick(MILLS), nowIso()).lastInsertRowid;
+    for (const g of groups) {
+      const { allocations } = recommendAllocation(db, g.spec, g.bundles);   // 逐组推荐（垛满自动拆垛）
+      for (const a of allocations) {
+        insLoad.run(id, g.spec, a.bundles, a.slotId, a.stackNo, a.score, JSON.stringify(a.parts));
+      }
+    }
+    return id;
+  })();
+  return getVehicleView(db, vehId);
+}
+
+/* ================= 视图 / 校验 ================= */
+
+function slotCodeMap(db) {
+  return new Map(db.prepare('SELECT id, code FROM storage_slots').all().map(s => [s.id, s.code]));
+}
+
+/** 单车完整视图（loads 含推荐值与最终值；最终为空表示未调整、取推荐） */
+export function getVehicleView(db, id) {
+  const v = db.prepare('SELECT * FROM inbound_vehicles WHERE id=?').get(id);
+  if (!v) return null;
+  const codes = slotCodeMap(db);
+  const loads = db.prepare('SELECT * FROM inbound_loads WHERE vehicle_id=? ORDER BY id').all(id)
+    .map(l => ({
+      id: l.id, spec: l.spec, bundles: l.bundles, adjusted: !!l.adjusted,
+      recSlotId: l.rec_slot_id, recStackNo: l.rec_stack_no,
+      recCode: codes.get(l.rec_slot_id) || String(l.rec_slot_id),
+      recScore: l.rec_score, recParts: safeParse(l.rec_parts),
+      ...(l.slot_id != null
+        ? { slotId: l.slot_id, stackNo: l.stack_no, code: codes.get(l.slot_id) || String(l.slot_id) }
+        : {}),
+    }));
+  return {
+    id: v.id, plate: v.plate, waybill: v.waybill, mill: v.mill,
+    arriveTime: v.arrive_time, state: v.state, ...(v.confirmed_time ? { confirmedTime: v.confirmed_time } : {}),
+    bundles: loads.reduce((n, l) => n + l.bundles, 0),
+    loads,
+  };
+}
+
+function safeParse(json, fallback = []) {
+  try { const v = JSON.parse(json); return Array.isArray(v) ? v : fallback; } catch { return fallback; }
+}
+
+export function listInboundVehicles(db, limit = 25) {
+  return db.prepare('SELECT id FROM inbound_vehicles ORDER BY id DESC LIMIT ?').all(limit)
+    .map(r => getVehicleView(db, r.id));
+}
+
+/** 组内已占容量统计：(slotId,stackNo) -> 已计划捆数；excludeLoadId 用于换垛时剔除自身旧计划 */
+function buildClaims(db, vehicleId, excludeLoadId = 0) {
+  const claims = new Map();
+  for (const l of db.prepare('SELECT * FROM inbound_loads WHERE vehicle_id=?').all(vehicleId)) {
+    if (l.id === excludeLoadId) continue;
+    const slotId = l.slot_id ?? l.rec_slot_id;
+    const stackNo = l.stack_no ?? l.rec_stack_no;
+    const key = `${slotId}:${stackNo}`;
+    claims.set(key, (claims.get(key) || 0) + l.bundles);
+  }
+  return claims;
+}
+
+/** 校验某组落在指定垛位是否合法（库位可用、同垛单规格、容量含同车已计划量） */
+function validateTarget(yard, claims, spec, slotId, stackNo, bundles) {
+  const st = yard.find(s => s.id === slotId);
+  if (!st) return '库位不存在';
+  if (st.state === 'locked') return `库位 ${st.code} 已被任务锁定`;
+  const k = st.stacks.find(x => x.stack_no === stackNo);
+  if (!k) return `库位 ${st.code} 无第 ${stackNo} 垛`;
+  if (k.pending > 0) return `库位 ${st.code} 第${stackNo}垛待扫码核验，暂不可作落点`;
+  if (k.count > 0 && k.spec !== spec) return `库位 ${st.code} 第${stackNo}垛已有 ${k.spec}（同垛不混异规格）`;
+  const free = BUNDLES_PER_STACK - k.count - (claims.get(`${slotId}:${stackNo}`) || 0);
+  if (bundles > free) return `库位 ${st.code} 第${stackNo}垛容量不足（余 ${Math.max(0, free)} 捆 < ${bundles} 捆）`;
+  return null;
+}
+
+/* ================= 调整 / 确认 ================= */
+
+/** 管理工改垛：仅待确认车辆可改；合法即更新最终落点并标记 adjusted */
+export function adjustLoad(db, vehicleId, loadId, slotId, stackNo) {
+  const v = db.prepare('SELECT * FROM inbound_vehicles WHERE id=?').get(vehicleId);
+  const l = db.prepare('SELECT * FROM inbound_loads WHERE id=? AND vehicle_id=?').get(loadId, vehicleId);
+  if (!v || !l) return { error: '车辆或分配组不存在' };
+  if (v.state !== 'pending') return { error: '该车已确认下发，不可再调整' };
+  const yard = loadYard(db);
+  const err = validateTarget(yard, buildClaims(db, vehicleId, loadId), l.spec, slotId, stackNo, l.bundles);
+  if (err) return { error: err };
+  db.prepare('UPDATE inbound_loads SET slot_id=?, stack_no=?, adjusted=1 WHERE id=?').run(slotId, stackNo, loadId);
+  return { vehicle: getVehicleView(db, vehicleId) };
+}
+
+/** 在当前权重下对比推荐落点与人工落点的分维差异，累计各权重的微调方向 */
+function learnDeltas(db, yard, adjustedLoads) {
+  if (!adjustedLoads.length) return [];
+  const W = getSimParams(db).placement;
+  const acc = {};                                    // key -> 方向票数
+  for (const l of adjustedLoads) {
+    const rec = scoreAt(db, W, yard, l.spec, l.rec_slot_id, l.rec_stack_no);
+    const fin = scoreAt(db, W, yard, l.spec, l.slot_id, l.stack_no);
+    if (!rec || !fin) continue;                      // 推荐落点已被占用等场景：跳过本次学习
+    for (const [dim, key] of LEARN_DIMS) {
+      const d = fin.comps[dim] - rec.comps[dim];
+      if (d !== 0) acc[key] = (acc[key] || 0) + Math.sign(d);
+    }
+  }
+  return Object.entries(acc)
+    .filter(([, dir]) => dir !== 0)
+    .map(([key, dir]) => ({ key, dir }));
+}
+
+/** 管理工确认：校验全部组 -> 留痕 -> 人工调整沉淀为权重优化 -> 置已确认 */
+export function confirmVehicle(db, vehicleId) {
+  const v = db.prepare('SELECT * FROM inbound_vehicles WHERE id=?').get(vehicleId);
+  if (!v) return { error: '车辆不存在' };
+  if (v.state !== 'pending') return { error: '该车已确认' };
+  const yard = loadYard(db);
+  const loads = db.prepare('SELECT * FROM inbound_loads WHERE vehicle_id=? ORDER BY id').all(vehicleId);
+  if (!loads.length) return { error: '该车无有效垛位分配（库区可能已满），请先释放库容' };
+
+  const claims = new Map();
+  for (const l of loads) {
+    const err = validateTarget(yard, claims, l.spec, l.slot_id ?? l.rec_slot_id, l.stack_no ?? l.rec_stack_no, l.bundles);
+    if (err) return { error: `${l.spec} ×${l.bundles}：${err}` };
+    const key = `${l.slot_id ?? l.rec_slot_id}:${l.stack_no ?? l.rec_stack_no}`;
+    claims.set(key, (claims.get(key) || 0) + l.bundles);
+  }
+
+  const codes = slotCodeMap(db);
+  const adjusted = loads.filter(l => l.adjusted && l.slot_id != null);
+  const dirs = learnDeltas(db, yard, adjusted);
+
+  const insFb = db.prepare(`
+    INSERT INTO placement_feedback
+      (time, vehicle_id, plate, spec, bundles, action, rec_code, rec_stack_no, final_code, final_stack_no, deltas)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const applyW = {};
+  const appliedDeltas = [];
+  const tx = db.transaction(() => {
+    const before = getSimParams(db).placement;
+    for (const d of dirs) {
+      applyW[d.key] = before[d.key] + LEARN_STEP * d.dir;   // setSimParams 会按 schema 夹取
+    }
+    let after = before;
+    if (Object.keys(applyW).length) after = setSimParams(db, { placement: applyW }).placement;
+    for (const key of Object.keys(applyW)) {
+      if (after[key] !== before[key]) {
+        appliedDeltas.push({ key, label: PLACEMENT_LABELS[key] || key, from: before[key], to: after[key] });
+      }
+    }
+    const t = nowIso();
+    for (const l of loads) {
+      const isAdj = !!(l.adjusted && l.slot_id != null);
+      insFb.run(t, v.id, v.plate, l.spec, l.bundles, isAdj ? 'adjusted' : 'confirmed',
+        codes.get(l.rec_slot_id) || String(l.rec_slot_id), l.rec_stack_no,
+        codes.get(l.slot_id ?? l.rec_slot_id) || '', l.stack_no ?? l.rec_stack_no,
+        JSON.stringify(isAdj ? appliedDeltas : []));
+    }
+    db.prepare("UPDATE inbound_vehicles SET state='confirmed', confirmed_time=? WHERE id=?").run(t, v.id);
+  });
+  tx();
+  return { vehicle: getVehicleView(db, vehicleId), deltas: appliedDeltas };
+}
+
+/** 删除待确认车辆（误识别/演练数据清理）；已确认车辆保留台账 */
+export function deleteVehicle(db, vehicleId) {
+  const v = db.prepare('SELECT * FROM inbound_vehicles WHERE id=?').get(vehicleId);
+  if (!v) return { error: '车辆不存在' };
+  if (v.state !== 'pending') return { error: '已确认车辆属作业台账，不可删除' };
+  db.transaction(() => {
+    db.prepare('DELETE FROM inbound_loads WHERE vehicle_id=?').run(vehicleId);
+    db.prepare('DELETE FROM inbound_vehicles WHERE id=?').run(vehicleId);
+  })();
+  return { ok: true };
+}
+
+/* ================= 人工反馈统计（算法优化效果） ================= */
+
+export function feedbackStats(db, recentLimit = 12) {
+  const totals = db.prepare(`
+    SELECT COUNT(DISTINCT v.id)                          AS vehicles,
+           COUNT(l.id)                                   AS groups,
+           COALESCE(SUM(l.adjusted AND v.state='confirmed'), 0) AS adjusted
+    FROM inbound_vehicles v
+    LEFT JOIN inbound_loads l ON l.vehicle_id = v.id
+    WHERE v.state = 'confirmed'`).get();
+  const recent = db.prepare(
+    'SELECT * FROM placement_feedback ORDER BY id DESC LIMIT ?').all(recentLimit)
+    .map(r => ({
+      time: r.time, plate: r.plate, spec: r.spec, bundles: r.bundles, action: r.action,
+      ...(r.rec_code ? { recCode: r.rec_code, recStackNo: r.rec_stack_no } : {}),
+      finalCode: r.final_code, finalStackNo: r.final_stack_no,
+      deltas: safeParse(r.deltas),
+    }));
+  return {
+    totals: {
+      vehicles: totals.vehicles,
+      groups: totals.groups || 0,
+      adjusted: totals.adjusted || 0,
+      adjustRate: totals.groups ? (totals.adjusted || 0) / totals.groups : 0,
+    },
+    recent,
+    weights: getSimParams(db).placement,
+  };
+}

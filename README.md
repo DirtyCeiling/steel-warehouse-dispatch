@@ -67,12 +67,16 @@ npm run build
 
 ### 常用命令
 ```bash
-npm run db:init       # 初始化：建库 + 91 库位 × 8 垛 + 预置 30 捆初始库存
-npm run db:reset      # 重置为初始库存
-npm run db:inspect    # 打印库存汇总与抽样库位
-npm run db:serve      # 启动本地 HTTP API（http://127.0.0.1:3001）
-npm run db:test       # 自检：建库/写入/持久化
+npm run sim         # 一站式启动：沙盘预览(5199) + 库存数据库API(3001)
+npm run db:init     # 初始化：建库 + 91 库位 × 8 垛 + 分区归堆实际钢材分布
+npm run db:reset    # 重置为初始钢材分布
+npm run db:inspect  # 打印库存汇总与抽样库位
+npm run db:serve    # 仅启动本地 HTTP API（http://127.0.0.1:3001）
+npm run db:test     # 自检：建库/写入/持久化
 ```
+
+> 仿真沙盘（`http://localhost:5199/`）期初库存自动从数据库加载，出入库/倒垛实时写回；
+> 数据库服务未启动时回退内置随机库存（事件日志会提示）。刷新/重启页面即恢复上次库存。
 
 ### 表结构
 - `specs` — 棒材规格（名称/单捆吨重/渲染色）

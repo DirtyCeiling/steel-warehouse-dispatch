@@ -83,7 +83,8 @@ await flushAsync();   // init 中的异步加载落地后再断言
 check('沙盘已请求 /api/slots', fetchHits >= 1, String(fetchHits));
 const storages = sandbox.__dbg.storages;
 const totalBundles = storages.reduce((s, st) => s + st.stacks.reduce((x, k) => x + k.count, 0), 0);
-check('期初库存 = 数据库库存（6766 捆）', totalBundles === 6766, String(totalBundles));
+const expectedBundles = realSlots.reduce((s, r) => s + (r.stacks || []).reduce((x, k) => x + (k.count || 0), 0), 0);
+check(`期初库存 = 数据库库存（${expectedBundles} 捆 · 以探针启动时快照为准）`, totalBundles === expectedBundles, String(totalBundles));
 check('期初全部同垛单规格（无混垛）',
   storages.every(st => st.stacks.every(k => k.bundles.every(b => b.specIdx === k.bundles[0].specIdx))), '');
 const logText = () => elements.get('logList').children.map(d => d.innerHTML).join('\n');
@@ -97,8 +98,9 @@ console.log('== 卸货推荐算法：16× 跑 1 个仿真小时 ==');
 sandbox.setSpeed(16);
 pump(225);   // 225s 实时 × 16 = 3600 仿真秒
 check('运行零 JS 错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.slice(0, 2).join('|'));
-check('卸货推荐日志已产生（含评分分解）', logText().includes('卸货推荐：') && logText().includes('综合'), '');
-check('推荐次选日志已产生', logText().includes('卸货推荐次选'), '');
+const recLog = sandbox.__dbg.recLog;   // 结构化留痕：日志窗口仅留近 260 条，长时运行时文本日志易被挤出
+check('卸货推荐已产生（含评分分解）', recLog.length > 0 && recLog.every(r => Array.isArray(r.parts) && r.parts.length > 0), `${recLog.length} 条`);
+check('推荐次选已产生（多候选对比）', recLog.some(r => !!r.runners), '');
 
 // 核心断言：所有垛仍然同垛单规格（推荐算法硬规则：同垛不混异规格）
 check('运行后仍无混规格垛（硬规则生效）',
@@ -127,6 +129,19 @@ for (const st of storages) {
 }
 check('库位规格族纯度 >= 85%（相似货物放一起）', pureSlots / occSlots >= 0.85,
   `${pureSlots}/${occSlots} = ${(100 * pureSlots / occSlots).toFixed(1)}%`);
+
+console.log('== 同车同规格归并：整车同规格集中码入同一垛 ==');
+const mergeLog = sandbox.__dbg.mergeLog;
+check('同车归并已生效（同车次同规格沿用已配垛位）', mergeLog.length > 0, `${mergeLog.length} 次`);
+check('同车归并规格正确（沿用垛不混异规格）', mergeLog.every(m => {
+  const st = storages.find(s => s.code === m.code);
+  const k = st && st.stacks[m.stackIdx];
+  return !k || !k.spec || k.spec.name === m.spec;
+}), '');
+check('归并不超垛容（每垛 <= 20 捆）',
+  storages.every(st => st.stacks.every(k => k.count <= 20)), '');
+check('归堆权重快照可用（CFG.placement 参数化）',
+  typeof sandbox.__dbg.placementCfg.sameSpecBase === 'number', JSON.stringify(sandbox.__dbg.placementCfg));
 
 console.log(failed === 0 ? '\n推荐算法探针全部通过 ✓' : `\n${failed} 项断言失败 ✗`);
 process.exit(failed === 0 ? 0 : 1);
