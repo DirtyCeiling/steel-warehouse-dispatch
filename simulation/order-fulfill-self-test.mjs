@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
+import { makeFeedFetch } from './feed-stub.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, '调度仿真沙盘.html'), 'utf8');
@@ -65,14 +66,19 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(`Math.random = (() => { let s = 20260824; return () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; }; })();`, sandbox);
 vm.runInContext(code, sandbox, { filename: 'sandbox-inline.js' });
+sandbox.setPaused(false);   // 沙盘默认暂停：无头自检载入后立即开跑
 
-function pump(realSeconds, fps = 30) {
+/* 车辆物流数据源桩：沙盘不再本地生成车辆，出库订单/异常/复验所需任务量由源事件流供给 */
+sandbox.fetch = makeFeedFetch(() => sandbox.__dbg.simTime);
+
+async function pump(realSeconds, fps = 30) {
   const frames = Math.round(realSeconds * fps);
   for (let i = 0; i < frames; i++) {
     now += 1000 / fps;
     const q = rafQueue.splice(0);
     for (const cb of q) cb(now);
   }
+  await new Promise(r => setImmediate(r));   // 让物流源桩的异步链落地
 }
 let failed = 0, checkIdx = 0;
 const failIdx = [];
@@ -85,13 +91,16 @@ function check(name, cond, detail = '') {
 const logText = () => documentStub.getElementById('logList').children.map(d => d.innerHTML).join('\n');
 
 console.log('== 探针：16× 跑 2 个仿真小时 ==');
+// 运单差异每车运单吊取仅掷一次骰，默认 5% 在本测试的车次量下属小概率——调高到 40% 确定性触发该分支
+sandbox.setDeviceParam('abnormal', 'manifestMismatchPct', 40);
 sandbox.setSpeed(16);
-pump(450); // 450s 实时 × 16 = 7200 仿真秒
+for (let i = 0; i < 45; i++) await pump(10); // 450s 实时 × 16 = 7200 仿真秒（分段泵：物流源事件持续落地）
 check('运行零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.slice(0, 3).join('|'));
 
 console.log('== 订单模型 ==');
 const orders = sandbox.__dbg.orders;
-check('已下发出库订单（合同号格式）', orders.length > 0 && /^HT26-\d{4}$/.test(orders[0].id), orders.length + ' 张 · 首单 ' + (orders[0] && orders[0].id));
+check('已下发出库订单（合同号格式：手动零星 HT26- / 物流源 L26-）',
+  orders.length > 0 && /^(HT26-\d{4}|L26-\d{6})$/.test(orders[0].id), orders.length + ' 张 · 首单 ' + (orders[0] && orders[0].id));
 const doneOrders = orders.filter(o => o.done >= o.required);
 check('存在齐套闭环订单（凑齐才闭环）', doneOrders.length > 0, doneOrders.length + ' 张完成');
 check('闭环订单吨位累计 > 0', doneOrders.every(o => o.tons > 0), doneOrders.slice(0, 3).map(o => o.id + ':' + o.tons + 't').join(' '));
@@ -108,7 +117,7 @@ check('扫码失败 -> 重扫/人工介入已触发（异常留痕计数，不�
 check('异常留痕计数 = 重扫次数 + 人工介入次数',
   ab.scanAnomalyLog === ab.scanFail + ab.manualOverride,
   `${ab.scanAnomalyLog} = ${ab.scanFail} + ${ab.manualOverride}`);
-check('运单差异已注入（5% 概率）', ab.manifestMismatch > 0, 'mismatch=' + ab.manifestMismatch);
+check('运单差异已注入（本测试调高至 40% 触发）', ab.manifestMismatch > 0, 'mismatch=' + ab.manifestMismatch);
 check('出场复验已执行', logText().includes('出场复验'), '');
 check('复验通过后才离场（离场前复验日志存在）', logText().includes('出场复验通过') || logText().includes('出场复验异常'), '');
 
@@ -118,6 +127,12 @@ const last = sandbox.__dbg.kpiSeriesLast;
 check('采样点字段完整（t/inv/done/pend）', !!last && last.inv >= 0 && last.done > 0 && last.pend >= 0, JSON.stringify(last));
 check('任务台账已留痕', sandbox.__dbg.ledgerSize > 0, sandbox.__dbg.ledgerSize + ' 条');
 check('无 localStorage 环境静默降级（不报错）', sandbox.__dbg.errs.length === 0, '');
+
+console.log('== 一车一天车（2 仿真小时 · 多车次长跑） ==');
+const tc2 = sandbox.__dbg.truckCrane;
+check('无两台天车同时服务一辆货车', tc2.doubleService === 0, JSON.stringify(tc2));
+check('车辆吊装按车认领（每辆离场车恰由一台天车完成）', tc2.multiCrane === 0 && tc2.served > 0,
+  `单天车 ${tc2.served - tc2.multiCrane}/${tc2.served} 车 · 跨天车 ${tc2.multiCrane} · 代吊 ${tc2.assists}`);
 
 console.log('== 倒垛降级修复：restackWaiting 机制 ==');
 // 构造场景：把某出库任务的目标垛塞满同规格压货，且全库无空位 -> maybePushCraneJob 必须拒绝入队（不再误核销）

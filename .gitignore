@@ -49,3 +49,4 @@ server/*.db-shm
 
 # ZCode 本地工具目录
 .zcode/
+.tmp-test/

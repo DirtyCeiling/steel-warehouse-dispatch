@@ -1,10 +1,13 @@
-// 无头自检：验证「生产节奏」—— 按每日进厂/出厂车辆数生成随车运单，全天铺开不一次下完。
-// 桩掉 DOM/Canvas，在 Node VM 中运行"调度仿真沙盘.html"完整脚本，直接 advance() 推进仿真钟。
+// 无头自检：验证「生产节奏（外部物流源模式）」—— 沙盘以 ?feed=all 接入 LogisticsData_Sim，
+// 车辆进出库按每日进厂/出厂车辆数排产、全天铺开不一次下完；沙盘从事件流增量消费。
+// 桩掉 DOM/Canvas，在 Node VM 中运行"调度仿真沙盘.html"完整脚本；
+// fetch 用 feed-stub.mjs（复用 LogisticsData_Sim 真实生成器，1× 源速跟随沙盘仿真钟）。
 // 用法：node simulation/production-pace-self-test.mjs
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
+import { makeFeedFetch } from './feed-stub.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, '调度仿真沙盘.html'), 'utf8');
@@ -59,83 +62,95 @@ const sandbox = {
   clearTimeout,
   setInterval: (fn, ms) => { const t = setInterval(fn, ms); t.unref?.(); return t; },
   clearInterval,
+  location: { search: '?feed=all' },
+  URLSearchParams,   // 页面用其解析 ?feed= / ?logi= 参数（缺省会回退本地排产模式）
 };
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 // 固定随机种子，保证可复现
 vm.runInContext(`Math.random = (() => { let s = 20260824; return () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; }; })();`, sandbox);
 vm.runInContext(code, sandbox, { filename: 'sandbox-inline.js' });
+sandbox.setPaused(false);   // 沙盘默认暂停：无头自检载入后立即开跑
+
+/* 物流数据源桩：沙盘 1× 运行，源时钟跟随沙盘仿真钟到点放行事件（150 进 / 100 出 / 24h 日） */
+const feedFetch = makeFeedFetch(() => sandbox.__dbg.simTime);
+sandbox.fetch = feedFetch;
 
 let failed = 0;
 function check(name, cond, detail = '') {
   const ok = !!cond;
   if (!ok) failed++;
-  console.log(`${ok ? '  ✓' : '  ✗'} ${name}${detail ? '  [' + detail + ']' : ''}`);
+  console.log(`  ${ok ? '✓' : '✗'} ${name}${detail ? '  [' + detail + ']' : ''}`);
 }
 
-/* 直接按仿真钟推进（advance 内部固定 0.05s 子步长），跑到目标仿真秒 */
-function runTo(simSec) {
-  let guard = 0;
-  while (sandbox.__dbg.simTime < simSec && guard++ < 2_000_000) sandbox.advance(1.0);
+/* 分段泵 rAF：每段末尾让出事件循环 —— 物流源桩的异步链落地、事件按节奏消费 */
+async function pump(realSeconds, fps = 30) {
+  const frames = Math.round(realSeconds * fps);
+  for (let i = 0; i < frames; i++) {
+    now += 1000 / fps;
+    const q = rafQueue.splice(0);
+    for (const cb of q) cb(now);
+  }
+  await new Promise(r => setImmediate(r));
+}
+async function runWall(seconds, chunk = 5) {
+  for (let i = 0; i < seconds / chunk; i++) await pump(chunk);
 }
 
-console.log('== 阶段零：生产节奏配置与参数夹取 ==');
-check('默认 每日进厂 150 辆', sandbox.setDeviceParam('production', 'inPerDay', 150) === 150, '');
-check('默认 每日出厂 100 辆', sandbox.setDeviceParam('production', 'outPerDay', 100) === 100, '');
-check('越界参数被夹取（inPerDay 9999 -> 600）', sandbox.setDeviceParam('production', 'inPerDay', 9999) === 600, '');
-check('越界参数被夹取（outPerDay 1 -> 10）', sandbox.setDeviceParam('production', 'outPerDay', 1) === 10, '');
-sandbox.restoreDefaultParams();
-check('恢复默认（inPerDay=150, outPerDay=100）',
-  sandbox.setDeviceParam('production', 'inPerDay', 150) === 150 && sandbox.setDeviceParam('production', 'outPerDay', 100) === 100, '');
+console.log('== 阶段零：外部模式下排产节奏由物流数据源接管 ==');
+check('外部模式（?feed=all）本地排产不驱动（__spawnLog 仅由源事件写入）',
+  sandbox.__dbg.feed.mode === 'all', `mode=${sandbox.__dbg.feed.mode}`);
 
-console.log('== 阶段一：跑 3 个仿真小时，验证按速率排产 ==');
+console.log('== 阶段一：跑 3 个仿真小时（1×），验证按源节奏消费 ==');
 sandbox.init();
-const WIN = 3 * 3600;           // 3 个仿真小时 = 1/8 天
-runTo(WIN);
+sandbox.setPaused(false);   // 沙盘默认暂停：init 后显式开跑
+await runWall(3 * 3600, 30);           // 3 小时 = 1/8 天（分段泵，30s 一落地）
 check('运行零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.slice(0, 3).join('|'));
+check('物流源在线且游标推进', sandbox.__dbg.feed.online === true && sandbox.__dbg.feed.cursor > 0,
+  `cursor=${sandbox.__dbg.feed.cursor}/lastSeq=${sandbox.__dbg.feed.lastSeq}`);
 const log = sandbox.__spawnLog || [];
 const inSpawn = log.filter(e => e.type === 'in');
 const outSpawn = log.filter(e => e.type === 'out');
-// 期望：150/8≈18.75 辆进厂，100/8≈12.5 辆出厂（3 小时窗口），允许抖动容差
+check('消费与源生成一致（游标 = 流长度）', sandbox.__dbg.feed.cursor === sandbox.__dbg.feed.lastSeq,
+  `${sandbox.__dbg.feed.cursor}/${sandbox.__dbg.feed.lastSeq}`);
+// 期望：150/8≈19 辆进厂，100/8≈12 辆出厂（3 小时窗口），允许抖动容差
 check('进厂车辆数符合日速率（150/日 → 3h 约 19 辆）',
   inSpawn.length >= 12 && inSpawn.length <= 26, inSpawn.length + ' 辆');
 check('出厂车辆数符合日速率（100/日 → 3h 约 12 辆）',
   outSpawn.length >= 6 && outSpawn.length <= 20, outSpawn.length + ' 辆');
-check('随车运单按 6-10 吊（一车门类）',
-  log.every(e => e.made >= 1 && e.made <= 10) && log.some(e => e.made >= 6), '吊数=' + JSON.stringify(log.map(e => e.made).slice(0, 12)));
+check('随车运单按 6-10 吊（进厂车门类；出库订单按库存配捆可为 0-10）',
+  inSpawn.every(e => e.made >= 6 && e.made <= 10) && outSpawn.every(e => e.made <= 10),
+  '进厂吊数=' + JSON.stringify(inSpawn.map(e => e.made).slice(0, 12)));
 
 console.log('== 阶段二：全天铺开，不一次下完 ==');
 const inTimes = inSpawn.map(e => e.t).sort((a, b) => a - b);
 const span = inTimes[inTimes.length - 1] - inTimes[0];
 check('进厂排产覆盖几乎整个窗口（首末间隔 > 2 小时）', span > 2 * 3600, (span / 3600).toFixed(2) + ' h');
-// 前 60 秒最多 1 辆进厂 + 1 辆出厂（开场不扎堆）
 const earlyIn = inSpawn.filter(e => e.t < 60).length;
 const earlyOut = outSpawn.filter(e => e.t < 60).length;
 check('开场 60s 内进厂 ≤ 1 辆、出厂 ≤ 1 辆（不一次下完）', earlyIn <= 1 && earlyOut <= 1, `in=${earlyIn} out=${earlyOut}`);
-// 把窗口切成 12 段，最多一段的进厂数不应独占（<40%），证明铺开而非爆发
+const WIN = 3 * 3600;
 const buckets = Array(12).fill(0);
 for (const t of inTimes) buckets[Math.min(11, Math.floor(t / WIN * 12))]++;
 const maxBucket = Math.max(...buckets);
-check('进厂排产时间分布均匀（最大时段占比 < 40%）', maxBucket / inSpawn.length < 0.4, `max=${maxBucket}/${inSpawn.length} 桶=[${buckets.join(',')}]`);
+check('进厂排产时间分布均匀（最大时段占比 < 40%）', maxBucket / inSpawn.length < 0.4,
+  `max=${maxBucket}/${inSpawn.length} 桶=[${buckets.join(',')}]`);
 
-console.log('== 阶段三：配置改大后排产提速（即时生效） ==');
-sandbox.setDeviceParam('production', 'inPerDay', 480);   // 加倍多 -> 间隔变短
+console.log('== 阶段三：源节奏调大后消费提速（即时生效） ==');
+feedFetch.setParams({ inPerDay: 480 });   // 每日进厂 150 -> 480：间隔缩短
 const before = inSpawn.length;
-const t0 = sandbox.__dbg.simTime;
-runTo(t0 + 3600);          // 再跑 1 小时
+await runWall(3600, 30);                  // 再跑 1 小时
 const after = (sandbox.__spawnLog || []).filter(e => e.type === 'in').length;
-// 480/日 → 1h 约 20 辆；明显多于默认 150/日 的 1h≈6 辆
-check('调大每日进厂后 1h 排产明显提速（>=12 辆）', after - before >= 12, `本小时 ${after - before} 辆`);
-sandbox.restoreDefaultParams();
+check('调大每日进厂后 1h 消费明显提速（>=12 辆）', after - before >= 12, `本小时 ${after - before} 辆`);
+feedFetch.setParams({ inPerDay: 150 });   // 恢复默认
 
 console.log('== 阶段四：恢复默认后继续运行，确认稳定 ==');
-sandbox.restoreDefaultParams();
 const before2 = (sandbox.__spawnLog || []).length;
 const t1 = sandbox.__dbg.simTime;
-runTo(t1 + 3600);          // 再跑 1 小时（默认 150/日 ≈ 6 辆进厂）
+await runWall(3600, 30);
 const inAfter = (sandbox.__spawnLog || []).filter(e => e.type === 'in' && e.t >= t1).length;
 check('恢复默认后回归默认节奏（1h 进厂 3~10 辆）', inAfter >= 3 && inAfter <= 10, `本小时 ${inAfter} 辆`);
 check('全程零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.slice(0, 3).join('|'));
 
 console.log(failed === 0 ? '\n生产节奏自检通过 ✓' : `\n${failed} 项断言失败 ✗`);
-process.exit(failed === 0 ? 0 : 1);
+process.exitCode = failed === 0 ? 0 : 1;

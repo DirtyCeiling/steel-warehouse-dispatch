@@ -1,5 +1,7 @@
 // 无头逻辑自检：在 Node VM 中运行"调度仿真沙盘.html"的完整脚本，
 // 桩掉 DOM/Canvas，手动泵 rAF 帧驱动仿真，断言调度全流程闭环。
+// 车辆数据来自沙盘默认的本地排产（生产节奏参数驱动，外部物流源模式的
+// 自检见 logistics-feed-self-test.mjs / production-pace-self-test.mjs）。
 // 用法：node simulation/self-test.mjs
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -71,21 +73,30 @@ const sandbox = {
   clearTimeout,
   setInterval: (fn, ms) => { const t = setInterval(fn, ms); t.unref?.(); return t; },
   clearInterval,
+  location: { search: '' },        // 库存数据库 API 地址参数（无头环境用默认值，不注入 fetch 即走兜底库存）
+  URLSearchParams,
 };
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 // 固定随机种子：占用库位分布 / 任务流可复现，保证自检确定性
 vm.runInContext(`Math.random = (() => { let s = 20260824; return () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; }; })();`, sandbox);
 vm.runInContext(code, sandbox, { filename: 'sandbox-inline.js' });
+sandbox.setPaused(false);   // 沙盘默认暂停：无头自检载入后立即开跑
 
-/* ---- rAF 泵：按 fps 推进"真实"时间，frame() 内部再乘仿真倍率 ---- */
-function pump(realSeconds, fps = 30) {
+/* 本地排产模式（默认）：车辆由沙盘 tick 内生产节奏生成，无需注入 fetch；
+ * 库存数据库调用走"无 fetch -> 兜底库存"分支 */
+
+/* ---- rAF 泵：按 fps 推进"真实"时间，frame() 内部再乘仿真倍率；
+ *      泵完让出一次事件循环，异步链（库存兜底日志等）落地 ---- */
+const flushMicrotasks = () => new Promise(r => setImmediate(r));
+async function pump(realSeconds, fps = 30) {
   const frames = Math.round(realSeconds * fps);
   for (let i = 0; i < frames; i++) {
     now += 1000 / fps;
     const q = rafQueue.splice(0);
     for (const cb of q) cb(now);
   }
+  await flushMicrotasks();
 }
 
 /* ---- 断言工具 ---- */
@@ -182,30 +193,31 @@ check('立柱摄像头已布置（每跨上/下边缘）',
 check('货车承载吊数 1..10（不足 6 吊按现有吊数放行）',
   !!t1 && !!t1.truck && t1.truck.remaining >= 1 && t1.truck.remaining <= 10,
   t1 && t1.truck ? t1.truck.remaining + ' 吊' : '无');
-pump(1);
+await pump(1);
 const stepBefore = sandbox.__dbg.simTime;
 sandbox.advance(0.5); // btnStep 的核心逻辑
 check('单步推进 0.5s', Math.abs(sandbox.__dbg.simTime - stepBefore - 0.5) < 1e-6, sandbox.__dbg.simTime.toFixed(2));
 check('设备参数接口可用', typeof sandbox.setDeviceParam === 'function', '');
-const rowsHtml = el('paramRows').innerHTML;
-check('设备参数面板每个参数均有数字输入栏（与滑杆一一对应、双向同步）',
-  (rowsHtml.match(/type="range"/g) || []).length > 0
-  && (rowsHtml.match(/type="range"/g) || []).length === (rowsHtml.match(/type="number"/g) || []).length,
-  `滑杆 ${(rowsHtml.match(/type="range"/g) || []).length} / 输入栏 ${(rowsHtml.match(/type="number"/g) || []).length}`);
+check('调度参数 schema 全量可写（含开关型监测跨，写入并夹取）',
+  sandbox.setDeviceParam('robot', 'count', 4) === 4
+  && sandbox.setDeviceParam('robot', 'spanA', 0) === 0
+  && sandbox.setDeviceParam('robot', 'spanB', 1) === 1
+  && sandbox.setDeviceParam('robot', 'spanC', 0) === 0
+  && sandbox.setDeviceParam('placement', 'sameSpecBase', 80) === 80, '');
 const spd = sandbox.setDeviceParam('robot', 'speed', 8);
 check('机器狗速度参数写入并夹取', spd === 8, 'speed=' + spd);
 check('天车吊取/放下参数写入',
   sandbox.setDeviceParam('crane', 'hoistTime', 1) === 1 && sandbox.setDeviceParam('crane', 'lowerTime', 0.6) === 0.6, '');
 check('越界参数被夹取', sandbox.setDeviceParam('crane', 'speed', 99) === 10, '');
-pump(2);
+await pump(2);
 check('参数调整后零错误', sandbox.__dbg.errs.length === 0, '');
 sandbox.restoreDefaultParams(); // 恢复默认，避免污染后续阶段
-pump(1);
+await pump(1);
 check('恢复默认参数（天车速度回到 4.0 m/s）',
   el('robotCards').innerHTML.includes('速度 4 m/s'), el('robotCards').innerHTML.match(/速度 [\d.]+ m\/s/)?.[0] || '无');
 
 console.log('== 阶段二：1× 自然运行 540 仿真秒（一车 6-10 吊，需走完一个完整出入库车次） ==');
-pump(540);
+for (let i = 0; i < 54; i++) await pump(10);   // 分段泵：本地排产按节奏到点生成车辆（消费与作业链并行推进）
 check('零 JS 错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.join('|'));
 check('仿真时钟推进', el('clock').textContent !== '08:00:00', el('clock').textContent);
 check('自动任务已生成', logText().includes('WMS 下发'), '');
@@ -237,7 +249,7 @@ check('设备集群面板显示车队电量汇总（均值/最低/续航）', el
 console.log('== 阶段三：16× 长时运行（约 36 仿真分钟）==');
 sandbox.restoreDefaultParams();
 sandbox.setSpeed(16);
-pump(135); // 135s 实时 × 16 = 2160 仿真秒（36 分钟，足够触发扫码+天车+货车完整流程）
+for (let i = 0; i < 27; i++) await pump(5); // 135s 实时 × 16 = 2160 仿真秒（36 分钟，足够触发扫码+天车+货车完整流程；分段泵让异步链持续落地）
 check('长时运行零 JS 错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.slice(0, 3).join('|'));
 const done2 = +el('kpiDone').textContent;
 const lc = sandbox.__logCounts || {};
@@ -283,20 +295,31 @@ sandbox.setDeviceParam('robot', 'chargeHours', 0.5);
 let rbLow = null;
 for (let i = 0; i < 40 && !rbLow; i++) {
   rbLow = sandbox.__dbg.robots.find(r => r.state === 'IDLE' && !r.task);
-  if (!rbLow) pump(2);
+  if (!rbLow) await pump(2);
 }
 check('找到空闲机器狗用于充电循环测试', !!rbLow, rbLow && rbLow.name);
 rbLow.battery = 20;   // 低于返航充电阈值 25%
-pump(2);
+await pump(2);
 check('低电量触发返航充电', rbLow.state === 'TO_CHARGER' || rbLow.state === 'CHARGING', rbLow.state);
-for (let i = 0; i < 60 && rbLow.battery < 90 && (rbLow.state === 'TO_CHARGER' || rbLow.state === 'CHARGING'); i++) pump(2);
-check('充电使电量回升至 85%+（85% 起可被派单打断）', rbLow.battery >= 85, rbLow.battery.toFixed(1) + '%');
+const rbBefore = (sandbox.__chargeInterrupts || []).filter(e => e.name === rbLow.name).length;
+let rbPeak = rbLow.battery;   // 充电峰值：被打断开走后会行驶耗电，事后读数低于打断时刻
+for (let i = 0; i < 60 && rbLow.battery < 90 && (rbLow.state === 'TO_CHARGER' || rbLow.state === 'CHARGING'); i++) {
+  await pump(2);
+  rbPeak = Math.max(rbPeak, rbLow.battery);
+}
+// 打断可能发生在泵帧内部（打断即开走耗电）——以留痕的打断时刻电量为准，泵边界峰值为辅
+const rbIntr = (sandbox.__chargeInterrupts || []).filter(e => e.name === rbLow.name).slice(rbBefore);
+const intrBatt = rbIntr.length ? Math.max(...rbIntr.map(e => e.battery)) : 0;
+check('充电使电量回升至 85%+（85% 起可被派单打断）', rbPeak >= 85 || intrBatt >= 85,
+  `打断时刻 ${intrBatt.toFixed(1)}% · 泵边界峰值 ${rbPeak.toFixed(1)}% · 当前 ${rbLow.battery.toFixed(1)}%`);
 check('运行期最高电量 >= 85%（充电补充）', (sandbox.__maxBatt || 0) >= 85, 'max=' + (sandbox.__maxBatt || 0).toFixed(1) + '%');
 check('返航充电事件已记录日志（电量类事件计数）', (sandbox.__logCounts?.charge || 0) >= 1,
   'charge=' + (sandbox.__logCounts?.charge || 0));
 sandbox.setDeviceParam('robot', 'chargeHours', 2);   // 恢复充满 2 小时
 
 console.log('== 阶段四：货车通道阻塞机制 ==');
+// 车流有低峰间隙（组车等待/排产间隔）：有界等待下一辆货车进场再断言，避免瞬时空场误报
+for (let i = 0; i < 30 && !(sandbox.__dbg.trucks.length > 0); i++) await pump(5);
 const trucks = sandbox.__dbg.trucks;
 check('当前有货车状态记录', trucks.length > 0, trucks.length + ' 辆');
 const LANE_COLS = [7, 19, 31];
@@ -319,10 +342,51 @@ check('C 跨双车 TC-C1/C2',
 // 天车作业次数
 const totalCraneJobs = craneSt.reduce((s, c) => s + c.jobsDone, 0);
 check('天车累计作业 >= 5 次', totalCraneJobs >= 5, 'total=' + totalCraneJobs);
+// 一车一天车：一辆货车的全部装卸吊由一台天车认领完成，严禁双车同时服务一辆货车
+const tc = sandbox.__dbg.truckCrane;
+check('无两台天车同时服务一辆货车', tc.doubleService === 0, JSON.stringify(tc));
+check('车辆吊装按车认领（每辆离场车恰由一台天车完成）', tc.multiCrane === 0 && tc.served > 0,
+  `单天车 ${tc.served - tc.multiCrane}/${tc.served} 车 · 跨天车 ${tc.multiCrane} · 代吊 ${tc.assists}`);
+const pairBad = sandbox.__dbg.truckHistory.filter(t => t.cranes && t.cranes.includes('+'));
+check('车辆留档：认领天车唯一（无跨天车记录）', pairBad.length === 0,
+  pairBad.slice(0, 3).map(t => `${t.taskId}:${t.cranes}`).join(' ') || '全部单车单天车');
+
+console.log('== 阶段五b：监测跨调度（仅开「监测 A 跨」-> 车辆/上架/取货全部限定一跨 A） ==');
+sandbox.setDeviceParam('robot', 'spanA', 1);
+sandbox.setDeviceParam('robot', 'spanB', 0);
+sandbox.setDeviceParam('robot', 'spanC', 0);
+const monT0 = sandbox.__dbg.simTime;
+const monIn = [];
+for (let i = 0; i < 6; i++) { const t = sandbox.createTask('in'); if (t) monIn.push(t); }
+check('仅开监测 A 跨：新入库任务车次全在一跨 A', monIn.length >= 4 && monIn.every(t => t.batch.span === 0),
+  monIn.map(t => t.batch.span).join(','));
+check('仅开监测 A 跨：入库落点库位均在 A 跨行', monIn.every(t => t.slot.goalR === 1),
+  monIn.map(t => t.slot.code).slice(0, 4).join(','));
+const monOut = sandbox.createTask('out');
+check('仅开监测 A 跨：出库任务也在 A 跨（A 跨无库存则不下任务，不放宽到未监测跨）',
+  !monOut || (monOut.batch.span === 0 && monOut.slot.goalR === 1),
+  monOut ? `${monOut.slot.code} · 跨 ${monOut.batch.span}` : 'A 跨暂无可出库存，未下任务');
+sandbox.spawnVehicleManifest('out');   // 生产排产一张提货订单：规格只按 A 跨可出库存选、配捆只出 A 跨的货
+const monOrdTasks = sandbox.__dbg.tasks.filter(t => t.type === 'out' && t.created >= monT0);
+check('仅开监测 A 跨：提货订单配捆任务均在 A 跨（未监测跨库存不参与出库）',
+  monOrdTasks.every(t => t.slot.goalR === 1), `${monOrdTasks.length} 个出库任务`);
+check('监测跨调度策略快照（受限 · 仅 A 跨）',
+  sandbox.__dbg.truckSpanPolicy.restricted === true
+  && sandbox.__dbg.truckSpanPolicy.spans.join(',') === '0',
+  sandbox.__dbg.truckSpanPolicy.text);
+sandbox.forceDispatchBatches();
+const aRowY = sandbox.__dbg.spanRowCenters[0];   // 一跨 A 行心（SPAN_ROWS[0] = 栅格行 1）
+check('仅开监测 A 跨：新派货车停靠目标均为一跨 A 行',
+  monIn.every(t => t.truck && Math.abs(t.truck.targetY - aRowY) < 1e-6)
+  && (!monOut || monOut.batch.span !== 0 || (monOut.truck && Math.abs(monOut.truck.targetY - aRowY) < 1e-6)),
+  monIn.filter(t => t.truck).length + ' 辆货车');
+check('监测跨调度阶段零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.join('|'));
+sandbox.restoreDefaultParams();   // 恢复三跨全监测（不限跨），再交由阶段六重置
 
 console.log('== 阶段六：重置 ==');
 sandbox.init();
-pump(3);
+sandbox.setPaused(false);   // 重置后默认暂停：继续开跑
+await pump(3);
 check('重置后时钟归零', el('clock').textContent.startsWith('08:00:0'), el('clock').textContent);
 check('重置后完成数归零', +el('kpiDone').textContent === 0, '');
 check('重置后零错误', sandbox.__dbg.errs.length === 0, '');
@@ -334,8 +398,10 @@ const bs = sandbox.__dbg.bundleSample;
 check('捆记录字段完整（捆号/钢种/长度/支数/吨位/炉号）',
   !!bs && /^B-\d{4}$/.test(bs.id) && bs.grade && bs.len > 0 && bs.rods > 0 && bs.wt > 0 && /^HT\d{6}$/.test(bs.heat),
   bs ? `${bs.id} ${bs.grade} ${bs.len}m ${bs.rods}支 ${bs.wt}t ${bs.heat}` : '无');
+// 重置后本地排产：直接触发一辆进厂车，驱动本阶段出入库全流程
+sandbox.spawnVehicleManifest('in');
 sandbox.setSpeed(8);
-pump(90); // 90s 实时 × 8 = 720 仿真秒，覆盖出入库全流程（落料待核验 -> 扫码入账 -> 出库核销）
+for (let i = 0; i < 18; i++) await pump(5); // 90s 实时 × 8 = 720 仿真秒，覆盖出入库全流程（落料待核验 -> 扫码入账 -> 出库核销）
 check('运行中捆记录与垛 count 全程同步', sandbox.__dbg.bundleSyncOK, '');
 check('运行中待核验标记一致', sandbox.__dbg.pendingSyncOK, '');
 const inBundles = sandbox.__invDbg.collect().filter(w => w.b.inTime >= 0);
@@ -359,13 +425,13 @@ if (invB) {
 sandbox.__invDbg.switchView('sim');
 sandbox.restoreDefaultParams();
 sandbox.setSpeed(1);
-pump(1);
+await pump(1);
 check('库存视图往返后仿真零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.join('|').slice(0, 120));
 
 console.log('== 阶段八：机器狗视图（追踪视角 + 实时参数 + 任务队列） ==');
 sandbox.__invDbg.switchView('dog');
 check('机器狗视图激活', sandbox.__dogDbg.active === true, '');
-pump(3);   // 追踪画布走若干帧（无头桩吞掉绘制调用，验证绘制路径无引用错误）
+await pump(3);   // 追踪画布走若干帧（无头桩吞掉绘制调用，验证绘制路径无引用错误）
 check('追踪视角渲染零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.join('|').slice(0, 120));
 check('狗狗选择器渲染 3 台（含昵称）',
   ['D-01', 'D-02', 'D-03', '疾风', '闪电', '磐石'].every(k => sandbox.__dogDbg.segHTML.includes(k)), '');
@@ -380,7 +446,7 @@ check('任务队列计数渲染（待分配/执行中）', /待分配 \d+ · 执
 check('任务队列为空时有空态文案或队列行',
   sandbox.__dogDbg.queueHTML.includes('dq-row') || sandbox.__dogDbg.queueHTML.includes('暂无任务'), '');
 sandbox.__invDbg.switchView('sim');
-pump(1);
+await pump(1);
 check('机器狗视图往返后仿真零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.join('|').slice(0, 120));
 
 console.log(failed === 0 ? '\n全部自检通过 ✓' : `\n${failed} 项断言失败 ✗`);

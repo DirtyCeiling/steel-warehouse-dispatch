@@ -51,17 +51,38 @@
   button:hover { border-color: var(--cyan); color: #fff; box-shadow: 0 0 10px rgba(56,189,248,.2); }
   button:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
   button.primary { border-color: rgba(56, 189, 248, .5); color: var(--cyan); }
-  main { flex: 1; overflow-y: auto; padding: 18px 16px 40px; }
-  .wrap { max-width: 860px; margin: 0 auto; }
+  /* ---- 分类页签 ---- */
+  .tabs {
+    display: flex; gap: 6px; padding: 8px 16px; flex: none; flex-wrap: wrap;
+    border-bottom: 1px solid var(--line); background: rgba(6, 13, 30, .85);
+    position: sticky; top: 0; z-index: 5; backdrop-filter: blur(4px);
+  }
+  .tabs button { border-radius: 999px; padding: 4px 14px; font-size: 12px; color: var(--dim); }
+  .tabs button.on { color: #04121f; font-weight: 700; border-color: transparent; }
+  .tabs button.on.c-ops { background: var(--amber); }
+  .tabs button.on.c-device { background: var(--cyan); }
+  .tabs button.on.c-algo { background: var(--violet); }
+  .tabs button.on.c-abnormal { background: var(--red); }
+  .tabs button.on.c-all { background: var(--teal); }
+  main { flex: 1; overflow-y: auto; padding: 16px 16px 40px; }
+  .wrap { max-width: 900px; margin: 0 auto; }
   .desc { font-size: 12px; color: var(--dim); line-height: 1.7; margin-bottom: 14px; }
   .desc code { font-family: var(--mono); color: var(--cyan); }
-  section {
-    background: rgba(11, 23, 48, .75); border: 1px solid var(--line);
-    border-radius: 10px; padding: 14px 16px; margin-bottom: 12px;
-  }
-  section h2 { font-size: 14px; font-weight: 700; }
-  section .sdesc { font-size: 11px; color: var(--dim); margin: 3px 0 6px; }
-  .row { display: flex; align-items: center; gap: 14px; padding: 7px 0; border-top: 1px solid rgba(22, 41, 79, .6); }
+  /* ---- 分类卡片 ---- */
+  .cat { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 16px; overflow: hidden; background: rgba(11, 23, 48, .55); }
+  .cat-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 18px 10px; border-left: 3px solid; }
+  .cat-head .ico { font-size: 17px; }
+  .cat-head h2 { font-size: 15px; font-weight: 700; letter-spacing: .5px; }
+  .cat-head .cdesc { font-size: 11px; color: var(--dim); }
+  .cat.c-ops .cat-head { border-color: var(--amber); }
+  .cat.c-device .cat-head { border-color: var(--cyan); }
+  .cat.c-algo .cat-head { border-color: var(--violet); }
+  .cat.c-abnormal .cat-head { border-color: var(--red); }
+  .sub { padding: 4px 18px 12px; border-top: 1px dashed rgba(22, 41, 79, .7); }
+  .sub h3 { font-size: 13px; font-weight: 700; margin-top: 10px; }
+  .sub .sdesc { font-size: 11px; color: var(--dim); margin: 3px 0 2px; line-height: 1.6; }
+  .row { display: flex; align-items: center; gap: 14px; padding: 7px 0; border-bottom: 1px solid rgba(22, 41, 79, .45); }
+  .sub .row:last-child { border-bottom: none; }
   .row .lab { width: 150px; flex: none; font-size: 12.5px; color: var(--text); }
   .row input[type=range] { flex: 1; accent-color: var(--cyan); }
   .row .num { display: flex; align-items: center; gap: 5px; flex: none; }
@@ -72,6 +93,14 @@
   }
   .row input[type=number]:focus { border-color: var(--cyan); }
   .row .unit { font-size: 11px; color: var(--dim); width: 38px; }
+  .tog {
+    border: 1px solid var(--line2); background: var(--panel2); color: var(--dim);
+    border-radius: 6px; padding: 4px 16px; font-size: 12px; cursor: pointer; transition: all .15s;
+  }
+  .tog:hover { border-color: var(--cyan); }
+  .tog.on { border-color: rgba(45, 212, 191, .55); color: var(--teal); background: rgba(45, 212, 191, .08); }
+  .note { font-size: 11px; color: var(--dim); background: rgba(14, 29, 58, .6); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; margin: 8px 0 4px; line-height: 1.7; }
+  .note b { color: var(--violet); font-weight: 600; }
   .msg { border-radius: 8px; padding: 8px 12px; font-size: 12.5px; margin-bottom: 12px; border: 1px solid; }
   .msg.ok { border-color: rgba(52, 211, 153, .4); background: rgba(52, 211, 153, .08); color: var(--green); }
   .msg.err { border-color: rgba(248, 113, 113, .4); background: rgba(248, 113, 113, .08); color: var(--red); }
@@ -82,21 +111,28 @@
 </style>
 </head>
 <body>
+<script>/* 页内工作台嵌入模式（?embed=1）：隐藏本页导航，沙盘顶部导航已提供页内切换 */
+if (new URLSearchParams(location.search).get('embed') === '1') document.documentElement.classList.add('embed');</script>
+<style>html.embed header nav { display: none; }</style>
 <header>
   <div class="brand">
     <div class="logo">⚙</div>
     <div><h1>调度参数</h1></div>
   </div>
-  <nav>
-    <a href="/">🗺 仿真沙盘</a>
-    <a href="/inbound">🚚 进厂确认</a>
-    <a href="/params" class="on">⚙ 调度参数</a>
+  <nav title="新标签打开，不打断各页面状态">
+    <a href="/" target="_blank">🗺 仿真沙盘</a>
+    <a href="/inbound" target="_blank">🚚 进厂确认</a>
+    <a href="/vehicles" target="_blank">📋 车辆记录</a>
+    <a href="/scans" target="_blank">⏱ 扫描时效</a>
+    <a class="on">⚙ 调度参数</a>
+    <a href="/runs" target="_blank">📊 仿真场次</a>
   </nav>
   <div class="actions">
     <button id="btnReset">↺ 恢复默认</button>
     <button id="btnSave" class="primary">✓ 保存修改</button>
   </div>
 </header>
+<div class="tabs" id="tabs"></div>
 <main><div class="wrap" id="app"><p class="hint"><span class="spin">◌</span> 正在从数据库加载调度参数…</p></div></main>
 
 <script>
@@ -104,16 +140,31 @@
 // 库存数据库 API；本地多实例调试可用 ?api=http://127.0.0.1:3101 覆盖
 const DB_API = new URLSearchParams(location.search).get('api') || 'http://127.0.0.1:3001';
 const app = document.getElementById('app');
+const tabsEl = document.getElementById('tabs');
 const btnSave = document.getElementById('btnSave');
 const btnReset = document.getElementById('btnReset');
 
-let schema = [];            // [{sec, secLabel, desc, defs:[{key,label,min,max,step,unit,def}]}]
+/* 分类：schema 的 sec -> 展示分类（顺序即展示顺序） */
+const CATEGORIES = [
+  { id: 'ops',      cls: 'c-ops',      ico: '🚦', name: '生产运营', desc: '生产节奏与车辆组车规则' },
+  { id: 'device',   cls: 'c-device',   ico: '🤖', name: '设备集群', desc: '机器狗 / 天车的台数、监测范围与作业参数' },
+  { id: 'algo',     cls: 'c-algo',     ico: '🧮', name: '调度算法', desc: '卸货归堆推荐评分权重' },
+  { id: 'abnormal', cls: 'c-abnormal', ico: '⚡', name: '异常注入', desc: '异常事件概率演练' },
+];
+const SEC_CAT = {
+  production: 'ops', truck: 'ops',
+  robot: 'device', crane: 'device',
+  placement: 'algo',
+  abnormal: 'abnormal',
+};
+
+let schema = [];            // [{sec, secLabel, desc, defs:[{key,label,min,max,step,unit,def,toggle?}]}]
 let values = {};            // 当前编辑值 { sec: { key: value } }
 let saved = {};             // 已保存值（脏判断基准）
+let activeCat = 'all';      // 当前筛选分类
 
 const defaultsOf = sch => Object.fromEntries(
   sch.map(s => [s.sec, Object.fromEntries(s.defs.map(d => [d.key, d.def]))]));
-
 const isDirty = () => JSON.stringify(values) !== JSON.stringify(saved);
 
 function setVal(sec, key, v) {
@@ -146,46 +197,104 @@ function renderMsg(ok, text, retry) {
   app.prepend(div);
 }
 
-function render() {
+/* ---- 分类页签 ---- */
+function renderTabs() {
+  const items = [{ id: 'all', cls: 'c-all', ico: '☰', name: '全部' }, ...CATEGORIES];
+  tabsEl.innerHTML = '';
+  for (const c of items) {
+    const b = document.createElement('button');
+    b.className = c.cls + (activeCat === c.id ? ' on' : '');
+    b.textContent = `${c.ico} ${c.name}`;
+    b.onclick = () => { activeCat = c.id; renderTabs(); renderGroups(); };
+    tabsEl.appendChild(b);
+  }
+}
+
+/* ---- 参数行 ---- */
+function buildRow(sec, d) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const lab = document.createElement('span');
+  lab.className = 'lab';
+  lab.textContent = d.label;
+  row.appendChild(lab);
+  if (d.toggle) {   // 开关型参数（如监测跨）：0/1 渲染为按钮
+    const tog = document.createElement('button');
+    tog.type = 'button';
+    tog.className = 'tog';
+    const paint = () => {
+      const on = !!values[sec][d.key];
+      tog.textContent = on ? '✓ 监测' : '✕ 不监测';
+      tog.classList.toggle('on', on);
+    };
+    paint();
+    tog.onclick = () => { setVal(sec, d.key, values[sec][d.key] ? 0 : 1); paint(); };
+    row.appendChild(tog);
+    return row;
+  }
+  const range = document.createElement('input');
+  Object.assign(range, { type: 'range', min: d.min, max: d.max, step: d.step, value: values[sec][d.key] });
+  range.dataset.sec = sec; range.dataset.key = d.key;
+  range.oninput = e => setVal(sec, d.key, Number(e.target.value));
+  const num = document.createElement('div');
+  num.className = 'num';
+  const number = document.createElement('input');
+  Object.assign(number, { type: 'number', min: d.min, max: d.max, step: d.step, value: values[sec][d.key] });
+  number.dataset.sec = sec; number.dataset.key = d.key;
+  number.oninput = e => setVal(sec, d.key, Number(e.target.value));
+  const unit = document.createElement('span');
+  unit.className = 'unit';
+  unit.textContent = d.unit;
+  num.append(number, unit);
+  row.append(range, num);
+  return row;
+}
+
+/* ---- 分类卡片 ---- */
+function renderGroups() {
   app.innerHTML = '';
   const desc = document.createElement('p');
   desc.className = 'desc';
-  desc.innerHTML = '调度规划系统参数，持久化在本地库存数据库（' + DB_API + '），与仿真沙盘共用同一份：' +
-    '进厂车按规格整车配载、同车同规格归并同一垛位，垛满后才按「归堆策略权重」另荐新垛；' +
+  desc.innerHTML = '调度规划系统参数，持久化在本地库存数据库（' + DB_API + '），全站同源：' +
+    '修改保存后运行中的仿真沙盘数秒内自动同步生效；' +
     '「进厂确认」页的人工调整也会自动微调归堆权重。';
   app.appendChild(desc);
-  for (const s of schema) {
-    const sec = document.createElement('section');
-    const h2 = document.createElement('h2');
-    h2.textContent = s.secLabel;
-    const sd = document.createElement('p');
-    sd.className = 'sdesc';
-    sd.textContent = s.desc || '';
-    sec.append(h2, sd);
-    for (const d of s.defs) {
-      const row = document.createElement('div');
-      row.className = 'row';
-      const lab = document.createElement('span');
-      lab.className = 'lab';
-      lab.textContent = d.label;
-      const range = document.createElement('input');
-      Object.assign(range, { type: 'range', min: d.min, max: d.max, step: d.step, value: values[s.sec][d.key] });
-      range.dataset.sec = s.sec; range.dataset.key = d.key;
-      range.oninput = e => setVal(s.sec, d.key, Number(e.target.value));
-      const num = document.createElement('div');
-      num.className = 'num';
-      const number = document.createElement('input');
-      Object.assign(number, { type: 'number', min: d.min, max: d.max, step: d.step, value: values[s.sec][d.key] });
-      number.dataset.sec = s.sec; number.dataset.key = d.key;
-      number.onchange = e => setVal(s.sec, d.key, Number(e.target.value));
-      const unit = document.createElement('span');
-      unit.className = 'unit';
-      unit.textContent = d.unit;
-      num.append(number, unit);
-      row.append(lab, range, num);
-      sec.appendChild(row);
+
+  for (const cat of CATEGORIES) {
+    if (activeCat !== 'all' && activeCat !== cat.id) continue;
+    const secs = schema.filter(s => SEC_CAT[s.sec] === cat.id);
+    if (!secs.length) continue;
+    const card = document.createElement('section');
+    card.className = 'cat ' + cat.cls;
+    const head = document.createElement('div');
+    head.className = 'cat-head';
+    head.innerHTML = `<span class="ico">${cat.ico}</span><h2>${cat.name}</h2><span class="cdesc">${cat.desc}</span>`;
+    card.appendChild(head);
+    for (const s of secs) {
+      const sub = document.createElement('div');
+      sub.className = 'sub';
+      const h3 = document.createElement('h3');
+      h3.textContent = s.secLabel;
+      const sd = document.createElement('p');
+      sd.className = 'sdesc';
+      sd.textContent = s.desc || '';
+      sub.append(h3, sd);
+      for (const d of s.defs) sub.appendChild(buildRow(s.sec, d));
+      if (s.sec === 'robot') {
+        const note = document.createElement('p');
+        note.className = 'note';
+        note.innerHTML = '提示：监测跨同时决定<b>机器狗扫码范围</b>与<b>运输车辆停靠跨</b>——仅开启部分监测跨时，所有货车只派往监测跨装卸，物资也只在监测跨内入库/出库（如仅开「监测 A 跨」：<b>所有运输车辆均前往一跨 A</b>，入库卸货与出库装车都在 A 跨；监测跨内库位满或暂无该规格可出库存时相应任务暂缓，待监测跨库存回补，不会转到未监测跨）。三跨全开或全关时不限跨。保存后运行中的沙盘数秒内自动生效。';
+        sub.appendChild(note);
+      }
+      if (s.sec === 'placement') {
+        const note = document.createElement('p');
+        note.className = 'note';
+        note.innerHTML = '提示：同车同规格始终归并同一垛（垛满才另荐）；其余入库按上述权重综合评分。<b>「进厂确认」页的每次人工改垛都会逐维度对比并自动微调这些权重</b>，无需手动反复试参。';
+        sub.appendChild(note);
+      }
+      card.appendChild(sub);
     }
-    app.appendChild(sec);
+    app.appendChild(card);
   }
   refreshButtons();
 }
@@ -199,14 +308,15 @@ async function load() {
     schema = r.schema;
     values = r.values;
     saved = JSON.parse(JSON.stringify(r.values));
-    render();
+    renderTabs();
+    renderGroups();
   } catch {
     app.innerHTML = '';
     renderMsg(false, '调度参数加载失败：数据库服务未启动（请先执行 npm run db:serve 或 npm run sim）。', true);
   }
 }
 
-btnReset.onclick = () => { values = defaultsOf(schema); render(); };
+btnReset.onclick = () => { values = defaultsOf(schema); renderGroups(); };
 btnSave.onclick = async () => {
   btnSave.disabled = true;
   btnSave.textContent = '保存中…';
@@ -220,8 +330,8 @@ btnSave.onclick = async () => {
     const r = await res.json();
     values = r.values;
     saved = JSON.parse(JSON.stringify(r.values));
-    render();
-    renderMsg(true, '已保存到数据库。仿真沙盘下次启动时自动加载；已打开的沙盘在「⚙ 设备参数」中调整也会同步回这里。');
+    renderGroups();
+    renderMsg(true, '已保存到数据库。运行中的仿真沙盘会在数秒内自动同步生效（机器狗台数变更会自动重建机队）。');
   } catch {
     renderMsg(false, '保存失败：数据库服务不可达（请先执行 npm run db:serve 或 npm run sim）。');
     refreshButtons();

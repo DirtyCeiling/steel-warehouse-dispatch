@@ -124,15 +124,20 @@
 </style>
 </head>
 <body>
+<script>/* 页内工作台嵌入模式（?embed=1）：隐藏本页导航，沙盘顶部导航已提供页内切换 */
+if (new URLSearchParams(location.search).get('embed') === '1') document.documentElement.classList.add('embed');</script>
+<style>html.embed header nav { display: none; }</style>
 <header>
   <div class="brand">
     <div class="logo">🚚</div>
     <div><h1>进厂确认 · 管理工工作台</h1></div>
   </div>
-  <nav>
-    <a href="/">🗺 仿真沙盘</a>
-    <a href="/inbound" class="on">🚚 进厂确认</a>
-    <a href="/params">⚙ 调度参数</a>
+  <nav title="新标签打开，不打断各页面状态">
+    <a href="/" target="_blank">🗺 仿真沙盘</a>
+    <a class="on">🚚 进厂确认</a>
+    <a href="/vehicles" target="_blank">📋 车辆记录</a>
+    <a href="/params" target="_blank">⚙ 调度参数</a>
+    <a href="/runs" target="_blank">📊 仿真场次</a>
   </nav>
   <div class="actions">
     <button id="btnSpawn" class="primary">🚚 模拟车辆进厂</button>
@@ -339,7 +344,7 @@ function renderLearning() {
       <h3>近期确认留痕</h3>
       ${s.recent.length ? list : '<p class="pdesc">暂无记录：确认第一辆进厂车辆后，这里会展示每组的落点与触发的权重变化。</p>'}
     </div>
-    <p class="foot">优化后的权重与 <a href="/params">「调度参数」页</a> 同源存储，卸货推荐与仿真沙盘自动生效。</p>`;
+    <p class="foot">优化后的权重与 <a href="/params" target="_blank">「调度参数」页</a> 同源存储，卸货推荐与仿真沙盘自动生效。</p>`;
 }
 
 /* ---------------- 数据动作 ---------------- */
@@ -369,9 +374,13 @@ async function spawn() {
   btnSpawn.textContent = '◌ 识别中…';
   try {
     const v = await api('/api/inbound/spawn', { method: 'POST' }, '车辆进厂识别失败');
+    if (v && v.error) {   // 数据源在线但暂无待处理进厂车（车辆数据只有一个来源：LogisticsData_Sim）
+      showMsg(false, v.error);
+      return;
+    }
     state.vehicles.unshift(v);
     renderVehicles();
-    showMsg(true, `已识别进厂车辆 ${v.plate}（运单 ${v.waybill}，${v.mill}，${v.bundles} 捆），请核对垛位分配后确认下发。`);
+    showMsg(true, `已识别进厂车辆 ${v.plate}（运单 ${v.waybill}，${v.mill}，${v.bundles} 捆${v.source && String(v.source).startsWith('logistics') ? ' · 来自物流数据源' : ''}），请核对垛位分配后确认下发。`);
   } catch (e) {
     showMsg(false, String(e.message || e));
   } finally {

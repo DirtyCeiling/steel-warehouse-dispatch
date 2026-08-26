@@ -1,7 +1,7 @@
 // 极简静态服务器：托管 simulation 目录，站点包含三个页面：
 //   /          仿真沙盘（调度仿真沙盘.html）
 //   /inbound   进厂确认（管理工垛位分配确认/调整，含人工反馈→算法优化面板）
-//   /params    调度参数（归堆策略权重等，与沙盘「⚙ 设备参数」同源）
+//   /params    调度参数（全系统唯一的参数设置页；沙盘每 5 秒自动同步）
 // 同时自动启动库存数据库 API（127.0.0.1:3001）：沙盘/页面期初数据从数据库加载、
 // 确认与参数写回，两端口需同时在线——用本命令一站式拉起（npm run sim）。
 import http from 'node:http';
@@ -30,6 +30,12 @@ const PAGES = {
   '/sandbox.html': '/调度仿真沙盘.html',
   '/inbound': '/进厂确认.html',
   '/inbound.html': '/进厂确认.html',
+  '/vehicles': '/车辆记录.html',
+  '/vehicles.html': '/车辆记录.html',
+  '/scans': '/扫描时效记录.html',
+  '/scans.html': '/扫描时效记录.html',
+  '/runs': '/仿真场次记录.html',
+  '/runs.html': '/仿真场次记录.html',
   '/params': '/调度参数.html',
   '/params.html': '/调度参数.html',
 };

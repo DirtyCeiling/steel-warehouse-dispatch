@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>扫描时效记录 · 钢厂棒材库区调度系统</title>
+<style>
+  :root {
+    --bg: #050b1a; --bg2: #071021;
+    --panel: #0b1730; --panel2: #0e1d3a;
+    --line: #16294f; --line2: #1f3a6b;
+    --text: #dbe7ff; --dim: #7288b3;
+    --cyan: #38bdf8; --teal: #2dd4bf; --amber: #fbbf24;
+    --orange: #fb923c; --violet: #a78bfa; --red: #f87171; --green: #34d399;
+    --mono: "Cascadia Mono", Consolas, "Courier New", monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(1200px 600px at 70% -10%, #0a1a38 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    display: flex; flex-direction: column; min-width: 1180px;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; padding: 8px 14px;
+    border-bottom: 1px solid var(--line); background: rgba(8, 18, 38, .7); flex: none;
+  }
+  .brand { display: flex; align-items: center; gap: 8px; }
+  .logo {
+    width: 30px; height: 30px; border-radius: 8px; flex: none;
+    background: linear-gradient(135deg, #0ea5e9, #1d4ed8);
+    display: flex; align-items: center; justify-content: center; font-size: 15px;
+    box-shadow: 0 0 14px rgba(56, 189, 248, .35);
+  }
+  .brand h1 { font-size: 14px; font-weight: 700; letter-spacing: .5px; }
+  nav { display: flex; gap: 6px; margin-left: 10px; }
+  nav a {
+    color: var(--dim); text-decoration: none; font-size: 12px;
+    border: 1px solid var(--line2); border-radius: 6px; padding: 4px 10px;
+    transition: all .15s; background: var(--panel2);
+  }
+  nav a:hover { border-color: var(--cyan); color: #fff; }
+  nav a.on { background: var(--cyan); color: #04121f; font-weight: 700; border-color: var(--cyan); }
+  .actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  button {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line2);
+    border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+    font-family: inherit; transition: all .15s;
+  }
+  button:hover { border-color: var(--cyan); color: #fff; box-shadow: 0 0 10px rgba(56,189,248,.2); }
+  button.primary { border-color: rgba(56, 189, 248, .5); color: var(--cyan); }
+  .livedot { font-size: 11px; color: var(--dim); margin-right: 4px; transition: color .3s; }
+  .livedot.flash { color: var(--green); }
+  main { flex: 1; overflow-y: auto; padding: 16px; }
+  .wrap { max-width: 1400px; margin: 0 auto; }
+  .desc { font-size: 12px; color: var(--dim); line-height: 1.7; margin-bottom: 12px; max-width: 1000px; }
+  .desc b { color: var(--text); }
+  .msg { border-radius: 8px; padding: 8px 12px; font-size: 12.5px; margin-bottom: 12px; border: 1px solid; }
+  .msg.warn { border-color: rgba(251, 191, 36, .4); background: rgba(251, 191, 36, .08); color: var(--amber); }
+  .filters { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+  .filter-group { display: flex; align-items: center; gap: 6px; }
+  .filter-group label { font-size: 12px; color: var(--dim); }
+  .filter-group select, .filter-group input {
+    background: rgba(5, 11, 26, .8); border: 1px solid var(--line2);
+    border-radius: 6px; color: var(--text); font-size: 12px; padding: 6px 10px;
+    font-family: inherit;
+  }
+  .filter-group select:focus, .filter-group input:focus { border-color: var(--cyan); outline: none; }
+  .filter-group input[type="checkbox"] { accent-color: #38bdf8; }
+  .stats { display: flex; gap: 12px; margin-bottom: 16px; }
+  .stat-card {
+    background: rgba(11, 23, 48, .75); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 16px; flex: 1; text-align: center;
+  }
+  .stat-card .value { font-size: 24px; font-family: var(--mono); font-weight: 700; color: var(--cyan); }
+  .stat-card .label { font-size: 11px; color: var(--dim); margin-top: 4px; }
+  .stat-card .value small { font-size: 12px; color: var(--dim); font-weight: 400; }
+
+  /* ---- 按车分组卡片 ---- */
+  .truck-card {
+    border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px;
+    background: rgba(11, 23, 48, .5); overflow: hidden;
+  }
+  .truck-card.open { border-color: var(--line2); }
+  .truck-head {
+    display: flex; align-items: center; gap: 14px; padding: 10px 14px; cursor: pointer;
+    flex-wrap: wrap; user-select: none;
+  }
+  .truck-head:hover { background: rgba(14, 29, 58, .7); }
+  .plate { font-family: var(--mono); font-weight: 700; color: var(--cyan); font-size: 14px; }
+  .bno { font-family: var(--mono); color: var(--violet); font-size: 12px; }
+  .chip { font-size: 11px; border-radius: 4px; padding: 2px 8px; border: 1px solid; }
+  .chip.in { background: rgba(52, 211, 153, .1); border-color: rgba(52, 211, 153, .3); color: var(--green); }
+  .chip.out { background: rgba(56, 189, 248, .1); border-color: rgba(56, 189, 248, .3); color: var(--cyan); }
+  .chip.warn { background: rgba(251, 191, 36, .1); border-color: rgba(251, 191, 36, .3); color: var(--amber); }
+  .chip.dim { background: rgba(114, 136, 179, .1); border-color: rgba(114, 136, 179, .3); color: var(--dim); }
+  .m { font-size: 12px; color: var(--dim); }
+  .m b { color: var(--text); font-family: var(--mono); font-weight: 600; }
+  .m b.clock { font-size: 11.5px; }
+  .m.avg b { color: var(--amber); font-size: 14px; }
+  .toggle { margin-left: auto; color: var(--dim); }
+  .truck-body { display: none; border-top: 1px solid var(--line); padding: 0 14px 12px; }
+  .truck-card.open .truck-body { display: block; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  th {
+    background: rgba(14, 29, 58, .8); border: 1px solid var(--line); padding: 8px 10px;
+    font-size: 12px; font-weight: 600; text-align: left; color: var(--text); white-space: nowrap;
+  }
+  td {
+    border: 1px solid var(--line); padding: 7px 10px; font-size: 12px;
+    background: rgba(11, 23, 48, .5); white-space: nowrap;
+  }
+  tr:hover td { background: rgba(14, 29, 58, .7); }
+  .mono { font-family: var(--mono); }
+  .tid { font-family: var(--mono); color: var(--cyan); }
+  .t-dim { color: var(--dim); }
+  .d-ok { color: var(--green); font-family: var(--mono); }
+  .d-mid { color: var(--amber); font-family: var(--mono); }
+  .d-bad { color: var(--red); font-family: var(--mono); font-weight: 700; }
+  .mark { display: inline-block; font-size: 10.5px; border-radius: 4px; padding: 1px 6px; margin-left: 4px; border: 1px solid; }
+  .mark.anom { background: rgba(248, 113, 113, .1); border-color: rgba(248, 113, 113, .35); color: var(--red); }
+  .mark.skip { background: rgba(167, 139, 250, .1); border-color: rgba(167, 139, 250, .35); color: var(--violet); }
+  .empty {
+    border: 1px dashed var(--line2); border-radius: 10px; text-align: center;
+    padding: 60px 0; color: var(--dim); font-size: 12.5px;
+  }
+  .empty .big { font-size: 30px; margin-bottom: 8px; }
+  .hint-more { text-align: center; color: var(--dim); font-size: 11.5px; padding: 10px 0 0; }
+</style>
+</head>
+<body>
+<script>/* 页内工作台嵌入模式（?embed=1）：隐藏本页导航，沙盘顶部导航已提供页内切换 */
+if (new URLSearchParams(location.search).get('embed') === '1') document.documentElement.classList.add('embed');</script>
+<style>html.embed header nav { display: none; }</style>
+<header>
+  <div class="brand">
+    <div class="logo">⏱</div>
+    <div><h1>扫描时效记录 · 历史完成情况</h1></div>
+  </div>
+  <nav title="新标签打开，不打断各页面状态">
+    <a href="/" target="_blank">🗺 仿真沙盘</a>
+    <a href="/inbound" target="_blank">🚚 进厂确认</a>
+    <a href="/vehicles" target="_blank">📋 车辆记录</a>
+    <a class="on">⏱ 扫描时效</a>
+    <a href="/params" target="_blank">⚙ 调度参数</a>
+    <a href="/runs" target="_blank">📊 仿真场次</a>
+  </nav>
+  <div class="actions">
+    <span class="livedot" id="liveDot" title="沙盘台账落盘时自动刷新（storage 事件联动），也可手动刷新">● 台账联动</span>
+    <button id="btnRefresh" class="primary">↻ 刷新</button>
+    <button id="btnExport">导出 CSV</button>
+  </div>
+</header>
+<main>
+  <div class="wrap">
+    <p class="desc">
+      每捆（每吊）扫描任务的完成情况回看：<b>任务下发 → 天车放货放好 → 机器狗开始扫码 → 扫码完成 → 任务完成（入账 / 装车）</b> 全程留痕。
+      <b>扫码延时</b> = 天车放货放好 → 机器狗扫码完成的间隔（每捆一值，按车取平均即「该车平均延时」）；
+      <b>入账延时</b> = 放货放好 → 任务入账完成（比扫码延时多一段状态回传）。
+      出库任务无「放货」环节，展示 下发 → 扫码核验 → 装车完成 链条，不参与延时平均。
+      数据来自沙盘任务台账（本浏览器 localStorage，跨场次累计、重置仿真不清空）。
+    </p>
+    <div id="msg"></div>
+
+    <div class="filters">
+      <div class="filter-group">
+        <label>类型：</label>
+        <select id="filterType">
+          <option value="">全部</option>
+          <option value="in">入库</option>
+          <option value="out">出库</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>视图：</label>
+        <select id="filterView">
+          <option value="group">按车分组（车均延时）</option>
+          <option value="flat">捆级明细（平铺）</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>搜索：</label>
+        <input type="text" id="filterQ" placeholder="车牌 / 车次 / 任务号 / 库位 / 合同号..." size="26">
+      </div>
+      <div class="filter-group">
+        <label><input type="checkbox" id="filterAnom"> 仅看异常</label>
+      </div>
+      <div class="filter-group">
+        <label><input type="checkbox" id="filterSkip"> 仅看免检</label>
+      </div>
+      <button id="btnResetF" style="margin-left: auto;">重置筛选</button>
+    </div>
+
+    <div class="stats">
+      <div class="stat-card">
+        <div class="value" id="stTotal">-</div>
+        <div class="label">已完成捆数（当前筛选）</div>
+      </div>
+      <div class="stat-card">
+        <div class="value" id="stTrucks">-</div>
+        <div class="label">涉及车次</div>
+      </div>
+      <div class="stat-card">
+        <div class="value" id="stAvg">-</div>
+        <div class="label">平均扫码延时（放好 → 扫码完成）</div>
+      </div>
+      <div class="stat-card">
+        <div class="value" id="stMax">-</div>
+        <div class="label">最大扫码延时</div>
+      </div>
+    </div>
+
+    <div id="content"></div>
+  </div>
+</main>
+
+<script>
+'use strict';
+/* ---------------- 数据源：沙盘任务台账（localStorage，同源共享） ----------------
+ * 记录字段（新版台账）：id/type/spec/slot/stack/order/created/ended/dur/anomaly
+ *   + plate(车牌) batch(车次) placedAt(放货放好) scanStartAt(开始扫码)
+ *   + scanDoneAt(扫码完成) delay(扫码延时) delayEnd(入账延时) skip(免检)
+ * 旧版记录缺新字段 -> 对应列显示"-"，不参与延时统计。 */
+const LS_KEY = 'steelSimLedgerV1';
+const FLAT_RENDER_CAP = 800;   // 平铺视图渲染上限（导出 CSV 不受限制）
+const $ = id => document.getElementById(id);
+
+const state = { view: 'group', open: new Set() };
+let allRows = [];   // 全部台账记录
+let rows = [];      // 当前筛选结果
+
+/* ---------------- 工具：时间格式（与沙盘同口径：仿真 0 秒 = 08:00:00） ---------------- */
+function fmtClock(s) {
+  if (s == null || s <= 0) return '-';
+  const t = Math.floor(8 * 3600 + s);
+  const h = String(Math.floor(t / 3600) % 24).padStart(2, '0');
+  const m = String(Math.floor(t / 60) % 60).padStart(2, '0');
+  const sec = String(t % 60).padStart(2, '0');
+  return `${h}:${m}:${sec}`;
+}
+function fmtDur(s) {
+  if (s == null) return '-';
+  s = Math.max(0, Math.floor(s));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+function esc(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function delayCls(v) {   // 延时着色阈值：120s 内绿 / 300s 内黄 / 超出红
+  if (v == null) return 't-dim';
+  return v <= 120 ? 'd-ok' : v <= 300 ? 'd-mid' : 'd-bad';
+}
+
+/* ---------------- 载入与筛选 ---------------- */
+function loadRows() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (_) { d = null; }
+  allRows = d && Array.isArray(d.tasks) ? d.tasks.slice() : [];
+}
+function applyFilters() {
+  const type = $('filterType').value;
+  const q = $('filterQ').value.trim().toLowerCase();
+  const anomOnly = $('filterAnom').checked;
+  const skipOnly = $('filterSkip').checked;
+  rows = allRows.filter(r => {
+    if (type && r.type !== type) return false;
+    if (anomOnly && !r.anomaly) return false;
+    if (skipOnly && !r.skip) return false;
+    if (q) {
+      const hay = `${r.plate || ''} ${r.batch || ''} ${r.id} ${r.slot} ${r.order || ''} ${r.spec}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+/* ---------------- 统计与分组 ---------------- */
+function statsOf(list) {
+  const delays = list.map(r => r.delay).filter(v => v != null);
+  const inN = list.filter(r => r.type === 'in').length;
+  return {
+    n: list.length, inN, outN: list.length - inN,
+    avg: delays.length ? Math.round(delays.reduce((a, b) => a + b, 0) / delays.length) : null,
+    max: delays.length ? Math.max(...delays) : null,
+    anom: list.filter(r => r.anomaly).length,
+    skip: list.filter(r => r.skip).length,
+  };
+}
+function buildGroups(list) {   // 按车分组：优先车次号，其次车牌，旧台账归入「未记录车次」
+  const map = new Map();
+  for (const r of list) {
+    const key = r.batch || r.plate || `legacy-${r.type}`;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(r);
+  }
+  const groups = [];
+  for (const [key, l] of map) {
+    l.sort((a, b) => a.created - b.created);
+    const st = statsOf(l);
+    const placed = l.map(r => r.placedAt).filter(v => v > 0);
+    const legacy = key.startsWith('legacy-');
+    groups.push({
+      key, legacy, list: l, st,
+      plate: (l.find(r => r.plate) || {}).plate || '',
+      batch: legacy ? '' : key,
+      type: l[0].type,
+      firstCreated: Math.min(...l.map(r => r.created)),
+      lastEnded: Math.max(...l.map(r => r.ended)),
+      firstPlaced: placed.length ? Math.min(...placed) : null,
+    });
+  }
+  groups.sort((a, b) => b.lastEnded - a.lastEnded);   // 最近完成的车在前
+  return groups;
+}
+
+/* ---------------- 渲染 ---------------- */
+function bundleRow(r, withTruckCol) {
+  const placed = r.placedAt > 0 ? r.placedAt : null;
+  const truckCols = withTruckCol
+    ? `<td class="mono">${esc(r.plate || '-')}</td><td class="mono">${esc(r.batch || '-')}</td>` : '';
+  const marks = (r.anomaly ? '<span class="mark anom" title="扫码重扫 / 人工介入 / 运单不符">异常</span>' : '')
+    + (r.skip ? '<span class="mark skip" title="未监测跨免检直通（不占机器狗）">免检</span>' : '');
+  return `<tr>
+    <td class="tid">${esc(r.id)}</td>${truckCols}
+    <td>${esc(r.spec)}</td>
+    <td class="mono">${esc(r.slot)}·${r.stack}垛</td>
+    <td class="mono t-dim" title="${fmtDur(r.dur)} 自下发起总耗时">${fmtClock(r.created)}</td>
+    <td class="mono">${placed != null ? fmtClock(placed) : '-'}</td>
+    <td class="mono t-dim">${r.scanStartAt > 0 ? fmtClock(r.scanStartAt) : '-'}</td>
+    <td class="mono">${r.scanDoneAt > 0 ? fmtClock(r.scanDoneAt) : '-'}</td>
+    <td class="mono">${fmtClock(r.ended)}</td>
+    <td class="${delayCls(r.delay)}" title="${r.delay != null ? fmtDur(r.delay) : '无放货环节或旧版记录'}">${r.delay != null ? r.delay + 's' : '-'}</td>
+    <td class="${delayCls(r.delayEnd)}" title="${r.delayEnd != null ? fmtDur(r.delayEnd) : '无放货环节或旧版记录'}">${r.delayEnd != null ? r.delayEnd + 's' : '-'}</td>
+    <td>${marks || '<span class="t-dim">-</span>'}</td>
+  </tr>`;
+}
+function bundleTableHead(withTruckCol) {
+  const truckCols = withTruckCol ? '<th>车牌</th><th>车次</th>' : '';
+  return `<tr>${truckCols}
+    <th>任务号</th><th>规格</th><th>库位·垛</th>
+    <th title="WMS 下发任务时刻">下发</th>
+    <th title="天车放货放好时刻（延时统计起点）">放货放好</th>
+    <th title="机器狗抵达垛前开始扫码时刻">开始扫码</th>
+    <th title="机器狗扫码核验完成时刻">扫码完成</th>
+    <th title="任务闭环时刻（入库=扫码入账完成 / 出库=装车完成）">任务完成</th>
+    <th title="放货放好 -> 扫码完成 的间隔">扫码延时</th>
+    <th title="放货放好 -> 任务入账完成 的间隔">入账延时</th>
+    <th>标记</th>
+  </tr>`;
+}
+function renderGroupView(groups) {
+  if (!groups.length) return renderEmpty();
+  return groups.map(g => {
+    const st = g.st;
+    const chips = [
+      `<span class="chip ${g.type === 'in' ? 'in' : 'out'}">${g.type === 'in' ? '入库' : '出库'}</span>`,
+      st.anom ? `<span class="chip warn" title="重扫/人工介入/运单不符的捆数">异常 ${st.anom}</span>` : '',
+      st.skip ? `<span class="chip dim" title="未监测跨免检直通的捆数">免检 ${st.skip}</span>` : '',
+    ].filter(Boolean).join(' ');
+    const open = state.open.has(g.key);
+    return `<div class="truck-card ${open ? 'open' : ''}" data-g="${esc(g.key)}">
+      <div class="truck-head">
+        <span class="plate">${g.legacy ? '（未记录车次）' : esc(g.plate || '—')}</span>
+        ${g.batch ? `<span class="bno">${esc(g.batch)}</span>` : ''}
+        ${chips}
+        <span class="m">完成捆数 <b>${st.n}</b></span>
+        ${g.firstPlaced != null ? `<span class="m">首捆放好 <b class="clock">${fmtClock(g.firstPlaced)}</b></span>` : ''}
+        <span class="m">末捆完成 <b class="clock">${fmtClock(g.lastEnded)}</b></span>
+        <span class="m">整车历时 <b>${fmtDur(g.lastEnded - g.firstCreated)}</b></span>
+        <span class="m avg" title="车内各捆「放好 -> 扫码完成」延时的平均；免检捆延时≈0会计入">平均扫码延时 <b>${st.avg != null ? st.avg + 's' : '-'}</b></span>
+        <span class="m">最大 <b>${st.max != null ? st.max + 's' : '-'}</b></span>
+        <button class="toggle">${open ? '收起 ▴' : '展开 ▾'}</button>
+      </div>
+      <div class="truck-body">
+        <table><thead>${bundleTableHead(false)}</thead><tbody>${g.list.map(r => bundleRow(r, false)).join('')}</tbody></table>
+      </div>
+    </div>`;
+  }).join('');
+}
+function renderFlatView() {
+  if (!rows.length) return renderEmpty();
+  const over = rows.length > FLAT_RENDER_CAP;
+  const list = rows.slice().sort((a, b) => b.ended - a.ended).slice(0, FLAT_RENDER_CAP);
+  return `<table><thead>${bundleTableHead(true)}</thead><tbody>${list.map(r => bundleRow(r, true)).join('')}</tbody></table>`
+    + (over ? `<p class="hint-more">仅显示最近 ${FLAT_RENDER_CAP} 条（共 ${rows.length} 条），完整数据请用「导出 CSV」</p>` : '');
+}
+function renderEmpty() {
+  return `<div class="empty"><div class="big">📭</div>
+    暂无台账记录${allRows.length ? '（当前筛选无匹配）' : '——先在<a href="/" target="_blank" style="color:var(--cyan)">仿真沙盘</a>完成一些扫描任务，本页随台账落盘自动刷新'}<br>
+    <span style="font-size:11.5px">台账保存在本浏览器 localStorage（键 ${LS_KEY}），跨场次累计、重置仿真不清空</span>
+  </div>`;
+}
+function renderStats() {
+  const st = statsOf(rows);
+  $('stTotal').innerHTML = `${st.n}<small>（入 ${st.inN} · 出 ${st.outN}）</small>`;
+  $('stTrucks').textContent = buildGroups(rows).length;
+  $('stAvg').textContent = st.avg != null ? `${st.avg}s（${fmtDur(st.avg)}）` : '-';
+  $('stMax').textContent = st.max != null ? `${st.max}s（${fmtDur(st.max)}）` : '-';
+}
+function render() {
+  applyFilters();
+  renderStats();
+  const oldOnly = allRows.length > 0 && allRows.every(r => r.plate == null && r.batch == null);
+  $('msg').innerHTML = oldOnly
+    ? '<div class="msg warn">当前台账均为旧版记录（无车牌 / 放货 / 扫码时间字段）——在沙盘完成新任务后，新记录将带完整时间链。</div>' : '';
+  $('content').innerHTML = state.view === 'group' ? renderGroupView(buildGroups(rows)) : renderFlatView();
+}
+
+/* ---------------- 交互 ---------------- */
+$('content').addEventListener('click', e => {   // 车卡展开/收起（事件委托）
+  const head = e.target.closest('.truck-head');
+  if (!head) return;
+  const card = head.closest('.truck-card');
+  const key = card.getAttribute('data-g');
+  if (state.open.has(key)) { state.open.delete(key); card.classList.remove('open'); }
+  else { state.open.add(key); card.classList.add('open'); }
+  card.querySelector('.toggle').textContent = state.open.has(key) ? '收起 ▴' : '展开 ▾';
+});
+for (const id of ['filterType', 'filterView', 'filterQ', 'filterAnom', 'filterSkip']) {
+  $(id).addEventListener('input', () => {
+    state.view = $('filterView').value;
+    render();
+  });
+}
+$('btnResetF').addEventListener('click', () => {
+  $('filterType').value = ''; $('filterQ').value = '';
+  $('filterAnom').checked = false; $('filterSkip').checked = false;
+  render();
+});
+$('btnRefresh').addEventListener('click', () => { loadRows(); render(); flashDot(); });
+window.addEventListener('storage', e => {   // 沙盘台账落盘 -> 本页自动刷新（同源标签页/iframe 间联动）
+  if (e.key === LS_KEY) { loadRows(); render(); flashDot(); }
+});
+function flashDot() {
+  const d = $('liveDot');
+  d.classList.add('flash');
+  setTimeout(() => d.classList.remove('flash'), 1200);
+}
+
+/* ---------------- 导出 CSV（当前筛选结果，UTF-8 BOM，Excel 直接打开） ---------------- */
+$('btnExport').addEventListener('click', () => {
+  if (!rows.length) { alert('当前筛选下无记录可导出'); return; }
+  const head = ['任务号', '类型', '车牌', '车次', '规格', '库位', '垛', '合同号',
+    '下发(仿真秒)', '放货放好(仿真秒)', '开始扫码(仿真秒)', '扫码完成(仿真秒)', '任务完成(仿真秒)',
+    '下发(时钟)', '放货放好(时钟)', '开始扫码(时钟)', '扫码完成(时钟)', '任务完成(时钟)',
+    '扫码延时(秒)', '入账延时(秒)', '耗时(秒)', '异常', '免检'];
+  const body = rows.slice().sort((a, b) => b.ended - a.ended).map(r => [
+    r.id, r.type === 'in' ? '入库' : '出库', r.plate || '', r.batch || '', r.spec, r.slot, r.stack, r.order || '',
+    r.created, r.placedAt || '', r.scanStartAt || '', r.scanDoneAt || '', r.ended,
+    fmtClock(r.created), r.placedAt > 0 ? fmtClock(r.placedAt) : '', r.scanStartAt > 0 ? fmtClock(r.scanStartAt) : '',
+    r.scanDoneAt > 0 ? fmtClock(r.scanDoneAt) : '', fmtClock(r.ended),
+    r.delay != null ? r.delay : '', r.delayEnd != null ? r.delayEnd : '', r.dur,
+    r.anomaly ? '是' : '', r.skip ? '是' : '',
+  ].join(','));
+  const csv = '\ufeff' + head.join(',') + '\n' + body.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `扫描时效记录-${rows.length}条.csv`;
+  a.click();
+});
+
+/* ---------------- 启动 ---------------- */
+loadRows();
+render();
+</script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 // 进厂车辆垛位分配确认模块（管理工「进厂确认」页后端）
-// 流程：车辆进厂 -> 车牌/运单识别（本模块模拟生成，接口留待真实识别接入）->
+// 流程：车辆进厂 -> 车牌/运单识别（默认取车辆进出库物流数据仿真 LogisticsData_Sim 的下一辆进厂车，
+//       数据源离线时回退本地随机模拟，接口留待真实识别接入）->
 //       按归堆策略权重（sim_params.placement，与「调度参数」页/仿真沙盘同源）
 //       生成垛位分配推荐 -> 管理工确认或调整 -> 调整结果沉淀为权重优化。
 // 权重优化规则（感知机式微调）：对被人工改动的组，分别在推荐落点与实际落点上
@@ -13,6 +14,40 @@ import { PARAM_SCHEMA } from './params.js';
 export const SPAN_LABELS = ['A跨', 'B跨', 'C跨', '整跨合并'];
 const MILLS = ['承德建龙', '新兴铸管', '唐山瑞丰', '敬业集团', '首钢迁安', '石钢京诚'];
 const PROVINCES = ['冀', '京', '津', '鲁', '豫', '晋', '辽', '陕', '蒙'];
+
+/* 车辆物流数据源（LogisticsData_Sim，独立程序）：进厂确认从这里取下一辆进厂车，
+ * 车牌/运单/配载与仿真沙盘消费的是同一条事件流；数据源离线时回退本地随机生成。 */
+const LOGI_API = process.env.LOGI_API || 'http://127.0.0.1:5288';
+const FEED_CONSUMER = 'inbound-confirm';
+
+function ensureFeedTable(db) {
+  db.exec('CREATE TABLE IF NOT EXISTS feed_cursors (consumer TEXT PRIMARY KEY, seq INTEGER NOT NULL DEFAULT 0)');
+}
+function getFeedCursor(db) {
+  ensureFeedTable(db);
+  const r = db.prepare('SELECT seq FROM feed_cursors WHERE consumer=?').get(FEED_CONSUMER);
+  return r ? r.seq : 0;
+}
+function setFeedCursor(db, seq) {
+  db.prepare('INSERT INTO feed_cursors (consumer, seq) VALUES (?, ?) ON CONFLICT(consumer) DO UPDATE SET seq=excluded.seq')
+    .run(FEED_CONSUMER, seq);
+}
+
+/** 从物流数据源取下一辆未消费的进厂车事件（按本页独立游标）；取不到返回 null */
+async function nextSourceVehicle(db) {
+  if (typeof fetch !== 'function') return null;
+  const res = await fetch(`${LOGI_API}/api/events?type=in&after=${getFeedCursor(db)}&limit=1`,
+    { signal: AbortSignal.timeout(1500) });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const r = await res.json();
+  const ev = (r.events || [])[0];
+  if (!ev) return { exhausted: true, lastSeq: r.lastSeq };
+  const groups = (ev.manifest || [])        // 事件负载已扁平展开（ev.plate / ev.manifest ...）
+    .map(g => ({ spec: g.spec, bundles: Math.max(0, Math.round(g.bundles || 0)) }))
+    .filter(g => SPEC_FAMILY[g.spec] && g.bundles > 0);
+  if (!groups.length) return { exhausted: false, skip: ev };   // 空配载/契约外规格：调用方跳过后推进游标
+  return { event: ev, groups, plate: ev.plate, waybill: ev.waybill, mill: ev.mill };
+}
 
 /* 「调度参数」schema 中 placement 段的中文标签（反馈留痕/前端展示用） */
 const PLACEMENT_LABELS = {};
@@ -187,33 +222,36 @@ function makePlate() {
   return `${pick(PROVINCES)}${pick(letters.split(''))}·${tail}`;
 }
 
-/** 模拟一车进厂：识别车牌/运单 -> 生成物流信息 + 垛位分配推荐（返回完整视图） */
-export function spawnIncomingVehicle(db) {
+/** 本地随机生成一辆进厂车（兜底：物流数据源离线时工作台仍可用） */
+function spawnLocalVehicle(db) {
   const params = getSimParams(db);
   const minLoads = Math.round(params.truck.minLoads);
   const maxLoads = Math.round(params.truck.maxLoads);
   const specs = [...new Set(Object.keys(SPEC_FAMILY))];
   const total = randint(minLoads, maxLoads);          // 一车吊数与仿真组车规则一致
-  const groups = [];
   const primary = pick(specs);
   const mixed = Math.random() * 100 < params.truck.mixedSpecPct;
   if (mixed) {
     const second = pick(specs.filter(s => s !== primary));
     const g1 = Math.max(minLoads - 1, Math.ceil(total * (0.55 + Math.random() * 0.2)));
-    groups.push({ spec: primary, bundles: g1 }, { spec: second, bundles: total - g1 });
-  } else {
-    groups.push({ spec: primary, bundles: total });
+    return { groups: [{ spec: primary, bundles: g1 }, { spec: second, bundles: total - g1 }],
+      plate: makePlate(), waybill: `YD26-${randint(10000, 99999)}`, mill: pick(MILLS) };
   }
+  return { groups: [{ spec: primary, bundles: total }],
+    plate: makePlate(), waybill: `YD26-${randint(10000, 99999)}`, mill: pick(MILLS) };
+}
 
+/** 按识别结果（车牌/运单/逐组配载）落库并生成垛位分配推荐 */
+function insertVehicleWithLoads(db, v) {
   const insVeh = db.prepare(
     'INSERT INTO inbound_vehicles (plate, waybill, mill, arrive_time, state) VALUES (?, ?, ?, ?, \'pending\')');
   const insLoad = db.prepare(`
     INSERT INTO inbound_loads
       (vehicle_id, spec, bundles, rec_slot_id, rec_stack_no, rec_score, rec_parts)
     VALUES (?, ?, ?, ?, ?, ?, ?)`);
-  const vehId = db.transaction(() => {
-    const id = insVeh.run(makePlate(), `YD26-${randint(10000, 99999)}`, pick(MILLS), nowIso()).lastInsertRowid;
-    for (const g of groups) {
+  return db.transaction(() => {
+    const id = insVeh.run(v.plate, v.waybill, v.mill, nowIso()).lastInsertRowid;
+    for (const g of v.groups) {
       const { allocations } = recommendAllocation(db, g.spec, g.bundles);   // 逐组推荐（垛满自动拆垛）
       for (const a of allocations) {
         insLoad.run(id, g.spec, a.bundles, a.slotId, a.stackNo, a.score, JSON.stringify(a.parts));
@@ -221,7 +259,31 @@ export function spawnIncomingVehicle(db) {
     }
     return id;
   })();
-  return getVehicleView(db, vehId);
+}
+
+/**
+ * 模拟一车进厂：车牌/运单识别 —— 优先取车辆物流数据源（LogisticsData_Sim）的下一辆
+ * 未消费进厂车（与仿真沙盘同一条事件流，各持独立游标）；源离线回退本地随机，
+ * 源在线但事件流消费完则明确报错（保持「车辆数据只有一个来源」）。
+ */
+export async function spawnIncomingVehicle(db) {
+  try {
+    let src = await nextSourceVehicle(db);
+    while (src && src.skip) {                       // 空/契约外事件：跳过并推进游标再取
+      setFeedCursor(db, src.skip.seq);
+      src = await nextSourceVehicle(db);
+    }
+    if (src && src.event) {
+      const id = insertVehicleWithLoads(db, src);
+      setFeedCursor(db, src.event.seq);
+      return { ...getVehicleView(db, id), source: `logistics:${LOGI_API}` };
+    }
+    if (src && src.exhausted) {
+      return { error: `物流数据源（${LOGI_API}）暂无待处理进厂车辆 —— 可在数据源控制台手动注入或等待排产` };
+    }
+  } catch (e) { /* 数据源离线：回退本地随机模拟 */ }
+  const id = insertVehicleWithLoads(db, { ...spawnLocalVehicle(db) });
+  return { ...getVehicleView(db, id), source: 'local-fallback' };
 }
 
 /* ================= 视图 / 校验 ================= */

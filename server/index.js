@@ -87,7 +87,8 @@ export function startServer({ host = HOST, port = PORT } = {}) {
         return json(res, 200, { vehicles: listInboundVehicles(db) });
       }
       if (req.method === 'POST' && p === '/api/inbound/spawn') {
-        return json(res, 200, spawnIncomingVehicle(db));
+        const r = await spawnIncomingVehicle(db);   // 优先取物流数据源下一辆进厂车，离线回退本地随机
+        return json(res, 200, r);
       }
       if (req.method === 'GET' && p === '/api/inbound/stats') {
         return json(res, 200, feedbackStats(db));
@@ -111,6 +112,55 @@ export function startServer({ host = HOST, port = PORT } = {}) {
       if (mInbound && req.method === 'DELETE') {
         const r = deleteVehicle(db, +mInbound[1]);
         return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r);
+      }
+
+      // 车辆记录页面：获取所有车辆记录（支持分页和筛选）
+      if (req.method === 'GET' && p === '/api/vehicles') {
+        const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit')) || 50));
+        const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0);
+        const status = url.searchParams.get('status') || '';
+        const plate = url.searchParams.get('plate') || '';
+        const time = url.searchParams.get('time') || '';
+
+        let query = 'SELECT id FROM inbound_vehicles WHERE 1=1';
+        const params = [];
+
+        if (status) {
+          query += ' AND state = ?';
+          params.push(status);
+        }
+        if (plate) {
+          query += ' AND plate LIKE ?';
+          params.push(`%${plate}%`);
+        }
+        if (time === 'today') {
+          query += ' AND arrive_time >= date(\'now\')';
+        } else if (time === 'week') {
+          query += ' AND arrive_time >= date(\'now\', \'-7 days\')';
+        } else if (time === 'month') {
+          query += ' AND arrive_time >= date(\'now\', \'-30 days\')';
+        }
+
+        // 获取总数
+        const countQuery = query.replace('SELECT id', 'SELECT COUNT(*) as total');
+        const totalResult = db.prepare(countQuery).get(...params);
+        const total = totalResult ? totalResult.total : 0;
+
+        // 获取分页数据
+        query += ' ORDER BY id DESC LIMIT ? OFFSET ?';
+        params.push(limit, offset);
+
+        const vehicles = db.prepare(query).all(...params)
+          .map(r => getVehicleView(db, r.id));
+
+        return json(res, 200, { vehicles, total, limit, offset });
+      }
+
+      // 车辆记录页面：获取单个车辆详情
+      const mVehicle = p.match(/^\/api\/vehicles\/(\d+)$/);
+      if (mVehicle && req.method === 'GET') {
+        const vehicle = getVehicleView(db, +mVehicle[1]);
+        return vehicle ? json(res, 200, vehicle) : json(res, 404, { error: '车辆不存在' });
       }
 
       const mSlot = p.match(/^\/api\/slots\/(\d+)$/);

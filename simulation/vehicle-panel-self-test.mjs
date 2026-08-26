@@ -67,6 +67,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(`Math.random = (() => { let s = 20260824; return () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; }; })();`, sandbox);
 vm.runInContext(code, sandbox, { filename: 'sandbox-inline.js' });
+sandbox.setPaused(false);   // 沙盘默认暂停：无头自检载入后立即开跑
 
 function pump(realSeconds, fps = 30) {
   const frames = Math.round(realSeconds * fps);
@@ -87,6 +88,7 @@ const el = id => documentStub.getElementById(id);
 
 console.log('== 阶段一：t=0 初始态（无车）==');
 sandbox.init();
+sandbox.setPaused(false);   // 重置后默认暂停：继续开跑
 pump(1);
 check('零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.join('|'));
 check('无车时面板为空态（暂无车辆）',
@@ -132,6 +134,12 @@ if (veh) {
     detailHtml.includes(`${realDone}/${total} 吊完成`),
     `面板=${detailHtml.match(/\d+\/\d+ 吊完成/)?.[0] || '无'} 实际=${realDone}/${total}`);
 }
+// 下拉过滤：已出厂且全部吊闭环（入库=扫码入账、出库=装车完成）的车不再出现在下拉
+const optIds = [...el('vehSelect').innerHTML.matchAll(/value="(B-[\d-]+)"/g)].map(m => m[1]);
+const finishedGone = sandbox.__dbg.truckHistory.filter(t => !t.inScene && t.loads > 0 && t.done >= t.loads);
+check('下拉不含「已出厂且扫描完毕」的车（作业收尾即移出）',
+  finishedGone.every(t => !optIds.includes(t.taskId)),
+  `下拉 ${optIds.length} 辆 · 已收尾离场 ${finishedGone.length} 辆（${finishedGone.slice(0, 2).map(t => t.taskId).join(',')}）`);
 // 至少一辆已离场车留档可回看
 const leftAny = sandbox.__dbg.truckHistory.some(t => !t.inScene);
 check('已离场车辆留档（回看完成情况）', leftAny, '在场=' + sandbox.__dbg.truckHistory.filter(t => t.inScene).length
@@ -168,6 +176,7 @@ check('任务队列恢复全景', !el('taskCount').textContent.includes('聚焦'
 
 console.log('== 阶段五：重置后回到空态 ==');
 sandbox.init();
+sandbox.setPaused(false);   // 重置后默认暂停：继续开跑
 pump(1);
 check('重置后零错误', sandbox.__dbg.errs.length === 0, '');
 check('重置后留档清空、面板空态', sandbox.__dbg.truckHistory.length === 0 && el('vehDetail').innerHTML.includes('暂无车辆'), '');

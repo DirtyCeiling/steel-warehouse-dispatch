@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
+import { makeFeedFetch } from './feed-stub.mjs';
 import { openDb, getSlots } from '../server/database.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -57,18 +58,23 @@ const db = openDb();
 const realSlots = getSlots(db);
 db.close();
 let fetchHits = 0;
+const feedStub = makeFeedFetch(() => sandbox.__dbg.simTime);   // 车辆物流数据源桩（沙盘不再本地生成车辆）
 sandbox.fetch = async url => {
   fetchHits++;
-  if (String(url).includes('/api/slots')) {
+  const u = String(url);
+  if (u.includes('/api/slots')) {
     return { ok: true, status: 200, json: async () => ({ slots: realSlots }) };
   }
+  if (u.includes('/api/health') || u.includes('/api/events')) return feedStub(url);
   return { ok: false, status: 404, json: async () => ({}) };
 };
 vm.runInContext(code, sandbox, { filename: 'sandbox-inline.js' });
+sandbox.setPaused(false);   // 沙盘默认暂停：无头自检载入后立即开跑
 
-function pump(simSeconds, fps = 30) {
+async function pump(simSeconds, fps = 30) {
   const frames = Math.round(simSeconds * fps);
   for (let i = 0; i < frames; i++) { now += 1000 / fps; const q = rafQueue.splice(0); for (const cb of q) cb(now); }   // performance.now() 单位 = 毫秒
+  await flushAsync();   // 让物流源桩的异步链（事件消费 -> 建任务）落地
 }
 const flushAsync = () => new Promise(r => setImmediate(r));   // 让 fetch 异步加载的 microtask 落地
 
@@ -96,7 +102,7 @@ check('分区归堆正确：大棒区域全为螺纹钢',
 
 console.log('== 卸货推荐算法：16× 跑 1 个仿真小时 ==');
 sandbox.setSpeed(16);
-pump(225);   // 225s 实时 × 16 = 3600 仿真秒
+for (let i = 0; i < 45; i++) await pump(5);   // 225s 实时 × 16 = 3600 仿真秒（分段泵：物流源事件持续落地）
 check('运行零 JS 错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.slice(0, 2).join('|'));
 const recLog = sandbox.__dbg.recLog;   // 结构化留痕：日志窗口仅留近 260 条，长时运行时文本日志易被挤出
 check('卸货推荐已产生（含评分分解）', recLog.length > 0 && recLog.every(r => Array.isArray(r.parts) && r.parts.length > 0), `${recLog.length} 条`);

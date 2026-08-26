@@ -1,89 +1,98 @@
 # 钢厂库区调度系统
 
-## 项目简介
+机器狗扫码调度仿真沙盘 + 库存数据库 + 管理工工作台，全部由一个本地站点提供：
+`npm run sim` 后访问 **http://localhost:5199/**
 
-这是一个基于 React + Three.js 的钢厂库区三维可视化调度系统，用于管理和调度2.7万平方米厂区内的钢卷库存。系统采用三跨布局（每跨30m×300m），提供实时库存监控、库位管理和调度优化功能。
+> **仿真场次（默认不启动）**：沙盘打开后**暂停待命**，点击「▶ 启动」开跑一场；
+> **重置**或**关闭页面前**该场自动归档 —— 记录当场的**调度参数**（启动时 + 归档时两份快照，可对照中途调整）、
+> **车辆记录**（车牌/方向/吊数/进出场时间）与**扫描时效**（扫码延时均值/P95/最大）+ KPI，
+> 在 `/runs` 仿真场次页回看 / 导出 CSV（本浏览器 localStorage，环形保留最近 50 场）。
+
+> **车辆数据来源（默认本地）**：沙盘**自己排产**生成进厂车（随车运单 6-10 吊）与提货订单，
+> 按「生产节奏」参数（每日进厂/出厂辆数，见「调度参数」页）均匀铺到全天，**无需任何外部程序**。
+> 如需「开任意多个沙盘实例都是同样的仿真进度」，可显式接入外部物流源
+> [LogisticsData_Sim](../LogisticsData_Sim)（`npm start` 启动后打开 `http://localhost:5199/?feed=all`）：
+> 多实例消费同一条持久化事件流 => 同样进度；`?feed=live` 只跟最新事件（跳过历史）。
+> 「进厂确认」页的「模拟车辆进厂」始终优先取物流源下一辆进厂车（源离线时自动回退本地随机）。
+
+## 页面（127.0.0.1:5199）
+
+| 路径 | 页面 | 说明 |
+| --- | --- | --- |
+| `/` | 🗺 仿真沙盘 | 三跨库区调度仿真：货车进场 → 车牌/运单识别 → 天车吊运 → 机器狗扫码 → 库存写回；期初库存从数据库加载；**默认本地排产生成车辆**（可选 `?feed=all` 接入外部物流源）；**默认不启动**，「▶ 启动」开跑，重置/关页自动归档当场参数/车辆/时效 |
+| `/inbound` | 🚚 进厂确认 | 管理工工作台：车辆进厂识别出钢材物流信息后，核对系统推荐的垛位分配，可下拉改垛（容量/混规实时校验），确认即下发；人工调整自动沉淀为归堆权重优化；「模拟车辆进厂」优先取物流数据源下一辆进厂车 |
+| `/vehicles` | 📋 车辆记录 | 物流车辆进出场记录：识别信息/运单详情/垛位分配/装卸状态，支持筛选与 CSV 导出 |
+| `/scans` | ⏱ 扫描时效 | 每捆扫描任务历史完成情况：任务下发/天车放货放好/机器狗开始扫码/扫码完成/任务完成全时间链；**扫码延时** = 放好 → 扫码完成（每捆一值、按车平均），支持按车分组/捆级明细两种视图与 CSV 导出；数据来自沙盘任务台账（localStorage，跨场次累计，每条带场次号），台账落盘时自动刷新 |
+| `/runs` | 📊 仿真场次 | 每场仿真的留档回看：场次号/起止/时长、KPI、**调度参数快照**（启动时 vs 归档时，中途调整高亮）、**车辆记录**（车牌/吊数/进出场）、**扫描时效汇总**（均值/P95/最大 + 每机器狗扫码统计），支持导出 CSV；沙盘归档新场次时自动刷新 |
+| `/params` | ⚙ 调度参数 | 调度规划参数（生产节奏/组车规则/归堆策略权重/设备/异常注入），与沙盘「⚙ 设备参数」、进厂确认的权重学习同源存储（外部物流源模式下生产节奏由数据源接管） |
+
+### 物流数据源接入（可选，LogisticsData_Sim）
+
+默认**无需**物流数据源（沙盘本地排产）。需要多实例同进度对照时：
+
+```bash
+# 1) 启动车辆进出库物流数据仿真（事件流持久化，重启进度不丢）
+cd F:\Robot_Project\LogisticsData_Sim
+npm install && npm start      # 控制台 http://127.0.0.1:5288/（时钟/倍速/启停/事件流/排产参数）
+
+# 2) 再启动本系统，沙盘加 ?feed=all 打开 —— 开任意多个窗口/实例，消费同一条事件流，同样进度
+cd F:\Robot_Project\Robot_Sim
+npm run sim                   # http://localhost:5199/?feed=all
+```
+
+沙盘侧 URL 参数：`?feed=all` 接入数据源并**全量回放**（从流头消费整条流，任意时刻打开的沙盘与先开的实例进度一致）；
+`?feed=live` 只跟最新事件（跳过历史）；不加 `?feed` 为本地排产模式；`?logi=<url>` 覆盖数据源地址。
+数据源控制台重置事件流后，运行中的沙盘会自动检测并把游标重新对齐到流头。
 
 ## 技术栈
 
-- **前端框架**: React 18 + TypeScript
-- **3D渲染**: Three.js + @react-three/fiber + @react-three/drei
-- **状态管理**: Zustand
-- **路由**: React Router DOM
-- **样式**: Tailwind CSS
-- **构建工具**: Vite
-
-## 主要功能
-
-### 1. 三维库区总览
-- 三跨库区三维可视化展示
-- 实时库位状态显示
-- 钢卷信息查看
-- 支持旋转、缩放、平移操作
-
-### 2. 库存管理
-- 钢卷列表展示
-- 搜索和筛选功能
-- 材质分类统计
-
-### 3. 调度任务
-- 任务列表管理
-- 任务状态跟踪（待执行、执行中、已完成）
-- 入库/出库/移库任务
-
-### 4. 数据分析
-- 库位利用率统计
-- 库存总量分析
-- 材质分布图表
+- **页面**: 原生 HTML/JS/CSS 单文件页面（无构建步骤），Three.js 由 `npm run vendor:three` 内联生成
+- **后端**: Node 内置 http + better-sqlite3（零框架依赖）
 
 ## 安装和运行
 
-### 1. 克隆项目
-```bash
-git clone <你的仓库URL>
-cd steel-warehouse-dispatch
-```
-
-### 2. 安装依赖
 ```bash
 npm install
+npm run sim         # 一站式启动：静态站点(5199) + 库存数据库API(3001)
 ```
-
-### 3. 启动开发服务器
-```bash
-npm run dev
-```
-
-访问 http://localhost:5173/ 查看应用
-
-### 4. 构建生产版本
-```bash
-npm run build
-```
-
-## 本地数据库（库存/库位）
-
-基于 Node + SQLite（better-sqlite3）的本地库存数据库，存储钢厂棒材库区「库位 → 8 垛 → 每垛 20 捆」的库存/库位数据。数据库文件为 `server/warehouse.db`（不提交 git，可用命令随时重建）。
 
 ### 常用命令
 ```bash
-npm run sim         # 一站式启动：沙盘预览(5199) + 库存数据库API(3001)
+npm run sim         # 一站式启动：沙盘/进厂确认/调度参数(5199) + 库存数据库API(3001)
 npm run db:init     # 初始化：建库 + 91 库位 × 8 垛 + 分区归堆实际钢材分布
 npm run db:reset    # 重置为初始钢材分布
 npm run db:inspect  # 打印库存汇总与抽样库位
 npm run db:serve    # 仅启动本地 HTTP API（http://127.0.0.1:3001）
 npm run db:test     # 自检：建库/写入/持久化
+npm run vendor:three # 重新生成 simulation/vendor/three.inline.js
 ```
 
-> 仿真沙盘（`http://localhost:5199/`）期初库存自动从数据库加载，出入库/倒垛实时写回；
-> 数据库服务未启动时回退内置随机库存（事件日志会提示）。刷新/重启页面即恢复上次库存。
+> 沙盘期初库存自动从数据库加载，出入库实时写回；数据库服务未启动时回退内置随机库存。
+> 刷新/重启页面即恢复上次库存。
+
+## 进厂确认 → 算法优化闭环
+
+1. 「模拟车辆进厂」取物流数据源的下一辆进厂车（车牌/运单/配载与沙盘同一条事件流，本页独立游标；数据源离线回退本地随机，真实识别系统接入后替换）；
+2. 服务端按归堆评分（同规格归堆/空垛兜底/库位同族/邻位聚簇/扫码干扰）生成垛位分配推荐，同规格集中码放、垛满拆垛；
+3. 管理工逐组确认或改垛，确认后下发；
+4. 被改动的组在推荐落点与实际落点上逐维度复算评分，人工选择更优的维度权重 +2、更劣 -2（按 schema 夹取），
+   写回 `sim_params` —— 沙盘与推荐算法下次即按新权重执行。
+
+## 本地数据库（库存/库位）
+
+基于 Node + SQLite（better-sqlite3），存储「库位 → 8 垛 → 每垛 20 捆」的库存数据。
+数据库文件为 `server/warehouse.db`（不提交 git，可用命令随时重建）；主应用种子数据在 `server/data/*.json`。
 
 ### 表结构
 - `specs` — 棒材规格（名称/单捆吨重/渲染色）
 - `storage_slots` — 库位（编码/分区/号区/跨/是否整跨合并/状态）
 - `stacks` — 垛（库位+垛号，同垛单一规格，count 0~20，pending 待扫码，in_time 最早入库时间）
+- `sim_params` — 调度规划参数（key 形如 `placement.sameSpecBase`）
+- `inbound_vehicles` / `inbound_loads` — 进厂车辆与其垛位分配（推荐值 + 最终值）
+- `placement_feedback` — 确认/调整留痕（推荐落点、最终落点、触发的权重变化）
+- `app_warehouse` / `app_spans` / `app_locations` / `app_coils` / `app_tasks` — 主应用（三维库区）数据
 
-### HTTP 接口（带 CORS）
+### HTTP 接口（带 CORS，127.0.0.1:3001）
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/health` | 存活检查 |
@@ -93,119 +102,38 @@ npm run db:test     # 自检：建库/写入/持久化
 | GET | `/api/specs` | 棒材规格列表 |
 | PUT | `/api/slots/:id/stacks/:no` | 更新某一垛（spec/count/pending/in_time） |
 | POST | `/api/reset` | 重置为初始库存 |
+| GET/PUT | `/api/params` | 调度规划参数（GET 返回 schema+当前值，PUT 保存） |
+| GET | `/api/inbound` | 进厂车辆列表（含分配组） |
+| POST | `/api/inbound/spawn` | 模拟一车进厂（车牌/运单识别 + 垛位分配推荐） |
+| GET | `/api/inbound/candidates?spec=&bundles=` | 指定规格候选垛位（评分降序，含余量） |
+| PUT | `/api/inbound/:id/loads/:lid` | 管理工改垛（实时校验容量/混规/锁定） |
+| POST | `/api/inbound/:id` | 确认下发（人工调整沉淀为权重优化） |
+| DELETE | `/api/inbound/:id` | 删除待确认车辆 |
+| GET | `/api/inbound/stats` | 人工反馈统计（确认/调整率、近期留痕、当前权重） |
 
 ## 项目结构
 
 ```
-src/
-├── components/          # React组件
-│   ├── 3d/             # 3D场景组件
-│   │   ├── WarehouseScene.tsx  # 3D仓库场景
-│   │   ├── Span.tsx           # 库区跨组件
-│   │   ├── Location.tsx       # 库位组件
-│   │   └── SteelCoil.tsx      # 钢卷3D模型
-│   └── layout/         # 布局组件
-│       ├── Header.tsx         # 头部导航
-│       ├── Sidebar.tsx        # 侧边栏
-│       └── InfoPanel.tsx      # 信息面板
-├── pages/              # 页面组件
-│   ├── Dashboard.tsx   # 三维库区总览
-│   ├── Inventory.tsx   # 库存管理
-│   ├── Tasks.tsx       # 调度任务
-│   └── Analytics.tsx   # 数据分析
-├── store/              # 状态管理
-│   └── warehouseStore.ts
-├── data/               # Mock数据
-│   ├── warehouse.json
-│   ├── locations.json
-│   ├── coils.json
-│   └── tasks.json
-└── types/              # TypeScript类型定义
-    └── index.ts
+simulation/            # 5199 静态站点（单文件页面，无构建）
+├── serve.mjs          # 静态服务器 + 一站式拉起数据库 API
+├── feed-stub.mjs      # 物流数据源桩（复用 LogisticsData_Sim 真实生成器，无头自检共用）
+├── 调度仿真沙盘.html   # / 仿真沙盘（车辆事件从物流数据源 5288 增量拉取）
+├── 进厂确认.html       # /inbound 管理工垛位确认/调整 + 学习面板
+├── 车辆记录.html       # /vehicles 车辆进出场记录（API 驱动）
+├── 扫描时效记录.html   # /scans 扫描任务历史完成情况与延时统计（读沙盘任务台账 localStorage）
+├── 调度参数.html       # /params 调度规划参数
+└── *.mjs              # 自检/探针脚本（node simulation/self-test.mjs 等）
+server/                # 数据库与 HTTP API（127.0.0.1:3001）
+├── index.js           # 路由
+├── database.js        # 建库/迁移/库存读写
+├── inbound.js         # 进厂确认：物流源车辆识别/归堆推荐/确认调整/权重学习
+├── params.js          # 调度参数 schema（与沙盘共用）
+├── layout.js          # 库区布局生成（91 库位）
+├── data/*.json        # 主应用种子数据
+└── warehouse.db       # SQLite 库文件（自动创建）
+../LogisticsData_Sim/  # 车辆进出库物流数据仿真（独立程序，唯一车辆数据源）
 ```
-
-## 3D场景说明
-
-### 库区布局
-- 总面积: 27,000平方米
-- 三跨布局，每跨: 30m × 300m
-- 每跨包含多个库位
-
-### 钢卷状态颜色
-- 🟢 绿色: 在库 (in-stock)
-- 🟠 橙色: 预留 (reserved)
-- 🔴 红色: 发货中 (shipping)
-
-### 操作说明
-- **旋转**: 鼠标左键拖拽
-- **缩放**: 鼠标滚轮
-- **平移**: 鼠标右键拖拽
-- **查看详情**: 点击钢卷或库位
-
-## 数据模型
-
-### 库区 (Warehouse)
-```typescript
-{
-  id: string;
-  name: string;
-  totalArea: number;      // 总面积 (m²)
-  numberOfSpans: number;   // 跨数
-}
-```
-
-### 库位 (Location)
-```typescript
-{
-  id: string;
-  spanId: string;          // 所属跨ID
-  row: number;             // 行号
-  column: number;          // 列号
-  status: 'empty' | 'occupied' | 'reserved';
-  capacity: number;         // 容量 (吨)
-}
-```
-
-### 钢卷 (SteelCoil)
-```typescript
-{
-  id: string;
-  coilNumber: string;      // 钢卷号
-  specification: string;   // 规格
-  weight: number;          // 重量 (吨)
-  diameter: number;        // 直径 (mm)
-  material: string;        // 材质
-  status: 'in-stock' | 'reserved' | 'shipping';
-}
-```
-
-### 调度任务 (Task)
-```typescript
-{
-  id: string;
-  type: 'inbound' | 'outbound' | 'transfer';
-  status: 'pending' | 'executing' | 'completed' | 'failed';
-  steelCoilId: string;
-  fromLocationId?: string;
-  toLocationId?: string;
-  createTime: string;
-}
-```
-
-## 部署
-
-项目可部署到任何静态托管服务，如：
-- Vercel
-- Netlify
-- GitHub Pages
-- 任意Web服务器
-
-构建输出在 `dist/` 目录。
 
 ## 许可证
 
 MIT License
-
-## 作者
-
-[你的名字]

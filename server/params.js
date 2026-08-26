@@ -7,8 +7,8 @@ export const PARAM_SCHEMA = [
     sec: 'production', secLabel: '生产节奏',
     desc: '每日进厂 / 出厂车辆数，订单全天均匀铺开（不一次性下完）',
     defs: [
-      { key: 'inPerDay',  label: '每日进厂车辆', min: 10, max: 600, step: 5, unit: '辆/日', def: 150 },
-      { key: 'outPerDay', label: '每日出厂车辆', min: 10, max: 600, step: 5, unit: '辆/日', def: 100 },
+      { key: 'inPerDay',  label: '每日进厂车辆', min: 1, max: 600, step: 1, unit: '辆/日', def: 150 },
+      { key: 'outPerDay', label: '每日出厂车辆', min: 1, max: 600, step: 1, unit: '辆/日', def: 100 },
     ],
   },
   {
@@ -42,12 +42,16 @@ export const PARAM_SCHEMA = [
   },
   {
     sec: 'robot', secLabel: '机器狗（扫码核验）',
-    desc: '3 台（D-01 ~ D-03）：行进速度 / 扫码耗时 / 续航与充电',
+    desc: '台数（D-01 起编号，1-6 台）与监测跨：仅监测跨内由机器狗扫码核验，未监测跨免检直通；仅开启部分监测跨时，运输车辆与出入库作业均限定在监测跨内（如仅开「监测 A 跨」：所有车辆均前往一跨 A，库满/无货则暂缓待回补，不转未监测跨）；台数变更即时重建机队',
     defs: [
+      { key: 'count',       label: '机器狗数量', min: 1,   max: 6,  step: 1,   unit: '台', def: 3 },
       { key: 'speed',       label: '行进速度',     min: 1,   max: 10, step: 0.1, unit: 'm/s',  def: 5.0 },
-      { key: 'scanTime',    label: '扫码核验时间', min: 0.5, max: 10, step: 0.1, unit: '秒',   def: 3.0 },
+      { key: 'scanTime',    label: '扫码核验时间', min: 0.5, max: 60, step: 0.1, unit: '秒',   def: 60 },
       { key: 'endurance',   label: '满电续航',     min: 0.5, max: 8,  step: 0.5, unit: '小时', def: 3 },
-      { key: 'chargeHours', label: '充满电时间',   min: 0.5, max: 6,  step: 0.5, unit: '小时', def: 2 },
+      { key: 'chargeHours', label: '充满电时间',   min: 0,   max: 6,  step: 0.5, unit: '小时', def: 2 },
+      { key: 'spanA',       label: '监测 A 跨',   min: 0,   max: 1,  step: 1,   unit: '开/关', def: 1, toggle: true },
+      { key: 'spanB',       label: '监测 B 跨',   min: 0,   max: 1,  step: 1,   unit: '开/关', def: 1, toggle: true },
+      { key: 'spanC',       label: '监测 C 跨',   min: 0,   max: 1,  step: 1,   unit: '开/关', def: 1, toggle: true },
     ],
   },
   {

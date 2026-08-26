@@ -97,6 +97,26 @@ check('每垛捆数 1..20 且垛内规格/钢种/长度一致',
     }
     return true;
   })());
+check('垛内金字塔码放：排数与捆数守恒、底排 ≤ 3、排/列坐标有效',
+  (() => {
+    for (const s of dbg.slotList) for (const st of s.stacks) {
+      if (!st) continue;
+      if (!Array.isArray(st.rows) || st.rows.reduce((a, x) => a + x, 0) !== st.bundles.length) return false;
+      if (st.rows[0] > 3 || st.rows.some(w => w < 1 || w > st.rows[0])) return false;
+      for (const b of st.bundles) {
+        if (!(b.prow >= 0 && b.prow < st.rows.length && b.pcol >= 0 && b.pcol < st.rows[b.prow])) return false;
+        const p = dbg.bundlePilePos(s, b.stackIdx, b);          // 嵌槽格点必须有限且落在垛格进深附近
+        if (!isFinite(p.y) || !isFinite(p.z) || Math.abs(p.z) > 4) return false;
+      }
+    }
+    return true;
+  })());
+check('捆截面为类圆形密排（圆钢/螺纹钢排距 √3·r，方钢平铺）',
+  dbg.specs.every(sp => {
+    const rows = dbg.rodRowsOf(sp);
+    if (rows.reduce((a, x) => a + x, 0) !== sp.rods) return false;
+    return sp.shape === 'square' ? true : rows.every((w, i) => i === 0 || Math.abs(w - rows[i - 1]) === 1);
+  }));
 check('垛格坐标有限且落在库区范围内（含合并库位）',
   (() => {
     for (const s of dbg.slotList) for (let si = 0; si < 8; si++) {
@@ -149,11 +169,26 @@ dbg.back();
 check('Esc/返回 -> 垛视图', dbg.view.level === 'stack' && dbg.view.stackIdx === first.stackIdx);
 check('垛详情卡含捆数/支数/吨位/炉号',
   ['捆数', '支数', '吨位', '炉号'].every(k => dbg.detailHTML.includes(k)));
+check('垛详情卡列出本垛全部捆（每捆一行可下钻）',
+  (() => {
+    const st = dbg.slotList[first.slotId].stacks[first.stackIdx];
+    return st.bundles.every(b => dbg.detailHTML.includes(`data-bid="${b.id}"`))
+      && dbg.detailHTML.includes('捆号') && dbg.detailHTML.includes('入库时间');
+  })());
+check('垛视图下右侧列表聚焦本垛全部捆',
+  (() => {
+    const ld = dbg.listData;
+    const st = dbg.slotList[first.slotId].stacks[first.stackIdx];
+    return ld.length === st.bundles.length
+      && ld.every(b => b.slotId === first.slotId && b.stackIdx === first.stackIdx);
+  })(), `${dbg.listData.length} 捆`);
 dbg.back();
 check('再返回 -> 库位视图', dbg.view.level === 'slot');
 check('库位详情卡含分区/垛位/在库', ['分区', '垛位', '在库'].every(k => dbg.detailHTML.includes(k)));
+check('库位视图下列表聚焦本库位', dbg.listData.length > 0 && dbg.listData.every(b => b.slotId === dbg.view.slotId));
 dbg.back();
 check('再返回 -> 库区总览', dbg.view.level === 'yard');
+check('总览下列表恢复全量', dbg.listData.length === B.length);
 dbg.gotoSlot(0);
 check('直达库位视图（含库位编码）', dbg.view.level === 'slot' && dbg.crumbHTML.includes('库位'));
 dbg.gotoYard();
