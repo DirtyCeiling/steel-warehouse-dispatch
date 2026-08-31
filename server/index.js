@@ -5,6 +5,7 @@ import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import {
   openDb, seed, getInventory, getSlots, getSlot, getSpecs, setStack,
+  syncBundlePositions, getBundlePositions,
   getAppData, seedAppData, createTask, updateTaskStatus, getSimParams, setSimParams, DB_PATH,
 } from './database.js';
 import { PARAM_SCHEMA } from './params.js';
@@ -30,7 +31,11 @@ function json(res, code, data) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let raw = '';
-    req.on('data', c => { raw += c; if (raw.length > 1e6) req.destroy(); });
+    req.on('data', c => {
+      raw += c;
+      // 上限 32MB：期初全量对齐的捆级落位坐标（~7000 捆）单次 POST 约 1.5MB
+      if (raw.length > 32e6) req.destroy();
+    });
     req.on('end', () => {
       if (!raw) return resolve({});
       try { resolve(JSON.parse(raw)); } catch { reject(new Error('请求体不是合法 JSON')); }
@@ -173,6 +178,21 @@ export function startServer({ host = HOST, port = PORT } = {}) {
         const body = await readBody(req);
         const s = setStack(db, +mStack[1], +mStack[2], body);
         return s ? json(res, 200, s) : json(res, 404, { error: '垛位不存在' });
+      }
+
+      // 捆级三维落位（天车落垛实际坐标）：仿真落料/倒垛/出库增量同步，期初加载 replace 全量对齐；
+      // GET 支持 ?slotId=&stackNo= 过滤（外部系统按捆号查具体三维位置）
+      if (req.method === 'GET' && p === '/api/positions') {
+        const slotId = url.searchParams.get('slotId');
+        const stackNo = url.searchParams.get('stackNo');
+        return json(res, 200, { positions: getBundlePositions(db, {
+          slotId: slotId != null && slotId !== '' ? +slotId : undefined,
+          stackNo: stackNo != null && stackNo !== '' ? +stackNo : undefined,
+        }) });
+      }
+      if (req.method === 'POST' && p === '/api/positions') {
+        const body = await readBody(req);
+        return json(res, 200, syncBundlePositions(db, body || {}));
       }
       if (req.method === 'POST' && p === '/api/reset') {
         seed(db);

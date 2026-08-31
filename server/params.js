@@ -42,7 +42,7 @@ export const PARAM_SCHEMA = [
   },
   {
     sec: 'robot', secLabel: '机器狗（扫码核验）',
-    desc: '台数（D-01 起编号，1-6 台）与监测跨：仅监测跨内由机器狗扫码核验，未监测跨免检直通；仅开启部分监测跨时，运输车辆与出入库作业均限定在监测跨内（如仅开「监测 A 跨」：所有车辆均前往一跨 A，库满/无货则暂缓待回补，不转未监测跨）；台数变更即时重建机队',
+    desc: '台数（D-01 起编号，1-6 台）与监测范围：仅监测范围内由机器狗扫码核验，范围外免检直通；仅开启部分监测范围时，运输车辆与出入库作业均限定在监测范围内（如仅开「监测 A 跨」：所有车辆均前往一跨 A，库满/无货则暂缓待回补）；每跨用「起始/截止号区」配置跨内具体区域（1~33 号区，如 17~33=右侧中棒区域、18~25=中棒区域局部）；台数变更即时重建机队',
     defs: [
       { key: 'count',       label: '机器狗数量', min: 1,   max: 6,  step: 1,   unit: '台', def: 3 },
       { key: 'speed',       label: '行进速度',     min: 1,   max: 10, step: 0.1, unit: 'm/s',  def: 5.0 },
@@ -50,8 +50,14 @@ export const PARAM_SCHEMA = [
       { key: 'endurance',   label: '满电续航',     min: 0.5, max: 8,  step: 0.5, unit: '小时', def: 3 },
       { key: 'chargeHours', label: '充满电时间',   min: 0,   max: 6,  step: 0.5, unit: '小时', def: 2 },
       { key: 'spanA',       label: '监测 A 跨',   min: 0,   max: 1,  step: 1,   unit: '开/关', def: 1, toggle: true },
+      { key: 'fromA',       label: 'A 跨监测起始号区', min: 1, max: 33, step: 1, unit: '号区', def: 1 },
+      { key: 'toA',         label: 'A 跨监测截止号区', min: 1, max: 33, step: 1, unit: '号区', def: 33 },
       { key: 'spanB',       label: '监测 B 跨',   min: 0,   max: 1,  step: 1,   unit: '开/关', def: 1, toggle: true },
+      { key: 'fromB',       label: 'B 跨监测起始号区', min: 1, max: 33, step: 1, unit: '号区', def: 1 },
+      { key: 'toB',         label: 'B 跨监测截止号区', min: 1, max: 33, step: 1, unit: '号区', def: 33 },
       { key: 'spanC',       label: '监测 C 跨',   min: 0,   max: 1,  step: 1,   unit: '开/关', def: 1, toggle: true },
+      { key: 'fromC',       label: 'C 跨监测起始号区', min: 1, max: 33, step: 1, unit: '号区', def: 1 },
+      { key: 'toC',         label: 'C 跨监测截止号区', min: 1, max: 33, step: 1, unit: '号区', def: 33 },
     ],
   },
   {

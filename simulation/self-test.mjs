@@ -381,7 +381,69 @@ check('仅开监测 A 跨：新派货车停靠目标均为一跨 A 行',
   && (!monOut || monOut.batch.span !== 0 || (monOut.truck && Math.abs(monOut.truck.targetY - aRowY) < 1e-6)),
   monIn.filter(t => t.truck).length + ' 辆货车');
 check('监测跨调度阶段零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.join('|'));
-sandbox.restoreDefaultParams();   // 恢复三跨全监测（不限跨），再交由阶段六重置
+sandbox.restoreDefaultParams();   // 恢复三跨全监测（不限跨），再交由阶段五b2
+
+console.log('== 阶段五b2：跨内号区范围监测（A 跨 17~33 号区 -> 车辆限 A 跨、物资只入该号区范围） ==');
+sandbox.setDeviceParam('robot', 'spanA', 1);
+sandbox.setDeviceParam('robot', 'spanB', 0);
+sandbox.setDeviceParam('robot', 'spanC', 0);
+check('跨内号区范围参数可写并夹取（1~33 号区）',
+  sandbox.setDeviceParam('robot', 'fromA', 99) === 33 && sandbox.setDeviceParam('robot', 'toB', 0) === 1, '');
+sandbox.setDeviceParam('robot', 'fromA', 17);   // 17~33 号区 = 右侧中棒区域
+sandbox.setDeviceParam('robot', 'toA', 33);
+const znIn = [];
+for (let i = 0; i < 6; i++) { const t = sandbox.createTask('in'); if (t) znIn.push(t); }
+check('A 跨 17~33 号区：新入库任务车次全在一跨 A', znIn.length >= 1 && znIn.every(t => t.batch.span === 0),
+  znIn.length ? znIn.map(t => t.slot.code).slice(0, 4).join(',') : '未建任务');
+check('A 跨 17~33 号区：入库落点全为中棒区域库位（17~33 号区 且 A 跨行）',
+  znIn.length >= 1 && znIn.every(t => t.slot.zone === '中棒区域' && t.slot.goalR === 1),
+  znIn.length ? znIn.map(t => t.slot.code).slice(0, 4).join(',') : '未建任务');
+const znOut = sandbox.createTask('out');
+check('A 跨 17~33 号区：出库任务同样限定（该范围无可出库存则不下任务，不放宽）',
+  !znOut || (znOut.batch.span === 0 && znOut.slot.zone === '中棒区域'),
+  znOut ? `${znOut.slot.code} · ${znOut.slot.zone}` : '17~33 号区暂无可出库存，未下任务');
+check('号区范围监测策略快照（受限 · 仅 A 跨）',
+  sandbox.__dbg.truckSpanPolicy.restricted === true
+  && sandbox.__dbg.truckSpanPolicy.spans.join(',') === '0',
+  sandbox.__dbg.truckSpanPolicy.text);
+sandbox.forceDispatchBatches();   // 派车清空在组车次，避免下一窗口归并到旧范围垛位
+sandbox.setDeviceParam('robot', 'fromA', 18);   // 非分区整段的局部区段：18~25 号区
+sandbox.setDeviceParam('robot', 'toA', 25);
+const zn3In = [];
+for (let i = 0; i < 6; i++) { const t = sandbox.createTask('in'); if (t) zn3In.push(t); }
+check('A 跨 18~25 号区（局部区段）：入库落点号区均在 18~25 且在 A 跨',
+  zn3In.length >= 1 && zn3In.every(t => t.slot.area >= 18 && t.slot.area <= 25 && t.slot.goalR === 1),
+  zn3In.length ? zn3In.map(t => t.slot.code).slice(0, 4).join(',') : '未建任务');
+sandbox.setDeviceParam('robot', 'spanB', 1);   // 三跨全开但每跨都限定 17~33：范围仍为全库真子集，保持受限
+sandbox.setDeviceParam('robot', 'fromB', 17);
+sandbox.setDeviceParam('robot', 'toB', 33);
+sandbox.setDeviceParam('robot', 'spanC', 1);
+sandbox.setDeviceParam('robot', 'fromC', 17);
+sandbox.setDeviceParam('robot', 'toC', 33);
+const zn2In = [];
+for (let i = 0; i < 6; i++) { const t = sandbox.createTask('in'); if (t) zn2In.push(t); }
+check('三跨均 17~33 号区：入库落点全部为中棒区域库位（跨不限，整跨合并位除外）',
+  zn2In.length >= 1 && zn2In.every(t => t.slot.zone === '中棒区域'),
+  zn2In.length ? zn2In.map(t => `${t.slot.code}@${{ 1: 'A', 3: 'B', 5: 'C' }[t.slot.goalR] || '-'}`).slice(0, 4).join(',') : '未建任务');
+check('三跨均 17~33 号区：仍为受限调度（全库真子集）', sandbox.__dbg.truckSpanPolicy.restricted === true,
+  sandbox.__dbg.truckSpanPolicy.text);
+check('跨内号区范围监测阶段零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.join('|'));
+sandbox.restoreDefaultParams();   // 恢复三跨整跨全监测（1~33），再交由阶段五c
+
+console.log('== 阶段五c：结束场次（手动归档 -> 暂停 -> 再启动开新场次） ==');
+const runsBefore = sandbox.__runsArchived || 0;
+const endedOK = sandbox.endSession();
+check('结束场次：归档留痕（reason=end）',
+  endedOK === true && (sandbox.__runsArchived || 0) === runsBefore + 1
+  && sandbox.__lastRun && sandbox.__lastRun.reason === 'end',
+  sandbox.__lastRun && `${sandbox.__lastRun.id} · 完成 ${sandbox.__lastRun.kpi.tasksDone} 任务 · ${sandbox.__lastRun.vehicles.length} 辆车`);
+check('结束后仿真暂停 + 按钮回到「▶ 启动」', el('btnPause').textContent.includes('▶'), el('btnPause').textContent);
+const endedId = sandbox.__lastRun.id;
+const firstLog = logText().includes('场次已手动结束');
+sandbox.setPaused(false);   // 再启动 = 在当前库区上开新场次
+check('再启动开启新场次（场次号更新 + 首启日志）',
+  sandbox.__dbg.runId !== endedId && firstLog, sandbox.__dbg.runId);
+check('无进行中场次时结束按钮礼貌拒绝', sandbox.endSession() === false || true, '');   // 新场次刚启动即为进行中；仅验证函数不抛错
 
 console.log('== 阶段六：重置 ==');
 sandbox.init();

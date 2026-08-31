@@ -669,7 +669,7 @@ window.__dbg = {
   get placementCfg() { return { ...CFG.placement }; },   // 归堆评分权重快照（自检/调试）
   get truckCfg() { return { ...CFG.truck }; },           // 组车规则快照（自检/调试）
   get spanRowCenters() { return SPAN_ROWS.map(r => cellCY(r)); },   // A/B/C 跨行中心 y（自检：货车停靠跨断言）
-  get truckSpanPolicy() { return { restricted: spanRestricted(), spans: monitoredSpanIdx(), text: truckSpanPolicyText() }; },   // 监测跨调度快照
+  get truckSpanPolicy() { return { restricted: regionRestricted(), spans: monitoredSpanIdx(), text: truckSpanPolicyText() }; },   // 监测范围调度快照
   get trucksDone() { return trucksDone; },
   get runId() { return runId; },   // 当前场次号（自检：结束场次后应更新）
   get craneStates() { return cranes.map(c => ({ name: c.name, span: c.span, state: c.state, jobsDone: c.jobsDone })); },
@@ -680,6 +680,13 @@ window.__dbg = {
   get bundleSyncOK() { // 每垛 bundles 数恒等于 count，且全库捆记录总数恒等于 occupiedCount
     return storages.every(s => s.stacks.every(k => k.bundles.length === k.count))
       && storages.reduce((n, s) => n + s.stacks.reduce((m, k) => m + k.bundles.length, 0), 0) === occupiedCount;
+  },
+  get bundleSeatSyncOK() { // 捆级落位坐标 = 垛内码放模型规范座位（落料/倒垛迁移后仍自下而上连续占位）
+    return storages.every(s => s.stacks.every(k => k.bundles.every((b, i) => {
+      if (!b.pos) return false;
+      const si = seatIdx(SPECS[b.specIdx], i);
+      return b.pos.layer === si.layer && b.pos.seat === si.seat;
+    })));
   },
   get pendingSyncOK() { // 垛级待核验标记与捆级 pending 状态一致
     return storages.every(s => s.stacks.every(k =>
@@ -759,7 +766,8 @@ window.__dbg = {
 const CFG = {
   robot: {
     count: 3,                          // 机器狗台数（D-01 起编号，1-6 台，「调度参数」页可调）
-    spanA: 1, spanB: 1, spanC: 1,      // 监测跨开关：仅监测跨内由机器狗扫码核验（未监测跨免检直通）；仅开部分跨时作业严格限定在监测跨（车辆/上架/取货）
+    spanA: 1, spanB: 1, spanC: 1,      // 监测跨开关：仅监测范围内由机器狗扫码核验（范围外免检直通）；仅开部分范围时作业严格限定在监测范围（车辆/上架/取货）
+    fromA: 1, toA: 33, fromB: 1, toB: 33, fromC: 1, toC: 33,   // 各跨监测的号区范围（1~33 号区=跨内具体区域；起始>截止自动交换，1~33=整跨）
     speed: 5.0,                        // 行进速度（m/s，机器狗不载物）
     assignTime: 0.5, planTime: 0.8,    // 接单确认 / 路径规划耗时
     scanTime: 60,                      // 扫码核验耗时（二维码扫描 + 信息比对）
@@ -889,6 +897,10 @@ function ringDur(state) { // 作业进度环时长（实时读取参数，支持
   }
   return 0;
 }
+/* 号区 -> 分区名区段（与 zoneOfArea 一致）：监测范围文案在号区范围恰为某分区时按分区名展示 */
+const AREA_ZONE_BANDS = [
+  [1, 2, '铁姆肯区'], [3, 13, '大棒区域'], [14, 16, '大棒单支和长钢'], [17, 33, '中棒区域'],
+];
 /* 设备固有属性（「调度参数」页运行时调整，即时生效） */
 const PARAM_DEFS = [
   { sec: 'robot', key: 'count',      label: '机器狗数量',   min: 1,   max: 6,  step: 1,   unit: '台' },
@@ -897,8 +909,14 @@ const PARAM_DEFS = [
   { sec: 'robot', key: 'chargeHours', label: '充满电时间',  min: 0,   max: 6,  step: 0.5, unit: '小时' },
   { sec: 'robot', key: 'endurance',  label: '满电续航',     min: 0.5, max: 8,  step: 0.5, unit: '小时' },
   { sec: 'robot', key: 'spanA',      label: '监测 A 跨',   min: 0,   max: 1,  step: 1,   unit: '开/关', toggle: true },
+  { sec: 'robot', key: 'fromA',      label: 'A 跨监测起始号区', min: 1, max: 33, step: 1, unit: '号区' },
+  { sec: 'robot', key: 'toA',        label: 'A 跨监测截止号区', min: 1, max: 33, step: 1, unit: '号区' },
   { sec: 'robot', key: 'spanB',      label: '监测 B 跨',   min: 0,   max: 1,  step: 1,   unit: '开/关', toggle: true },
+  { sec: 'robot', key: 'fromB',      label: 'B 跨监测起始号区', min: 1, max: 33, step: 1, unit: '号区' },
+  { sec: 'robot', key: 'toB',        label: 'B 跨监测截止号区', min: 1, max: 33, step: 1, unit: '号区' },
   { sec: 'robot', key: 'spanC',      label: '监测 C 跨',   min: 0,   max: 1,  step: 1,   unit: '开/关', toggle: true },
+  { sec: 'robot', key: 'fromC',      label: 'C 跨监测起始号区', min: 1, max: 33, step: 1, unit: '号区' },
+  { sec: 'robot', key: 'toC',        label: 'C 跨监测截止号区', min: 1, max: 33, step: 1, unit: '号区' },
   { sec: 'crane', key: 'speed',      label: '行进速度',     min: 0.5, max: 10, step: 0.1, unit: 'm/s' },
   { sec: 'crane', key: 'hoistTime',  label: '吊取时间',     min: 0.5, max: 180, step: 0.1, unit: '秒' },
   { sec: 'crane', key: 'lowerTime',  label: '放下时间',     min: 0.5, max: 180, step: 0.1, unit: '秒' },
@@ -935,7 +953,7 @@ const DEFAULT_PARAMS = {
 };
 const SEC_NAMES = { robot: '机器狗', crane: '天车', truck: '货车', production: '生产节奏', placement: '归堆策略', abnormal: '异常注入' };
 const SEC_GROUPS = {
-  robot: '机器狗（台数 1-6 · D-01 起 · 监测跨 = 扫码范围 + 货车停靠跨 · 扫码核验）',
+  robot: '机器狗（台数 1-6 · D-01 起 · 监测跨 + 跨内号区范围 = 扫码范围 · 货车停靠按监测跨 · 扫码核验）',
   crane: '天车（6 台 · 每跨 2 台 · TC-A1~TC-C2 · 吊运装卸）',
   truck: '货车（3 条竖向通道 · 组车规则：一车最少/最多吊数 · 混装车比例 · 立柱摄像头识别车牌 / 物流系统吊取运单）',
   production: FEED_MODE === 'local'
@@ -977,14 +995,15 @@ async function loadParamsFromDb() {
       if (typeof v !== 'number') continue;
       const clamped = Math.min(d.max, Math.max(d.min, v));
       if (CFG[d.sec][d.key] !== clamped) {
-        changed.push(`${d.label} ${CFG[d.sec][d.key]} → ${clamped}${d.unit || ''}`);
+        const optLabel = x => (d.opts ? ((d.opts.find(o => o.v === x) || {}).label ?? String(x)) : String(x));
+        changed.push(`${d.label} ${optLabel(CFG[d.sec][d.key])} → ${optLabel(clamped)}${d.unit || ''}`);
         CFG[d.sec][d.key] = clamped;
       }
       n++;
     }
     applyRobotCount();
-    if (changed.some(s => /^监测 [ABC] 跨/.test(s)))
-      logEvent('truck', `监测跨调度：货车停靠${truckSpanPolicyText()}`);
+    if (changed.some(s => /^(监测 [ABC] 跨|[ABC] 跨监测(起始|截止)号区)/.test(s)))
+      logEvent('truck', `监测范围调度：货车停靠${truckSpanPolicyText()}`);
     if (!_paramsLoadedOnce) {
       _paramsLoadedOnce = true;
       if (n) logEvent('system', `调度参数已从库存数据库加载（${n} 项 · 与「调度参数」页同源，每 ${PARAM_SYNC_MS / 1000} 秒自动同步）`);
@@ -1173,7 +1192,52 @@ const invRnd = () => { _invSeed = (_invSeed * 1103515245 + 12345) % 2147483648; 
 let bundleSeq = 0;
 window.__invVer = 0;                    // 库存版本号：库存三维视图据此增量刷新
 function invBump() { window.__invVer++; }
-function mkBundleRec(st, stackIdx, spec, pending, inTime) {   // 捆落垛时登记明细
+
+/* ---------------- 垛内三维码放模型（仿真落位与三维视图共用 · 米制） ----------------
+ * 捆内支数排布（自下而上每层支数；6 支 = 3+2+1 金字塔） */
+const ROD_ROWS = { 3: [2, 1], 4: [2, 2], 5: [3, 2], 6: [3, 2, 1] };
+/* 真实截面尺寸（米）：料架立柱限高 3m，可堆层数 = floor(限高 ÷ 单捆高)；
+ * 单捆高 = 排数 × 杆径 × 1.06 + 垫木/打捆带 15mm。 */
+const RACK_H = 3.0;
+const rodDiaM = sp => SPEC_META[sp.name].dia / 1000;
+const bundleW = sp => Math.max(...ROD_ROWS[sp.rods]) * rodDiaM(sp) * 1.08;
+const bundleH = sp => ROD_ROWS[sp.rods].length * rodDiaM(sp) * 1.06 + 0.015;
+const maxLayers = sp => Math.floor(RACK_H / bundleH(sp));
+/* 垛内码放：捆沿 X 横放，一层多捆并排（Z 向留 3cm 通风缝），层间垫木，底层坐料架垫梁。
+ * 座位网格固定：层内居中先放、向两侧展开（SEAT_ORDER），自下而上逐层占位；捆落定后不挪位，
+ * 出库/倒垛只从垛顶吊取（planRestackJobs 物理约束），因此 bundles 数组序号 i 恒对应
+ * 座位 seatIdx(sp, i)（自检探针 __dbg.bundleSeatSyncOK 校验；坐标落库 bundle_positions 表）。
+ * 每层并排捆数按捆截面自适应（细捆多并排，目标垛宽 ≈ 0.55m，2~6 捆）。 */
+const RAIL_TOP = 0.41;                            // 垫梁顶面 = 底层捆底面（米标高）
+const pileAcross = sp => Math.max(2, Math.min(6, Math.round(0.55 / (bundleW(sp) + 0.03))));
+const SEAT_ORDER = { 2: [0, 1], 3: [1, 0, 2], 4: [1, 2, 0, 3], 5: [2, 1, 3, 0, 4], 6: [2, 3, 1, 4, 0, 5] };
+const pileRows = (n, sp) => {                     // 自下而上每层捆数（= 座位网格：每层铺满 across 再上一层）
+  const across = pileAcross(sp);
+  const layers = Math.max(1, Math.ceil(n / across));
+  return Array.from({ length: layers }, (_, L) => Math.max(0, Math.min(across, n - L * across)));
+};
+const pileHeight = (sp, n) => pileRows(n, sp).length * bundleH(sp);   // 垛高 = 层数 × 单捆高
+function seatIdx(sp, idx) {   // 垛内序号（0 = 垛底最早捆）-> { layer 层号, seat 层内座位号 }
+  const across = pileAcross(sp);
+  return { layer: Math.floor(idx / across), seat: SEAT_ORDER[across][idx % across] };
+}
+function seatPos(sp, idx, id) {   // 垛内序号 -> 落位坐标：dx/dz = 捆心相对垛格中心偏移（米），
+  const { layer, seat } = seatIdx(sp, idx);           // y = 捆底标高（米），yaw = 微偏转（弧度）
+  const across = pileAcross(sp);
+  return {
+    layer, seat,
+    dx: (id.charCodeAt(3) % 9 - 4) * 0.012,           // 端面错位 ±4.8cm（吊装落位偏差）
+    y: +(RAIL_TOP + layer * bundleH(sp)).toFixed(4),
+    dz: +((seat - (across - 1) / 2) * (bundleW(sp) + 0.03)).toFixed(4),
+    yaw: (id.charCodeAt(5) % 7 - 3) * 0.006,          // 微偏转 ±0.9°
+  };
+}
+function pileLoc(count, sp, idx) {                // 捆序号 -> 层号/层内位次（信息面板与特写共用）
+  const across = pileAcross(sp);
+  const layer = Math.min(Math.max(0, Math.floor(idx / across)), Math.max(0, Math.ceil(count / across) - 1));
+  return { layer, row: idx % across, n: Math.min(across, count - layer * across), rows: pileRows(count, sp) };
+}
+function mkBundleRec(st, stackIdx, spec, pending, inTime) {   // 捆落垛时登记明细（含三维落位坐标）
   const k = st.stacks[stackIdx];
   if (!k) return null;
   if (k.bundles.length === 0) {         // 垛内首捆：定钢种/长度/炉号（同垛同质）
@@ -1189,14 +1253,18 @@ function mkBundleRec(st, stackIdx, spec, pending, inTime) {   // 捆落垛时登
     wt: +(spec.weight * k.len / 9).toFixed(2),                 // 吨（按长度折算）
     inTime, pending,
   };
+  /* 落位：按该垛当前实际堆放（bundles 数组 = 自下而上连续占位）取下一个空座位，
+   * 天车放下时的具体坐标即刻确定（三维视图渲染与数据库 bundle_positions 表同源） */
+  rec.pos = seatPos(spec, k.bundles.length, rec.id);
   k.bundles.push(rec);
   invBump();
   return rec;
 }
-function popBundleRec(st, stackIdx) {   // 出库吊走：垛内 FIFO（与 pickOutStack 先进先出一致）
+function popBundleRec(st, stackIdx) {   // 出库吊走：垛内 FIFO（与 pickOutStack 先进先出一致）；返回被吊走的捆
   const k = st.stacks[stackIdx];
-  if (k && k.bundles.length) k.bundles.shift();
+  const b = k && k.bundles.length ? k.bundles.shift() : null;
   invBump();
+  return b;
 }
 function confirmBundleRec(st, stackIdx) { // 机器狗扫码入账：最早一捆待核验转为在库
   const k = st.stacks[stackIdx];
@@ -2035,7 +2103,8 @@ function updateCranes(dt) {
             const k = st.stacks[j.task.stackIdx];
             if (k) {
               k.count--; k.pending = 0;
-              popBundleRec(st, j.task.stackIdx);               // 捆级明细：FIFO 核销一捆
+              const gone = popBundleRec(st, j.task.stackIdx);      // 捆级明细：FIFO 核销一捆
+              if (gone) pushPositionsToDb({ deletes: [gone.id] }); // 该捆已离垛：删除其落位坐标
               if (k.count === 0) { k.spec = null; k.inTime = 0; }
             }
             st.state = slotBundles(st) === 0 ? 'free' : 'occupied';
@@ -2058,18 +2127,20 @@ function updateCranes(dt) {
           if (j.kind === 'in') { // 落料入库垛：物理入库完成，待机器狗扫码确认入账
             const st = j.slot;
             const k = st.stacks[j.task.stackIdx];
+            let drop = null;
             if (k) {
               if (k.count === 0) { k.spec = j.spec; k.inTime = simTime; } // 垛内首捆记入库时间（FIFO）
               k.count++; k.pending++;                                    // 刚落料待扫码（计数制：同车多吊集中落同垛时逐捆累计）
               if (k.reserved > 0) k.reserved--;                          // 组车预占转实落
-              mkBundleRec(st, j.task.stackIdx, j.spec, true, simTime);   // 捆级明细：登记待核验捆
+              drop = mkBundleRec(st, j.task.stackIdx, j.spec, true, simTime);   // 捆级明细：按垛内实际堆放落位（含坐标）
+              if (drop) pushPositionsToDb({ upserts: [bundlePosRow(st, j.task.stackIdx, drop)] });   // 落位坐标写库
             }
             st.state = 'occupied'; st.lockSpec = null; st.lockStack = null;
             occupiedCount++;
             j.task.materialReady = true;
             j.task.materialReadyAt = simTime;             // 时效埋点：天车放货放好时刻（扫码延时统计起点）
             pushStackToDb(st, j.task.stackIdx);                // 写回库存数据库（垛新增待扫码捆）
-            logEvent('crane', `天车吊放完成：${j.spec.name} 落位库位 ${st.code} 第${j.task.stackIdx + 1}垛（${cr.name}）`);
+            logEvent('crane', `天车吊放完成：${j.spec.name} 落位库位 ${st.code} 第${j.task.stackIdx + 1}垛${drop ? ` 第${drop.pos.layer + 1}层第${drop.pos.seat + 1}位` : ''}（${cr.name}）`);
             logEvent('inventory', `库位 ${st.code} 第${j.task.stackIdx + 1}垛 落料 ${j.spec.name}（物理库存 ${occupiedCount}/${TOTAL_BUNDLE_CAP} · 待机器狗扫码入账）`);
           } else if (j.kind === 'restack') { // 倒垛落位：压货自源垛顶移入目标垛顶（台账总数不变，仅位置迁移）
             const st = j.slot, t = j.task;
@@ -2082,8 +2153,10 @@ function updateCranes(dt) {
             const dk = j.dest.stacks[j.destStack];
             if (dk && top) {
               top.slotId = j.dest.id; top.stackIdx = j.destStack;         // 捆级明细随迁（库存三维视图/追溯同步）
+              top.pos = seatPos(SPECS[top.specIdx], dk.bundles.length, top.id);   // 倒垛落位：按目标垛实际堆放重算坐标
               if (dk.count === 0) { dk.spec = SPECS[top.specIdx]; dk.grade = top.grade; dk.len = top.len; dk.heat = top.heat; dk.inTime = top.inTime; } // 空垛接收首捆：建垛元数据（保留原入账时间，FIFO 不乱）
               dk.bundles.push(top); dk.count++;
+              pushPositionsToDb({ upserts: [bundlePosRow(j.dest, j.destStack, top)] });   // 新落位坐标写库
             }
             if (j.dest !== st && j.dest.state === 'free') j.dest.state = 'occupied';
             if (t.restackLeft > 0) t.restackLeft--;
@@ -2145,6 +2218,7 @@ function scoreInCandidates(spec, fam, spanHint) { // 全库候选（库位,垛�
   const cands = [];
   for (const s of storages) {
     if (s.state === 'locked') continue;
+    if (regionRestricted() && !slotMonitored(s)) continue;   // 监测范围限定：物资不入范围外库位（部分跨关闭或跨内分区限定）
     if (spanHint != null && spanOfSlot(s) !== spanHint && !(s.merged && truckSpanAllowed(spanOfSlot(s)))) continue;
     // 整跨合并位纵贯三跨但按 B 跨停靠组车：监测跨调度生效且 B 跨未监测时不作落点，防止货车派往未监测跨
     // 库位级统计：同族垛 / 异族垛 / 待扫码垛 / 空垛数（供③⑤评分）
@@ -2187,12 +2261,12 @@ function scoreInCandidates(spec, fam, spanHint) { // 全库候选（库位,垛�
 function recommendInPlacement(spec, spanHint = null) { // 卸货推荐：返回 {st, stackIdx}；null = 无合法落点（库满）
   const fam = specFamily(spec);
   let cands = scoreInCandidates(spec, fam, spanHint);
-  // 指定跨无落点 -> 放宽跨约束全库重荐（仅常规组车场景；监测跨受限时不放宽——物资不入未监测跨，无落点即暂缓）
-  if (!cands.length && spanHint != null && !spanRestricted()) cands = scoreInCandidates(spec, fam, null);
+  // 指定跨无落点 -> 放宽跨约束全库重荐（仅常规组车场景；监测范围受限时不放宽——物资不入范围外，无落点即暂缓）
+  if (!cands.length && spanHint != null && !regionRestricted()) cands = scoreInCandidates(spec, fam, null);
   if (!cands.length) return null;
   cands.sort((a, b) => b.sc - a.sc);
   const best = cands[0];
-  if (spanHint != null && !spanRestricted() && spanOfSlot(best.st) !== spanHint)
+  if (spanHint != null && !regionRestricted() && spanOfSlot(best.st) !== spanHint)
     logEvent('truck', `车次指定跨${SPANS[spanHint]}已无可用垛位，放宽至${SPANS[spanOfSlot(best.st)]}推荐落点（货车前往实际落点跨）`);
   const runners = cands.slice(1, 3).map(c => `${c.st.code} 第${c.stackIdx + 1}垛 ${c.sc}分`).join('；');
   logEvent('task', `卸货推荐：${spec.name} -> 库位 ${best.st.code} 第${best.stackIdx + 1}垛（综合 ${best.sc} 分 · ${best.parts.join(' + ')}）`);
@@ -2209,6 +2283,7 @@ function pickOldestScannable(spanHint = null) { // 先进先出可出库库位�
   let best = null, bestT = Infinity;
   for (const s of storages) {
     if (s.state === 'locked') continue;
+    if (regionRestricted() && !slotMonitored(s)) continue;   // 监测范围限定：范围外库存不参与出库
     if (spanHint != null && spanOfSlot(s) !== spanHint) continue;
     const idx = pickOutStack(s);
     if (idx >= 0 && s.stacks[idx].inTime < bestT) { best = s; bestT = s.stacks[idx].inTime; }
@@ -2226,17 +2301,18 @@ function pickOldestScannableSpec(spec, spanHint = null) { // 订单配捆：指�
   let best = null, bestT = Infinity;
   for (const s of storages) {
     if (s.state === 'locked') continue;
+    if (regionRestricted() && !slotMonitored(s)) continue;   // 监测范围限定：范围外库存不参与出库
     if (spanHint != null && spanOfSlot(s) !== spanHint) continue;
     const idx = pickOutStackSpec(s, spec);
     if (idx >= 0 && s.stacks[idx].inTime < bestT) { best = s; bestT = s.stacks[idx].inTime; }
   }
   return best;
 }
-function specOutAvail(spec) { // 指定规格可出库捆数（已扫码且库位未被任务锁定；监测跨受限时仅统计监测跨——取货任务只出监测跨的货）
+function specOutAvail(spec) { // 指定规格可出库捆数（已扫码且库位未被任务锁定；监测范围受限时仅统计范围内——取货任务只出监测范围的货）
   let n = 0;
   for (const s of storages) {
     if (s.state === 'locked') continue;
-    if (spanRestricted() && !truckSpanAllowed(spanOfSlot(s))) continue;
+    if (regionRestricted() && !slotMonitored(s)) continue;
     for (const k of s.stacks) if (k.spec === spec && k.count > 0 && k.pending === 0) n += k.count;
   }
   return n;
@@ -2306,9 +2382,9 @@ function createTask(type, opts = {}) {
     : batches.find(b => b.kind === type && !b.truck && b.tasks.length < CFG.truck.maxLoads && truckSpanAllowed(b.span));
   const spanHint = open ? open.span : pickTruckSpan(type);
   if (type === 'in') {
-    // 监测跨受限：手动指定未监测跨库位也不入库（车辆只去监测跨，物资不入未监测跨）
-    if (opts.storage && spanRestricted() && !truckSpanAllowed(spanOfSlot(opts.storage))) {
-      warn(`⚠ 监测跨调度：当前仅监测 ${monitoredSpansText()}，库位 ${opts.storage.code} 位于未监测跨，不安排入库（如需操作请开启对应跨监测）`);
+    // 监测范围受限：手动指定范围外库位也不入库（车辆只去监测跨、物资只入监测范围内的分区）
+    if (opts.storage && regionRestricted() && !slotMonitored(opts.storage)) {
+      warn(`⚠ 监测范围调度：当前仅监测 ${monitoredRegionText()}，库位 ${opts.storage.code} 不在监测范围内，不安排入库（如需操作请调整监测跨/跨内范围）`);
       return null;
     }
     // ⓪ 同车归并：本车次（同跨组车中）已有同规格入库任务 -> 沿用其目标垛集中码放，
@@ -2318,7 +2394,8 @@ function createTask(type, opts = {}) {
       ? [...open.tasks].reverse().find(t => t.type === 'in' && t.spec === spec) : null;
     if (mate) {
       const mk = mate.slot.stacks[mate.stackIdx];
-      if (mk && (!mk.spec || mk.spec === spec) && mk.count + (mk.reserved || 0) < BUNDLES_PER_STACK) {
+      if (mk && (!mk.spec || mk.spec === spec) && mk.count + (mk.reserved || 0) < BUNDLES_PER_STACK
+        && (!regionRestricted() || slotMonitored(mate.slot))) {   // 监测范围收紧后不再归并到范围外的既有垛位
         rec = { st: mate.slot, stackIdx: mate.stackIdx };
         merged = true;
       }
@@ -2352,8 +2429,8 @@ function createTask(type, opts = {}) {
     let st, stackIdx;
     if (opts.storage) {   // 手动指定库位（点击下发）：零星订单，规格随选定垛
       st = opts.storage;
-      if (spanRestricted() && !truckSpanAllowed(spanOfSlot(st))) {
-        warn(`⚠ 监测跨调度：当前仅监测 ${monitoredSpansText()}，库位 ${st.code} 位于未监测跨，不派车装货（如需操作请开启对应跨监测）`);
+      if (regionRestricted() && !slotMonitored(st)) {
+        warn(`⚠ 监测范围调度：当前仅监测 ${monitoredRegionText()}，库位 ${st.code} 不在监测范围内，不派车装货（如需操作请调整监测跨/跨内范围）`);
         return null;
       }
       stackIdx = pickOutStack(st);
@@ -2361,17 +2438,17 @@ function createTask(type, opts = {}) {
       if (!order) order = createSpotOrder(st.stacks[stackIdx].spec);
     } else {              // 订单配捆：仅选合同规格的已扫码捆（先进先出）
       if (!order) {       // 无订单调用（兼容手动/自检）：按最老可出捆自动生成零星订单
-        st = pickOldestScannable(spanHint) || (spanRestricted() ? null : pickOldestScannable());
+        st = pickOldestScannable(spanHint) || (regionRestricted() ? null : pickOldestScannable());
         if (!st) { warn('⚠ 暂无可出库库存（待扫码确认的落料不可出库）'); return null; }
         stackIdx = pickOutStack(st);
         if (stackIdx < 0) { warn(`⚠ 库位 ${st.code} 无可出垛`); return null; }
         order = createSpotOrder(st.stacks[stackIdx].spec);
       } else {
-        // 监测跨受限时不放宽全库：监测跨内无该规格可出库存 -> 本捆不下任务，订单余捆待监测跨库存回补
-        st = pickOldestScannableSpec(order.spec, spanHint) || (spanRestricted() ? null : pickOldestScannableSpec(order.spec));
+        // 监测范围受限时不放宽全库：监测范围内无该规格可出库存 -> 本捆不下任务，订单余捆待范围库存回补
+        st = pickOldestScannableSpec(order.spec, spanHint) || (regionRestricted() ? null : pickOldestScannableSpec(order.spec));
         if (!st) {
-          warn(spanRestricted()
-            ? `⚠ ${order.id} 规格 ${order.spec.name} 在监测跨（${monitoredSpansText()}）内暂无可出库存，余捆待回补（未监测跨库存不出库）`
+          warn(regionRestricted()
+            ? `⚠ ${order.id} 规格 ${order.spec.name} 在监测范围（${monitoredRegionText()}）内暂无可出库存，余捆待回补（范围外库存不出库）`
             : '⚠ 该订单规格暂无可出库库存（待扫码落料不可出库），等待库存回补');
           return null;
         }
@@ -2399,7 +2476,7 @@ function createTask(type, opts = {}) {
   return task;
 }
 
-/* ---------------- 机器狗机队与监测范围（台数 / 监测跨可在「调度参数」页调整；监测跨同时约束货车停靠跨） ---------------- */
+/* ---------------- 机器狗机队与监测范围（台数 / 监测跨 / 跨内范围可在「调度参数」页调整；监测范围同时约束货车停靠跨与出入库范围） ---------------- */
 const ROBOT_PRESETS = [   // 台数 1-6：编号 D-01 起；充电桩 3 座循环复用（充电位为虚拟工位，可多狗共用）
   ['D-01', '疾风', '#22d3ee', { r: 7, c: 7 }],
   ['D-02', '闪电', '#818cf8', { r: 7, c: 19 }],
@@ -2424,24 +2501,48 @@ function applyRobotCount() { // 台数变更：在途扫码任务重新排队，
   robots = buildRobots(n);
   logEvent('system', `机器狗机队更新：${n} 台（${robots.map(r => r.name).join(' · ')}），在途扫码任务已重新排队`);
 }
-function monitoredSpanIdx() { // 监测跨索引列表（0/1/2 -> 一跨 A / 二跨 B / 三跨 C）
+function monitoredSpanIdx() { // 监测跨索引列表（0/1/2 -> 一跨 A / 二跨 B / 三跨 C；货车停靠按跨，不受跨内号区范围影响）
   const r = [];
   if (CFG.robot.spanA) r.push(0);
   if (CFG.robot.spanB) r.push(1);
   if (CFG.robot.spanC) r.push(2);
   return r;
 }
-function monitoredSpansText() {
-  const s = monitoredSpanIdx().map(i => 'ABC'[i]);
-  return s.length ? s.join('/') + ' 跨' : '无（全库免检）';
+function monitoredScopes() { // 监测范围明细 [{ span, lo, hi }]：跨内号区区间（1~33，起始>截止自动交换）
+  const mk = (on, si) => {
+    if (!on) return null;
+    const f = +CFG.robot['from' + 'ABC'[si]] || 1, t = +CFG.robot['to' + 'ABC'[si]] || 33;
+    return { span: si, lo: Math.max(1, Math.min(f, t)), hi: Math.min(33, Math.max(f, t)) };
+  };
+  return [mk(CFG.robot.spanA, 0), mk(CFG.robot.spanB, 1), mk(CFG.robot.spanC, 2)].filter(Boolean);
 }
-/* 监测跨调度（严格限定）：仅开启部分监测跨时，所有作业限定在监测跨内——
- * ① 运输车辆只派往监测跨装卸；② 入库卸货只在监测跨内推荐落点（无落点即暂缓，不放宽到未监测跨）；
- * ③ 出库配捆/提货订单只在监测跨内选货（未监测跨库存不参与出库，无货则订单余捆待回补）。
- * 如仅开「监测 A 跨」：车辆只去 A 跨、物资只入 A 跨、取货只出 A 跨的货。
- * 三跨全开（默认）或全关（全库免检）时不限跨，维持常规跨内调度。 */
-function spanRestricted() { const n = monitoredSpanIdx().length; return n > 0 && n < 3; }
-function truckSpanAllowed(si) { return !spanRestricted() || monitoredSpanIdx().includes(si); }
+function scopeRangeLabel(lo, hi) { // 号区区间文案：整跨 / 分区名（恰为分区区段时）/ 具体号区段
+  if (lo <= 1 && hi >= 33) return '整跨';
+  const band = AREA_ZONE_BANDS.find(b => lo === b[0] && hi === b[1]);
+  if (band) return band[2];
+  return lo === hi ? `${lo} 号区` : `${lo}~${hi} 号区`;
+}
+function monitoredRegionText() { // 监测范围文案：如「一跨 A（中棒区域）、二跨 B（18~25 号区）」；全关 = 全库免检
+  const ms = monitoredScopes();
+  return ms.length
+    ? ms.map(m => {
+      const lab = scopeRangeLabel(m.lo, m.hi);
+      return `${SPANS[m.span]}${lab === '整跨' ? '' : `（${lab}）`}`;
+    }).join('、')
+    : '无（全库免检）';
+}
+/* 监测范围调度（严格限定）：监测范围为全库真子集时（部分跨关闭，或任一跨限定为跨内号区范围），
+ * ① 运输车辆只派往监测跨装卸；② 入库卸货只在监测范围内推荐落点（无落点即暂缓，不放宽到范围外）；
+ * ③ 出库配捆/提货订单只在监测范围内选货（范围外库存不参与出库，无货则订单余捆待回补）。
+ * 如仅开「监测 A 跨」：车辆只去 A 跨、物资只入 A 跨、取货只出 A 跨的货；再把 A 跨起始/截止号区
+ * 配为 17~33（中棒区域），则物资只入 A 跨右侧 17~33 号区，A 跨其余号区与未监测跨均免检直通。
+ * 三跨全开整跨（默认）或全关（全库免检）时不限范围，维持常规跨内调度。 */
+function regionRestricted() { // 监测范围是否为全库真子集（部分跨关闭，或任一跨限定为跨内号区范围）
+  const ms = monitoredScopes();
+  if (ms.length < 3) return ms.length > 0;
+  return ms.some(m => m.lo > 1 || m.hi < 33);
+}
+function truckSpanAllowed(si) { return !regionRestricted() || monitoredSpanIdx().includes(si); }
 function pickTruckSpan(kind) { // 新任务选跨：监测跨中待组车吊数最少者优先（均衡停靠）；不限跨时返回 null
   const m = monitoredSpanIdx();
   if (!m.length || m.length === 3) return null;
@@ -2454,20 +2555,27 @@ function pickTruckSpan(kind) { // 新任务选跨：监测跨中待组车吊数�
   return best;
 }
 function truckSpanPolicyText() {
-  const m = monitoredSpanIdx();
-  if (!m.length) return '不限（全库免检直通，常规跨内调度）';
-  if (m.length === 3) return '不限（三跨全监测，常规跨内调度）';
-  const names = m.map(i => SPANS[i]).join('、');
-  return m.length === 1
-    ? `仅${names}——车辆只去该跨，物资只入该跨，取货只出该跨的货`
-    : `仅${names}——车辆/上架/取货全部限定在监测跨内`;
+  const ms = monitoredScopes();
+  if (!ms.length) return '不限（全库免检直通，常规跨内调度）';
+  if (!regionRestricted()) return '不限（三跨整跨全监测，常规跨内调度）';
+  const names = ms.map(m => {
+    const lab = scopeRangeLabel(m.lo, m.hi);
+    return `${SPANS[m.span]}${lab === '整跨' ? '' : `（${lab}）`}`;
+  }).join('、');
+  return ms.length === 1
+    ? `仅${names}——车辆只去该跨，物资只入该跨监测范围`
+    : `仅${names}——车辆/上架/取货全部限定在监测范围内`;
 }
-function spanMonitored(slot) { // 任务落点跨是否在监测范围内（整跨合并位跨 A~C：任一跨监测即覆盖）
+function slotMonitored(slot) { // 任务落点是否在监测范围内（监测跨 × 跨内号区范围；整跨合并位纵贯 A~C：任一监测跨的范围覆盖其号区即算）
+  const ms = monitoredScopes();
+  if (!ms.length) return false;   // 三跨全关 = 全库免检：所有任务免检直通
   const sp = spanOfSlot(slot);
-  if (sp >= 3) return !!(CFG.robot.spanA || CFG.robot.spanB || CFG.robot.spanC);
-  return !!(sp === 0 ? CFG.robot.spanA : sp === 1 ? CFG.robot.spanB : CFG.robot.spanC);
+  if (sp >= 3) return ms.some(m => slot.area >= m.lo && slot.area <= m.hi);
+  return ms.some(m => m.span === sp && slot.area >= m.lo && slot.area <= m.hi);
 }
-function skipScan(t) { // 未监测跨免检直通：机器狗不进入该跨，跳过扫码环节、直接产生与扫码完成相同的效果
+function skipScan(t) { // 不在监测范围内免检直通：机器狗不进入该区域，跳过扫码环节、直接产生与扫码完成相同的效果
+  const sp = spanOfSlot(t.slot);
+  const where = `${SPANS[sp]}${t.slot.zone ? ` · ${t.slot.zone}` : ''}`;
   if (t.type === 'in') {
     const k = t.slot.stacks[t.stackIdx];
     if (k) k.pending = Math.max(0, k.pending - 1);   // 同计数制：待扫码捆直接转为在库
@@ -2476,10 +2584,10 @@ function skipScan(t) { // 未监测跨免检直通：机器狗不进入该跨，
     t.state = 'done'; t.stage = 6; t.ended = simTime;
     t.scanDoneAt = simTime; t.scanSkipped = true;   // 时效埋点：免检直通也记扫码完成时刻（延时≈0，页面单独标记）
     ledgerPush(t);
-    logEvent('robot', `${t.id} 位于未监测跨（${SPANS[spanOfSlot(t.slot)]}），免检直通入账（机器狗不进入未监测跨）`);
+    logEvent('robot', `${t.id} 位于 ${where}（不在监测范围：${monitoredRegionText()}），免检直通入账（机器狗不进入范围外区域）`);
   } else {
     t.dogDone = true; t.state = 'crane';
-    logEvent('robot', `${t.id} 位于未监测跨（${SPANS[spanOfSlot(t.slot)]}），出库核验免检直通，待天车装车`);
+    logEvent('robot', `${t.id} 位于 ${where}（不在监测范围：${monitoredRegionText()}），出库核验免检直通，待天车装车`);
     maybePushCraneJob(t);
   }
 }
@@ -2488,10 +2596,10 @@ function skipScan(t) { // 未监测跨免检直通：机器狗不进入该跨，
 function scheduler() {
   const pending = tasks.filter(t => t.state === 'pending');
   if (!pending.length) return;
-  // 未监测跨免检直通：不占机器狗、不等机队可用，先于派单处理
+  // 不在监测范围内免检直通：不占机器狗、不等机队可用，先于派单处理
   for (const t of pending) {
     if (t.type === 'in' && !t.materialReady) continue; // 天车落料未就位，暂不可派扫码
-    if (!spanMonitored(t.slot)) skipScan(t);
+    if (!slotMonitored(t.slot)) skipScan(t);
   }
   const queue = pending.filter(t => t.state === 'pending');
   if (!queue.length) return;
@@ -4503,7 +4611,7 @@ function init() {
   document.querySelectorAll('#speedSeg button').forEach(b => b.classList.toggle('on', +b.dataset.speed === 1));
   elLogList.innerHTML = '';
   logEvent('system', `仿真沙盘启动：300m × 90m 三跨库区（+4 条 2m 横向通道）· ${CFG.robot.count} 台机器狗（扫码）+ 6 台天车（每跨 2 台）· 91 库位（每库位 8 垛 × 20 捆 = 160 捆）· 初始库存 ${occupiedCount} 捆`);
-  logEvent('system', `机器狗监测范围：${monitoredSpansText()}（未监测跨免检直通；货车停靠${truckSpanPolicyText()}；台数与范围可在「调度参数」页调整，即时生效）`);
+  logEvent('system', `机器狗监测范围：${monitoredRegionText()}（范围外免检直通；货车停靠${truckSpanPolicyText()}；台数与范围可在「调度参数」页调整，即时生效）`);
   logEvent('system', '布局：铁姆肯区(1-2) · 大棒区域(3-13) · 大棒单支和长钢(14-16 整跨) · 中棒区域(17-33) · 竖向车辆通道 3 条（北端入口）· 横向通道 4×2m · 充电服务带×3 桩');
   logEvent('system', '作业流程：入库 = 货车进场停靠 -> 立柱摄像头识别车牌 -> 吊取运单 -> 天车吊运落料 -> 机器狗扫码入账；出库 = 机器狗扫码核验 -> 货车进场 -> 识别车牌吊取装车计划 -> 天车装车 -> 货车离场');
   logEvent('system', '调度规则：机器狗就近分配 + 电量约束 + 先到先服务（出库先进先出）；天车限本跨作业，同跨双车区间互让；天车须待货车运单确认后才开工');
@@ -4551,6 +4659,11 @@ function applyDbInventory(slots) {
   }
   occupiedCount = total;
   invBump();
+  /* 捆级落位坐标全量对齐：期初各垛按码放模型生成的坐标一次性写库（先清表再写入），
+   * bundle_positions 表与三维视图所见一致，外部系统可查询任一捆的具体位置 */
+  const posUpserts = [];
+  for (const s of storages) s.stacks.forEach((k, si) => k.bundles.forEach(b => posUpserts.push(bundlePosRow(s, si, b))));
+  pushPositionsToDb({ replace: true, upserts: posUpserts });
   logEvent('system', `期初库存已从库存数据库加载实际钢材分布：${total} 捆 · 利用率 ${(total / TOTAL_BUNDLE_CAP * 100).toFixed(1)}%（铁姆肯=圆钢 · 大棒=螺纹钢 · 长钢=方钢 · 中棒=混区，卸货按推荐算法归堆）`);
 }
 async function loadInventoryFromDb() {
@@ -4592,6 +4705,32 @@ function pushStackToDb(st, stackIdx) {
   });
 }
 
+/* ---------------- 捆级三维落位写回（bundle_positions 表） ----------------
+ * 天车落料/倒垛落位时 upsert 该捆坐标，出库吊走时删除；期初加载后 replace 全量对齐。
+ * 坐标含义见 seatPos：layer/seat 层号与座位号，dx/dz 相对垛格中心（米），y 捆底标高（米），yaw 弧度。 */
+function bundlePosRow(st, stackIdx, b) {
+  return {
+    bundleId: b.id,
+    slotId: st.dbId != null ? st.dbId : st.id,   // 以数据库侧库位 id 为准（与 pushStackToDb 同一约定）
+    stackNo: stackIdx + 1,
+    layer: b.pos.layer, seat: b.pos.seat,
+    dx: b.pos.dx, y: b.pos.y, dz: b.pos.dz, yaw: b.pos.yaw,
+    spec: SPECS[b.specIdx].name, len: b.len, putTime: b.inTime,
+  };
+}
+let _posPushWarned = false;
+function pushPositionsToDb(payload) {
+  if (typeof fetch !== 'function') return;
+  fetch(`${DB_API}/api/positions`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  }).catch(() => {
+    if (!_posPushWarned) {
+      _posPushWarned = true;
+      logEvent('system', '捆级落位坐标写库失败（服务未启动？），位置表可能滞后；下次期初加载会全量对齐');
+    }
+  });
+}
+
 /* =====================================================================
  * 库存三维视图（顶栏「库存三维」标签切换，实时读取仿真库存）
  * 数据源 = storages[].stacks[].bundles（捆级明细，与仿真出入库同步维护）。
@@ -4618,15 +4757,8 @@ function pushStackToDb(st, stackIdx) {
       cw: g.w, cd: dEff / 8,
     };
   }
-  /* 捆内支数排布（自下而上每层支数；6 支 = 3+2+1 金字塔） */
-  const ROD_ROWS = { 3: [2, 1], 4: [2, 2], 5: [3, 2], 6: [3, 2, 1] };
-  /* 真实截面尺寸（米）：垛位料架立柱限高 3m，可堆层数 = floor(限高 ÷ 单捆高)。
-   * 单捆高 = 排数 × 杆径 × 1.06 + 垫木/打捆带 15mm；各规格堆满 20 捆最高 2.84m（圆钢Φ60），不超立柱。 */
-  const RACK_H = 3.0;
-  const rodDiaM = sp => SPEC_META[sp.name].dia / 1000;
-  const bundleW = sp => Math.max(...ROD_ROWS[sp.rods]) * rodDiaM(sp) * 1.08;
-  const bundleH = sp => ROD_ROWS[sp.rods].length * rodDiaM(sp) * 1.06 + 0.015;
-  const maxLayers = sp => Math.floor(RACK_H / bundleH(sp));
+  /* 垛内三维码放模型（ROD_ROWS/seatPos/pileRows 等）在主脚本共享作用域：
+   * 仿真落位（mkBundleRec）与三维渲染共用同一套座位网格，坐标所见即所得 */
   const fmtIn = t => t < 0 ? '期初' : fmtClock(t).slice(0, 5);
 
   /* ---------------- 实时库存采集 ---------------- */
@@ -4756,7 +4888,8 @@ function pushStackToDb(st, stackIdx) {
       const s = storages[view.slotId], k = s.stacks[view.stackIdx];
       if (!k || k.count === 0) { gotoSlot(view.slotId); return; }
       const sp = k.spec, np = k.bundles.filter(b => b.pending).length;
-      const Hb = bundleH(sp), curH = k.count * Hb, maxL = maxLayers(sp);
+      const Hb = bundleH(sp), curH = pileHeight(sp, k.count), maxL = maxLayers(sp);
+      const pl = pileRows(k.count, sp);
       invDetail.innerHTML = `
         <h3>库位 ${s.code} · 第 ${view.stackIdx + 1} 垛 ${np ? '<span class="tag pend">' + np + ' 捆待核验</span>' : ''}</h3>
         <div class="dgrid">
@@ -4767,17 +4900,19 @@ function pushStackToDb(st, stackIdx) {
           <span class="dl">捆数</span><span class="dv">${k.count} 捆 <i>/ 上限 20</i></span>
           <span class="dl">支数</span><span class="dv">${k.count * sp.rods} 支</span>
           <span class="dl">吨位</span><span class="dv">${(k.count * sp.weight * k.len / 9).toFixed(1)} t</span>
+          <span class="dl">码放</span><span class="dv">${pl.length} 层 · 每层 ≤ ${pileAcross(sp)} 捆并排</span>
           <span class="dl">当前堆高</span><span class="dv">${curH.toFixed(2)} m <i>/ 立柱 3.0 m</i></span>
           <span class="dl">限高核算</span><span class="dv">3.0m ÷ ${Hb.toFixed(2)}m = 最多 ${maxL} 层 <i>（垛上限 20 捆）</i></span>
           <span class="dl">炉号</span><span class="dv">${k.heat}</span>
         </div>
-        <div class="sub">单捆高 = ${ROD_ROWS[sp.rods].length} 排 × Φ${SPEC_META[sp.name].dia} + 垫木 ≈ ${Hb.toFixed(2)}m · 最早入库 ${k.inTime < 0 ? '期初' : fmtClock(k.inTime)} · 点击捆查看单捆明细</div>
+        <div class="sub">单捆高 = ${ROD_ROWS[sp.rods].length} 排 × Φ${SPEC_META[sp.name].dia} + 垫木 ≈ ${Hb.toFixed(2)}m · 层间垫木、底层坐料架垫梁 · 最早入库 ${k.inTime < 0 ? '期初' : fmtClock(k.inTime)} · 点击捆查看单捆明细</div>
         <div class="ops"><button data-act="back">← 返回库位</button></div>`;
     } else if (view.level === 'bundle') {
       const s = storages[view.slotId], k = s.stacks[view.stackIdx];
       const b = k && k.bundles.find(x => x.id === view.bundleId);
       if (!b) { back(); return; }
-      const sp = SPECS[b.specIdx], layer = k.bundles.indexOf(b);
+      const sp = SPECS[b.specIdx], loc = pileLoc(k.count, sp, k.bundles.indexOf(b));
+      const seatTxt = b.pos ? `第 ${b.pos.layer + 1} 层 第 ${b.pos.seat + 1} 位` : `第 ${loc.layer + 1} 层`;
       invDetail.innerHTML = `
         <h3>捆 ${b.id} <span class="tag${b.pending ? ' pend' : ''}">${b.pending ? '待核验' : '在库'}</span></h3>
         <div class="dgrid">
@@ -4788,7 +4923,8 @@ function pushStackToDb(st, stackIdx) {
           <span class="dl">支数</span><span class="dv">${b.rods} 支 <i>（${ROD_ROWS[b.rods].join('+')} 排布）</i></span>
           <span class="dl">单捆重</span><span class="dv">${b.wt.toFixed(2)} t</span>
           <span class="dl">炉号</span><span class="dv">${b.heat}</span>
-          <span class="dl">位置</span><span class="dv">${s.code} 第 ${b.stackIdx + 1} 垛 第 ${layer + 1} 层</span>
+          <span class="dl">位置</span><span class="dv">${s.code} 第 ${b.stackIdx + 1} 垛 ${seatTxt} <i>（本层 ${loc.n} 捆）</i></span>
+          <span class="dl">坐标</span><span class="dv">${b.pos ? `偏移 ${b.pos.dx >= 0 ? '+' : ''}${b.pos.dx.toFixed(2)} / ${b.pos.dz >= 0 ? '+' : ''}${b.pos.dz.toFixed(2)} m · 捆底 ${b.pos.y.toFixed(2)} m` : '–'}</span>
           <span class="dl">入账</span><span class="dv">${fmtIn(b.inTime)}</span>
         </div>
         <div class="sub">捆标签（二维码绑定）：${b.id}|${sp.name}|${b.grade}|${b.len}m×${b.rods}支${b.pending ? ' · 等待机器狗扫码核验' : ''}</div>
@@ -4807,7 +4943,8 @@ function pushStackToDb(st, stackIdx) {
       `<div class="li"><span class="sw" style="background:${sp.color}"></span>${sp.name}</div>`).join('')
       + `<div class="li" style="margin-top:2px"><span class="sw" style="background:#8fa7d6;opacity:.45"></span>待核验（已落料待扫码）</div>`
       + `<div class="li" style="margin-top:2px"><span class="sw" style="background:#39496e"></span>料架立柱（限高 3.0m）</div>`
-      + `<div class="li" style="color:#8fa7d6">灰化垛 = 不匹配当前筛选 · 堆层数按 3.0m ÷ 单捆高核算</div>`;
+      + `<div class="li" style="margin-top:2px"><span class="sw" style="background:#8a6238"></span>层间垫木 / 料架垫梁</div>`
+      + `<div class="li" style="color:#8fa7d6">灰化垛 = 不匹配当前筛选 · 每层多捆并排、层间垫木，堆高 = 层数 × 单捆高</div>`;
   }
   function renderKPIs() {
     const st = calcStats(collect());
@@ -5043,16 +5180,15 @@ function pushStackToDb(st, stackIdx) {
     } else if (view.level === 'stack') {
       const cell = stackCell(s, view.stackIdx), k = s.stacks[view.stackIdx];
       const sp = k.spec;
-      const h = k.count * bundleH(sp) + 1;
+      const h = pileHeight(sp, k.count) + 1;
       flyTo(V3(WX(cell.x), h * .45, WZ(cell.z)), Math.max(h, k.len) * 1.15 + 6, 1.05);
     } else if (view.level === 'bundle') {
       const k = s.stacks[view.stackIdx];
       const b = k.bundles.find(x => x.id === view.bundleId);
       if (!b) return;
       const sp = SPECS[b.specIdx], cell = stackCell(s, b.stackIdx);
-      const layer = k.bundles.indexOf(b);
-      const y = layer * bundleH(sp) + bundleH(sp) / 2 + 0.3;
-      flyTo(V3(WX(cell.x), y, WZ(cell.z)), b.len * 1.05 + 3, 1.08);
+      const p = b.pos || seatPos(sp, Math.max(0, k.bundles.indexOf(b)), b.id);
+      flyTo(V3(WX(cell.x), p.y + bundleH(sp) / 2, WZ(cell.z) + p.dz), b.len * 1.05 + 3, 1.08);
       T.autoRot = true;
       const cb = $('invAutoRot'); if (cb) cb.checked = true;
     }
@@ -5163,14 +5299,14 @@ function pushStackToDb(st, stackIdx) {
     return g;
   }
 
-  /* 垛位料架：四角立柱（限高 3m，顶部琥珀色标记）+ 纵向垫梁 */
-  function buildRack(cell) {
+  /* 垛位料架：四角立柱（限高 3m，顶部琥珀色标记）+ 捆端下方纵向垫梁（底层钢材坐梁上，不落地） */
+  function buildRack(cell, len) {
     const g = new THREE.Group();
     const postGeo = T.geo('rackPost', () => new THREE.BoxGeometry(.14, RACK_H, .14));
     const postMat = T.mat('rackPost', () => new THREE.MeshStandardMaterial({ color: 0x39496e, metalness: .6, roughness: .5 }));
     const capGeo = T.geo('rackCap', () => new THREE.BoxGeometry(.2, .1, .2));
     const capMat = T.mat('rackCap', () => new THREE.MeshStandardMaterial({ color: 0xfbbf24, emissive: 0x6b4a00, roughness: .5 }));
-    const beamGeo = T.geo('rackBeam', () => new THREE.BoxGeometry(.12, .18, cell.cd - .9));
+    const beamGeo = T.geo('rackBeam', () => new THREE.BoxGeometry(.16, RAIL_TOP - .21, cell.cd - 1.2));
     const px = cell.cw / 2 - .45, pz = cell.cd / 2 - .35;
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
       const p = new THREE.Mesh(postGeo, postMat);
@@ -5181,13 +5317,28 @@ function pushStackToDb(st, stackIdx) {
       c.position.set(WX(cell.x) + sx * px, RACK_H + .05, WZ(cell.z) + sz * pz);
       g.add(c);
     }
-    for (const sx of [-1, 1]) {   // 底部纵向垫梁（钢材坐在梁上，不落地）
+    const rx = Math.min(len / 2 + .12, px - .1);   // 垫梁顶在捆端下方；长材超格宽时收进立柱内
+    for (const sx of [-1, 1]) {
       const bm = new THREE.Mesh(beamGeo, postMat);
-      bm.position.set(WX(cell.x) + sx * px, .32, WZ(cell.z));
+      bm.position.set(WX(cell.x) + sx * rx, (RAIL_TOP + .21) / 2, WZ(cell.z));
       bm.castShadow = true;
       g.add(bm);
     }
     return g;
+  }
+
+  /* 层间垫木：垂直于捆长的横木（与打捆带对齐，±28% 捆长处），托住上一层并排的捆；
+   * 长度按该垛固定座位网格的全宽（垫木先铺、整层通用，不随末层捆数变化） */
+  function addTimbers(g, cell, sp, len, layerBottomY) {
+    const woodMat = T.mat('dunnage', () => new THREE.MeshStandardMaterial({ color: 0x8a6238, roughness: .92 }));
+    const w = pileAcross(sp) * (bundleW(sp) + 0.03) + .12;
+    const geo = T.geo(`dun${w.toFixed(2)}`, () => new THREE.BoxGeometry(.16, .05, w));
+    for (const sx of [-1, 1]) {
+      const t = new THREE.Mesh(geo, woodMat);
+      t.position.set(WX(cell.x) + sx * len * .28, layerBottomY - .007, WZ(cell.z));
+      t.castShadow = true;
+      g.add(t);
+    }
   }
 
   /* ---------------- 各级视图 ---------------- */
@@ -5254,7 +5405,7 @@ function pushStackToDb(st, stackIdx) {
     const occ = [];
     for (const s of storages) s.stacks.forEach((k, si) => { if (k.count > 0) occ.push({ s, si, k }); });
     if (occ.length) {
-      const colGeo = new THREE.BoxGeometry(1.5, 1, 1.5);
+      const colGeo = new THREE.BoxGeometry(2.6, 1, 1.1);   // 长条垛形（沿捆长方向扁长）
       const colMat = new THREE.MeshStandardMaterial({ roughness: .55, metalness: .25 });
       const inst = new THREE.InstancedMesh(colGeo, colMat, occ.length);
       inst.castShadow = true;
@@ -5262,7 +5413,7 @@ function pushStackToDb(st, stackIdx) {
       const dim = filt.zone || filt.span || filt.spec >= 0 || filt.grade || filt.len || filt.stat || filt.q;
       occ.forEach((o, i) => {
         const cell = stackCell(o.s, o.si);
-        const h = Math.max(.5, o.k.count * bundleH(o.k.spec));   // 真实堆高（20 捆 ≤ 2.84m ≤ 立柱 3m）
+        const h = Math.max(.5, pileHeight(o.k.spec, o.k.count));   // 真实堆高 = 层数 × 单捆高（每层多捆并排）
         mtx.makeScale(1, h, 1);
         mtx.setPosition(WX(cell.x), h / 2 + .3, WZ(cell.z));
         inst.setMatrixAt(i, mtx);
@@ -5278,7 +5429,7 @@ function pushStackToDb(st, stackIdx) {
       for (const s of storages) {
         if (slotBundles(s) === 0) continue;
         const gg = slotGeo(s);
-        const maxH = Math.max(.8, ...s.stacks.filter(k => k.count > 0).map(k => k.count * bundleH(k.spec)));
+        const maxH = Math.max(.8, ...s.stacks.filter(k => k.count > 0).map(k => pileHeight(k.spec, k.count)));
         const lb = makeLabel(s.code, '#9fc3ff', 9);
         lb.position.set(WX(gg.x), maxH + 3.2, WZ(gg.z));
         g.add(lb);
@@ -5307,16 +5458,24 @@ function pushStackToDb(st, stackIdx) {
       base.position.set(WX(cell.x), .35, WZ(cell.z));
       base.receiveShadow = true;
       g.add(base);
-      g.add(buildRack(cell));   // 料架：立柱限高 3m
+      g.add(buildRack(cell, k.count > 0 ? k.len : 6));   // 料架：立柱限高 3m，垫梁在捆端下方
       const sp = k.count > 0 ? k.spec : null;
       const Hb = sp ? bundleH(sp) : 0;
+      const pileH = sp ? pileHeight(sp, k.count) : 0;
       if (sp) {
-        k.bundles.forEach((b, li) => {
-          const bm = buildBundleMesh(b);   // 捆长沿库位宽度（X）横放
-          const jx = (b.id.charCodeAt(3) % 7 - 3) * .025, jz = (b.id.charCodeAt(5) % 7 - 3) * .025;
-          bm.position.set(WX(cell.x) + jx, .45 + li * Hb + Hb / 2, WZ(cell.z) + jz);
-          bm.traverse(o => { if (o.userData.kind === 'bundle') o.userData.hidden = true; });
-          g.add(bm);
+        const rows = pileRows(k.count, sp);
+        let bi = 0;
+        rows.forEach((n, L) => {
+          if (L > 0) addTimbers(g, cell, sp, k.len, RAIL_TOP + L * Hb);
+          for (let j = 0; j < n; j++, bi++) {
+            const b = k.bundles[bi];
+            const p = b.pos || seatPos(sp, bi, b.id);   // 落位坐标（天车落料时定；兜底按规范座位推算）
+            const bm = buildBundleMesh(b);   // 捆长沿库位宽度（X）横放，层内并排
+            bm.position.set(WX(cell.x) + p.dx, p.y, WZ(cell.z) + p.dz);
+            bm.rotation.y = p.yaw;
+            bm.traverse(o => { if (o.userData.kind === 'bundle') o.userData.hidden = true; });
+            g.add(bm);
+          }
         });
       } else {
         const empty = makeLabel('空', '#33507f', 5);
@@ -5324,12 +5483,12 @@ function pushStackToDb(st, stackIdx) {
         g.add(empty);
       }
       const lb = makeLabel(`第${si + 1}垛`, sp ? sp.color : '#4b6496', 7.5);
-      lb.position.set(WX(cell.x), (sp ? k.count * Hb : 0) + 2.2, WZ(cell.z) + cell.cd / 2 + 1.6);
+      lb.position.set(WX(cell.x), pileH + 2.2, WZ(cell.z) + cell.cd / 2 + 1.6);
       g.add(lb);
       const proxy = new THREE.Mesh(
-        new THREE.BoxGeometry(cell.cw - .15, Math.max(sp ? k.count * Hb : 1, 1) + .6, cell.cd - .3),
+        new THREE.BoxGeometry(cell.cw - .15, Math.max(pileH, 1) + .6, cell.cd - .3),
         T.mat('proxy', () => new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })));
-      proxy.position.set(WX(cell.x), Math.max(sp ? k.count * Hb : 1, 1) / 2 + .5, WZ(cell.z));
+      proxy.position.set(WX(cell.x), Math.max(pileH, 1) / 2 + .5, WZ(cell.z));
       proxy.userData = { kind: 'stack', slot: s, stackIdx: si };
       g.add(pickable(proxy));
     }
@@ -5346,26 +5505,34 @@ function pushStackToDb(st, stackIdx) {
     base.position.set(WX(cell.x), .15, WZ(cell.z));
     base.receiveShadow = true;
     g.add(base);
-    g.add(buildRack(cell));   // 料架：立柱限高 3m
+    g.add(buildRack(cell, k.len));   // 料架：立柱限高 3m，垫梁在捆端下方
     const Hb = bundleH(sp), Wb = bundleW(sp);
     const proxyMat = T.mat('proxy', () => new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-    k.bundles.forEach((b, li) => {
-      const bm = buildBundleMesh(b);   // 捆长沿库位宽度（X）横放
-      const jx = (b.id.charCodeAt(3) % 7 - 3) * .025;
-      const y = .3 + li * Hb + Hb / 2;
-      bm.position.set(WX(cell.x) + jx, y, WZ(cell.z));
-      g.add(bm);
-      /* 逐捆拾取代理：真实截面很细，用包围盒代理保证容易点中/悬停 */
-      const proxy = new THREE.Mesh(new THREE.BoxGeometry(b.len + .3, Hb + .06, Wb + .3), proxyMat);
-      proxy.position.set(WX(cell.x) + jx, y, WZ(cell.z));
-      proxy.userData = { kind: 'bundle', b };
-      g.add(pickable(proxy));
-      const lb = makeLabel(`第${li + 1}层`, '#5f7bb0', 4.5);
-      lb.position.set(WX(cell.x) - b.len / 2 - 2.2, y, WZ(cell.z));
+    const rows = pileRows(k.count, sp);
+    let bi = 0;
+    rows.forEach((n, L) => {
+      const y = RAIL_TOP + L * Hb;   // 本层捆底面
+      if (L > 0) addTimbers(g, cell, sp, k.len, y);
+      for (let j = 0; j < n; j++, bi++) {
+        const b = k.bundles[bi];
+        const p = b.pos || seatPos(sp, bi, b.id);   // 落位坐标（与数据库 bundle_positions 同源）
+        const bx = WX(cell.x) + p.dx, bz = WZ(cell.z) + p.dz;
+        const bm = buildBundleMesh(b);   // 捆长沿库位宽度（X）横放，层内多捆并排
+        bm.position.set(bx, p.y, bz);
+        bm.rotation.y = p.yaw;
+        g.add(bm);
+        /* 逐捆拾取代理：真实截面很细，用包围盒代理保证容易点中/悬停 */
+        const proxy = new THREE.Mesh(new THREE.BoxGeometry(b.len + .3, Hb + .06, Wb + .34), proxyMat);
+        proxy.position.set(bx, p.y + Hb / 2, bz);
+        proxy.userData = { kind: 'bundle', b };
+        g.add(pickable(proxy));
+      }
+      const lb = makeLabel(`第${L + 1}层`, '#5f7bb0', 4.5);
+      lb.position.set(WX(cell.x) - k.len / 2 - 2.2, y + Hb / 2, WZ(cell.z));
       g.add(lb);
     });
     const lb = makeLabel(`${s.code} 第${si + 1}垛 · ${sp.name} ${k.grade} ${k.len}m`, sp.color, 7);
-    lb.position.set(WX(cell.x), k.count * Hb + 3, WZ(cell.z));
+    lb.position.set(WX(cell.x), pileHeight(sp, k.count) + 3, WZ(cell.z));
     g.add(lb);
   }
 
@@ -5375,9 +5542,10 @@ function pushStackToDb(st, stackIdx) {
     const b = k && k.bundles.find(x => x.id === view.bundleId);
     if (!b) return;
     const cell = stackCell(s, b.stackIdx), sp = SPECS[b.specIdx];
-    const Hb = bundleH(sp), layer = k.bundles.indexOf(b);
+    const Hb = bundleH(sp);
+    const p = b.pos || seatPos(sp, Math.max(0, k.bundles.indexOf(b)), b.id);
     const bm = buildBundleMesh(b, { tag: true, cross: 5 });   // 单捆特写：截面放大 5 倍便于观察
-    bm.position.set(WX(cell.x), layer * Hb + Hb * 5 / 2 + .3, WZ(cell.z));
+    bm.position.set(WX(cell.x) + p.dx, p.y + Hb * 5 / 2, WZ(cell.z) + p.dz);
     g.add(bm);
     const base = new THREE.Mesh(
       new THREE.BoxGeometry(Math.max(cell.cw - .2, b.len + .5), .3, cell.cd - .4),
@@ -5429,12 +5597,12 @@ function pushStackToDb(st, stackIdx) {
       const cell = stackCell(s, si);
       if (!k || k.count === 0) return { html: `<b>${s.code} 第 ${si + 1} 垛</b><br><span class="tt-dim">空垛 · 点击查看库位</span>`,
         box: [WX(cell.x), .8, WZ(cell.z), cell.cw - .4, 1.4, cell.cd - .4] };
-      const sp = k.spec, h = k.count * bundleH(sp);
+      const sp = k.spec, h = pileHeight(sp, k.count);
       const np = k.bundles.filter(b => b.pending).length;
       return {
         html: `<b>${s.code} · 第 ${si + 1} 垛</b><br>${sp.name} · ${k.grade} · ${k.len}m<br>` +
           `${k.count} 捆 / 20 · ${k.count * sp.rods} 支${np ? ` · <span class="tt-dim">${np} 捆待核验</span>` : ''}<br>` +
-          `<span class="tt-dim">堆高 ${h.toFixed(2)}m / 立柱 3.0m · 最多 ${maxLayers(sp)} 层<br>炉号 ${k.heat} · 点击下钻</span>`,
+          `<span class="tt-dim">${pileRows(k.count, sp).length} 层 × 每层 ≤ ${pileAcross(sp)} 捆 · 堆高 ${h.toFixed(2)}m / 立柱 3.0m<br>炉号 ${k.heat} · 点击下钻</span>`,
         box: [WX(cell.x), h / 2 + .4, WZ(cell.z), Math.min(cell.cw, k.len + 1), h + .8, cell.cd],
       };
     }
@@ -5460,9 +5628,9 @@ function pushStackToDb(st, stackIdx) {
       const s = storages[res.b.slotId], k = s.stacks[res.b.stackIdx];
       const cell = stackCell(s, res.b.stackIdx);
       const Hb = bundleH(sp), W = bundleW(sp);
-      const layer = k ? k.bundles.indexOf(res.b) : 0;
-      const y = (view.level === 'stack' ? .3 : .45) + Math.max(0, layer) * Hb + Hb / 2;
-      hlBox(WX(cell.x), y, WZ(cell.z), res.b.len + .35, Hb + .25, W + .35);
+      const idx = k ? Math.max(0, k.bundles.indexOf(res.b)) : 0;
+      const p = res.b.pos || seatPos(sp, idx, res.b.id);
+      hlBox(WX(cell.x) + p.dx, p.y + Hb / 2, WZ(cell.z) + p.dz, res.b.len + .35, Hb + .25, W + .35);
     } else hlBox(...info.box);
     invTooltip.innerHTML = info.html;
     invTooltip.style.display = 'block';

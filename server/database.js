@@ -51,6 +51,25 @@ function migrate(db) {
       in_time  REAL,                    -- 垛内最早捆入库时间（仿真时钟秒，FIFO 用）
       PRIMARY KEY (slot_id, stack_no)
     );
+    -- 捆级三维落位：天车按垛内实际堆放落位后的具体坐标（每在库捆一行）
+    --   layer 层号（0=底层，自下而上）/ seat 层内座位号（座位网格固定，落定不挪位）
+    --   dx/dz = 捆心相对垛格中心偏移（米）；y = 捆底标高（米）；yaw = 微偏转（弧度）
+    -- 仿真在落料/倒垛/出库时增量同步；期初加载与重置时全量对齐（replace）
+    CREATE TABLE IF NOT EXISTS bundle_positions (
+      bundle_id  TEXT PRIMARY KEY,      -- 捆号（B-xxxx，与捆标签/捆级明细一致）
+      slot_id    INTEGER NOT NULL REFERENCES storage_slots(id),
+      stack_no   INTEGER NOT NULL CHECK (stack_no BETWEEN 1 AND ${STACKS_PER_SLOT}),
+      layer      INTEGER NOT NULL CHECK (layer >= 0),
+      seat       INTEGER NOT NULL CHECK (seat >= 0),
+      spec       TEXT,                  -- 规格名（冗余，便于外部系统直读）
+      len        REAL,                  -- 捆长（米，冗余）
+      dx         REAL NOT NULL DEFAULT 0,
+      y          REAL NOT NULL DEFAULT 0,
+      dz         REAL NOT NULL DEFAULT 0,
+      yaw        REAL NOT NULL DEFAULT 0,
+      put_time   REAL,                  -- 落位时刻（仿真时钟秒，期初为负值）
+      updated_at TEXT NOT NULL          -- 墙钟时间（ISO 字符串）
+    );
     -- 主应用（三维库区）数据表：库区 / 跨 / 库位 / 钢卷 / 调度任务
     CREATE TABLE IF NOT EXISTS app_warehouse (
       id                TEXT PRIMARY KEY,
@@ -306,6 +325,7 @@ export function seed(db) {
   const slots = generateSlots();
   const rnd = mulberry32(20260825);
   const tx = db.transaction(() => {
+    db.prepare('DELETE FROM bundle_positions').run();   // 捆级落位坐标随重建清空（外键依赖 storage_slots，须先删）
     db.prepare('DELETE FROM stacks').run();
     db.prepare('DELETE FROM storage_slots').run();
     db.prepare('DELETE FROM specs').run();
@@ -387,8 +407,8 @@ export function getSpecs(db) {
 
 /**
  * 更新某一垛（spec/count/pending/in_time），并同步库位状态。
- * 垛清零时强制清空 spec 与 pending；库位所有垛清零后状态置 free。
- * 垛不存在返回 null。
+ * 垛清零时强制清空 spec 与 pending，并删除该垛全部捆级落位坐标；
+ * 库位所有垛清零后状态置 free。垛不存在返回 null。
  */
 export function setStack(db, slotId, stackNo, patch = {}) {
   const cur = db.prepare('SELECT * FROM stacks WHERE slot_id=? AND stack_no=?').get(slotId, stackNo);
@@ -397,10 +417,67 @@ export function setStack(db, slotId, stackNo, patch = {}) {
   let count = patch.count !== undefined ? patch.count : cur.count;
   let pending = patch.pending !== undefined ? patch.pending : cur.pending;
   const in_time = patch.in_time !== undefined ? patch.in_time : cur.in_time;
-  if (!count || count <= 0) { spec = null; pending = 0; count = 0; }
+  if (!count || count <= 0) {
+    spec = null; pending = 0; count = 0;
+    db.prepare('DELETE FROM bundle_positions WHERE slot_id=? AND stack_no=?').run(slotId, stackNo);
+  }
   db.prepare('UPDATE stacks SET spec=?, count=?, pending=?, in_time=? WHERE slot_id=? AND stack_no=?')
     .run(spec, count, pending, in_time, slotId, stackNo);
   const total = db.prepare('SELECT COALESCE(SUM(count), 0) n FROM stacks WHERE slot_id=?').get(slotId).n;
   db.prepare("UPDATE storage_slots SET state=? WHERE id=?").run(total > 0 ? 'occupied' : 'free', slotId);
   return getSlot(db, slotId);
+}
+
+/* ================= 捆级三维落位（bundle_positions 表） ================= */
+
+/**
+ * 同步捆级落位坐标：upserts 增量写入（落料/倒垛落位），deletes 按捆号删除（出库吊走）；
+ * replace=true 时先清空全表再写入（期初加载/重置后的全量对齐）。返回 { upserted, deleted, total }。
+ * 行格式：{ bundleId, slotId, stackNo, layer, seat, spec?, len?, dx, y, dz, yaw, putTime? }
+ */
+export function syncBundlePositions(db, { replace = false, upserts = [], deletes = [] } = {}) {
+  const del = db.prepare('DELETE FROM bundle_positions WHERE bundle_id=?');
+  const ins = db.prepare(`INSERT INTO bundle_positions
+    (bundle_id, slot_id, stack_no, layer, seat, spec, len, dx, y, dz, yaw, put_time, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(bundle_id) DO UPDATE SET
+      slot_id=excluded.slot_id, stack_no=excluded.stack_no, layer=excluded.layer, seat=excluded.seat,
+      spec=excluded.spec, len=excluded.len, dx=excluded.dx, y=excluded.y, dz=excluded.dz, yaw=excluded.yaw,
+      put_time=excluded.put_time, updated_at=excluded.updated_at`);
+  const now = new Date().toISOString();
+  const tx = db.transaction(() => {
+    if (replace) db.prepare('DELETE FROM bundle_positions').run();
+    for (const id of deletes || []) if (id != null) del.run(id);
+    let n = 0;
+    for (const p of upserts || []) {
+      if (!p || !p.bundleId || p.slotId == null || !(p.stackNo >= 1)) continue;
+      ins.run(String(p.bundleId), p.slotId, p.stackNo | 0, Math.max(0, p.layer | 0), Math.max(0, p.seat | 0),
+        p.spec ?? null, p.len ?? null,
+        Number(p.dx) || 0, Number(p.y) || 0, Number(p.dz) || 0, Number(p.yaw) || 0,
+        p.putTime ?? null, now);
+      n++;
+    }
+    return n;
+  });
+  const upserted = tx();
+  return {
+    upserted,
+    deleted: (deletes || []).filter(id => id != null).length,
+    total: db.prepare('SELECT COUNT(*) n FROM bundle_positions').get().n,
+  };
+}
+
+/** 查询捆级落位坐标：可按 slotId / stackNo 过滤；返回 camelCase 行数组 */
+export function getBundlePositions(db, { slotId, stackNo } = {}) {
+  let sql = 'SELECT * FROM bundle_positions';
+  const cond = [], args = [];
+  if (slotId != null) { cond.push('slot_id=?'); args.push(slotId); }
+  if (stackNo != null) { cond.push('stack_no=?'); args.push(stackNo); }
+  if (cond.length) sql += ' WHERE ' + cond.join(' AND ');
+  sql += ' ORDER BY slot_id, stack_no, layer, seat';
+  return db.prepare(sql).all(...args).map(r => ({
+    bundleId: r.bundle_id, slotId: r.slot_id, stackNo: r.stack_no,
+    layer: r.layer, seat: r.seat, spec: r.spec, len: r.len,
+    dx: r.dx, y: r.y, dz: r.dz, yaw: r.yaw, putTime: r.put_time, updatedAt: r.updated_at,
+  }));
 }

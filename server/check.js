@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   openDb, seed, getInventory, getSlots, getSlot, setStack,
+  syncBundlePositions, getBundlePositions,
   STACKS_PER_SLOT, BUNDLES_PER_STACK,
 } from './database.js';
 
@@ -58,6 +59,35 @@ check('清零后垛 spec=null/pending=0', s.stacks[0].count === 0 && s.stacks[0]
 check('清零后库位状态回 free', s.state === 'free', s.state);
 check('写入不存在的垛返回 null', setStack(db, slotId, 99, { count: 1 }) === null, '');
 
+console.log('== 捆级三维落位（bundle_positions） ==');
+// 模拟天车落料：同垛连续落 5 捆，层内座位应按固定网格展开（每层并排数按规格自适应）
+const mk = (i) => ({
+  bundleId: `B-T${String(i).padStart(3, '0')}`, slotId, stackNo: 2,
+  layer: 0, seat: i, spec: '圆钢 Φ50', len: 6,
+  dx: 0.01 * (i % 3 - 1), y: 0.41, dz: 0.138 * (i - 1.5), yaw: 0.003, putTime: 100 + i,
+});
+let r = syncBundlePositions(db, { replace: true, upserts: [0, 1, 2, 3, 4].map(mk) });
+check('全量对齐写入 5 条落位坐标', r.upserted === 5 && r.total === 5, JSON.stringify(r));
+let rows = getBundlePositions(db, { slotId, stackNo: 2 });
+check('按库位+垛过滤查询命中 5 条', rows.length === 5 && rows[0].bundleId === 'B-T000', `${rows.length} 条`);
+check('坐标字段完整（层/座位/dx/y/dz/yaw/落位时刻）',
+  rows[0].layer === 0 && rows[0].seat === 0 && Math.abs(rows[0].y - 0.41) < 1e-9 && rows[0].putTime === 100
+  && rows[0].spec === '圆钢 Φ50', JSON.stringify(rows[0]));
+// 倒垛迁移：同捆换垛 upsert 覆盖（layer/seat/stack_no 更新，不产生重复行）
+syncBundlePositions(db, { upserts: [{ ...mk(9), bundleId: 'B-T000', stackNo: 3, layer: 1, seat: 2, y: 0.53 }] });
+rows = getBundlePositions(db, { slotId });
+check('倒垛迁移按捆号覆盖（总行数不变）', rows.length === 5, String(rows.length));
+const moved = rows.find(x => x.bundleId === 'B-T000');
+check('迁移后坐标更新（第 3 垛 第 2 层 第 3 位）', moved.stackNo === 3 && moved.layer === 1 && moved.seat === 2, JSON.stringify(moved));
+// 出库吊走：按捆号删除
+r = syncBundlePositions(db, { deletes: ['B-T000', 'B-T001', '不存在的捆'] });
+check('出库删除落位坐标（剩余 3 条）', r.total === 3, JSON.stringify(r));
+// 垛清零联动：setStack count=0 应清空该垛坐标
+syncBundlePositions(db, { upserts: [mk(7), mk(8)].map(p => ({ ...p, stackNo: 4 })) });
+setStack(db, slotId, 4, { count: 0 });
+check('垛清零联动清空该垛落位坐标', getBundlePositions(db, { slotId, stackNo: 4 }).length === 0, '');
+check('其余垛坐标不受影响', getBundlePositions(db, { slotId, stackNo: 2 }).length === 3, '');
+
 console.log('== 持久化（关闭后重开） ==');
 db.close();
 const db2 = openDb(dbPath);
@@ -66,6 +96,7 @@ check('重开后库位仍 91', inv2.slotCount === 91, String(inv2.slotCount));
 check('重开后初始库存仍存在', inv2.totalBundles > 0, String(inv2.totalBundles));
 const s2 = getSlot(db2, slotId);
 check('重开后写入内容已持久化', s2.stacks[0].count === 0 && s2.state === 'free', JSON.stringify({ count: s2.stacks[0].count, state: s2.state }));
+check('重开后捆级落位坐标已持久化（3 条）', getBundlePositions(db2, { slotId, stackNo: 2 }).length === 3, '');
 db2.close();
 rmSync(dir, { recursive: true, force: true });
 
