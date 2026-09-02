@@ -218,13 +218,13 @@ function buildRow(sec, d) {
   lab.className = 'lab';
   lab.textContent = d.label;
   row.appendChild(lab);
-  if (d.toggle) {   // 开关型参数（如监测跨）：0/1 渲染为按钮
+  if (d.toggle) {   // 开关型参数：0/1 渲染为按钮；未指定文案时回退「✓ 监测 / ✕ 不监测」
     const tog = document.createElement('button');
     tog.type = 'button';
     tog.className = 'tog';
     const paint = () => {
       const on = !!values[sec][d.key];
-      tog.textContent = on ? '✓ 监测' : '✕ 不监测';
+      tog.textContent = on ? (d.onText || '✓ 监测') : (d.offText || '✕ 不监测');
       tog.classList.toggle('on', on);
     };
     paint();

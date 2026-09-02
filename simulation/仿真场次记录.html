@@ -178,9 +178,9 @@ const delayCls = v => v == null ? 't-dim' : v <= 120 ? 'd-ok' : v <= 300 ? 'd-mi
 /* 调度参数中文标签（与沙盘 PARAM_DEFS 同源维护） */
 const SEC_NAMES = { robot: '机器狗', crane: '天车', truck: '货车', production: '生产节奏', placement: '归堆策略', abnormal: '异常注入' };
 const PARAM_LABELS = {
-  robot: { count: '机器狗数量(台)', speed: '行进速度(m/s)', scanTime: '扫码核验时间(秒)', chargeHours: '充满电时间(小时)', endurance: '满电续航(小时)', spanA: '监测A跨', spanB: '监测B跨', spanC: '监测C跨', lowBattery: '返航充电阈值(%)', fullBattery: '满电阈值(%)', interruptCharge: '充电打断阈值(%)' },
+  robot: { count: '机器狗数量(台)', chargerCount: '充电桩数量(个)', speed: '行进速度(m/s)', scanTime: '扫码核验时间(秒)', chargeHours: '充满电时间(小时)', endurance: '满电续航(小时)', spanA: '监测A跨', spanB: '监测B跨', spanC: '监测C跨', lowBattery: '返航充电阈值(%)', fullBattery: '满电阈值(%)', interruptCharge: '充电打断阈值(%)' },
   crane: { speed: '行进速度(m/s)', hoistTime: '吊取时间(秒)', lowerTime: '放下时间(秒)' },
-  truck: { speed: '行进速度(m/s)', minLoads: '每车最少吊数', maxLoads: '每车最多吊数', maxWait: '组车等待上限(秒)', mixedSpecPct: '混装车比例(%)', plateScanTime: '车牌识别时间(秒)', manifestTime: '运单吊取时间(秒)', verifyTime: '出场复验时间(秒)' },
+  truck: { speed: '行进速度(m/s)', minLoads: '每车最少吊数', maxLoads: '每车最多吊数', maxWaitEnabled: '启用组车等待上限', maxWait: '组车等待上限(秒)', mixedSpecPct: '混装车比例(%)', plateScanTime: '车牌识别时间(秒)', manifestTime: '运单吊取时间(秒)', verifyTime: '出场复验时间(秒)' },
   production: { inPerDay: '每日进厂车辆(辆/日)', outPerDay: '每日出厂车辆(辆/日)', dayHours: '日时长(小时)' },
   placement: {},   // 归堆权重项多，仅展示原始键
   abnormal: { scanFailPct: '扫码失败率(%)', manifestMismatchPct: '运单差异率(%)', verifyIssuePct: '复验异常率(%)' },

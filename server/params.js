@@ -13,10 +13,11 @@ export const PARAM_SCHEMA = [
   },
   {
     sec: 'truck', secLabel: '组车规则',
-    desc: '一车最少/最多吊数（同跨装卸，凑满或超时放行）；进厂车按规格整车配载，仅「混装车比例」的车混装第二种规格',
+    desc: '一车最少/最多吊数（同跨装卸，凑满即发车）；启用「组车等待上限」后，等待超时仍凑不满满最少吊数也按现有吊数放行，避免低峰期无车流动；进厂车按规格整车配载，仅「混装车比例」的车混装第二种规格',
     defs: [
       { key: 'minLoads',     label: '每车最少吊数', min: 2,   max: 10,  step: 1,   unit: '吊', def: 6 },
       { key: 'maxLoads',     label: '每车最多吊数', min: 4,   max: 16,  step: 1,   unit: '吊', def: 10 },
+      { key: 'maxWaitEnabled', label: '启用组车等待上限', min: 0, max: 1, step: 1, unit: '开/关', def: 1, toggle: true, onText: '✓ 启用', offText: '✕ 禁用' },
       { key: 'maxWait',      label: '组车等待上限', min: 30,  max: 600, step: 10,  unit: '秒', def: 150 },
       { key: 'mixedSpecPct', label: '混装车比例',   min: 0,   max: 100, step: 5,   unit: '%',  def: 25 },
       { key: 'plateScanTime', label: '车牌识别时间', min: 0.5, max: 8,  step: 0.1, unit: '秒', def: 2.0 },
@@ -42,9 +43,10 @@ export const PARAM_SCHEMA = [
   },
   {
     sec: 'robot', secLabel: '机器狗（扫码核验）',
-    desc: '台数（D-01 起编号，1-6 台）与监测范围：仅监测范围内由机器狗扫码核验，范围外免检直通；仅开启部分监测范围时，运输车辆与出入库作业均限定在监测范围内（如仅开「监测 A 跨」：所有车辆均前往一跨 A，库满/无货则暂缓待回补）；每跨用「起始/截止号区」配置跨内具体区域（1~33 号区，如 17~33=右侧中棒区域、18~25=中棒区域局部）；台数变更即时重建机队',
+    desc: '台数（D-01 起编号，1-6 台）与监测范围：仅监测范围内由机器狗扫码核验，范围外免检直通；仅开启部分监测范围时，运输车辆与出入库作业均限定在监测范围内（如仅开「监测 A 跨」：所有车辆均前往一跨 A，库满/无货则暂缓待回补）；每跨用「起始/截止号区」配置跨内具体区域（1~33 号区，如 17~33=右侧中棒区域、18~25=中棒区域局部）；台数变更即时重建机队；充电桩集中布置在 A 跨北端厂房外，可设 1-3 个',
     defs: [
       { key: 'count',       label: '机器狗数量', min: 1,   max: 6,  step: 1,   unit: '台', def: 3 },
+      { key: 'chargerCount', label: '充电桩数量', min: 1, max: 3, step: 1, unit: '个', def: 1 },
       { key: 'speed',       label: '行进速度',     min: 1,   max: 10, step: 0.1, unit: 'm/s',  def: 5.0 },
       { key: 'scanTime',    label: '扫码核验时间', min: 0.5, max: 60, step: 0.1, unit: '秒',   def: 60 },
       { key: 'endurance',   label: '满电续航',     min: 0.5, max: 8,  step: 0.5, unit: '小时', def: 3 },
