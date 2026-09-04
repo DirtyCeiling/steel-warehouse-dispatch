@@ -14,7 +14,7 @@
     "db:test": "node server/check.js"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
+    "better-sqlite3": "12.11.1",
     "three": "^0.170.0"
   }
 }

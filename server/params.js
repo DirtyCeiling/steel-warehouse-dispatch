@@ -13,12 +13,10 @@ export const PARAM_SCHEMA = [
   },
   {
     sec: 'truck', secLabel: '组车规则',
-    desc: '一车最少/最多吊数（同跨装卸，凑满即发车）；启用「组车等待上限」后，等待超时仍凑不满满最少吊数也按现有吊数放行，避免低峰期无车流动；进厂车按规格整车配载，仅「混装车比例」的车混装第二种规格',
+    desc: '一车最少/最多吊数（同跨装卸）：出库一单一车，物流订单全部配捆装满才发车（不设等待超时）；入库凑满最少吊数即发车；进厂车按规格整车配载，仅「混装车比例」的车混装第二种规格',
     defs: [
       { key: 'minLoads',     label: '每车最少吊数', min: 2,   max: 10,  step: 1,   unit: '吊', def: 6 },
       { key: 'maxLoads',     label: '每车最多吊数', min: 4,   max: 16,  step: 1,   unit: '吊', def: 10 },
-      { key: 'maxWaitEnabled', label: '启用组车等待上限', min: 0, max: 1, step: 1, unit: '开/关', def: 1, toggle: true, onText: '✓ 启用', offText: '✕ 禁用' },
-      { key: 'maxWait',      label: '组车等待上限', min: 30,  max: 600, step: 10,  unit: '秒', def: 150 },
       { key: 'mixedSpecPct', label: '混装车比例',   min: 0,   max: 100, step: 5,   unit: '%',  def: 25 },
       { key: 'plateScanTime', label: '车牌识别时间', min: 0.5, max: 8,  step: 0.1, unit: '秒', def: 2.0 },
       { key: 'manifestTime',  label: '运单吊取时间', min: 0.3, max: 6,  step: 0.1, unit: '秒', def: 1.2 },
