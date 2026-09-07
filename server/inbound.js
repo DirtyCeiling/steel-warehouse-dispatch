@@ -7,13 +7,37 @@
 // 复算各评分维度，人工选择在某维度上更优则该维度权重 +STEP、更劣则 -STEP，
 // 按 schema 夹取——下一次同类取舍时算法即偏向管理工的选择。
 import {
-  STACKS_PER_SLOT, BUNDLES_PER_STACK, getSimParams, setSimParams, SPEC_FAMILY,
+  getSimParams, setSimParams, SPEC_FAMILY, stackCap,
 } from './database.js';
 import { PARAM_SCHEMA } from './params.js';
 
 export const SPAN_LABELS = ['A跨', 'B跨', 'C跨', '整跨合并'];
 const MILLS = ['承德建龙', '新兴铸管', '唐山瑞丰', '敬业集团', '首钢迁安', '石钢京诚'];
 const PROVINCES = ['冀', '京', '津', '鲁', '豫', '晋', '辽', '陕', '蒙'];
+
+/* ================= 监测范围（与仿真沙盘 robot 参数同口径） =================
+ * 调度参数 robot 段配置监测跨与跨内号区范围：监测范围为全库真子集时，
+ * 入库落点只在监测范围内推荐/放行（沙盘同规则：范围外物资不入库）；全关 = 全库免检。 */
+function monitoredScopesOf(W) {
+  const r = W.robot || {};
+  const mk = (on, si) => {
+    if (!on) return null;
+    const f = +r['from' + 'ABC'[si]] || 1, t = +r['to' + 'ABC'[si]] || 33;
+    return { span: si, lo: Math.max(1, Math.min(f, t)), hi: Math.min(33, Math.max(f, t)) };
+  };
+  return [mk(r.spanA, 0), mk(r.spanB, 1), mk(r.spanC, 2)].filter(Boolean);
+}
+function regionRestrictedOf(ms) {   // 监测范围是否为全库真子集（部分跨关闭，或任一跨限定为跨内号区范围）
+  if (ms.length < 3) return ms.length > 0;
+  return ms.some(m => m.lo > 1 || m.hi < 33);
+}
+function slotInScope(st, ms) {      // 整跨合并位纵贯 A~C：任一监测跨的范围覆盖其号区即算
+  if (st.merged || st.span >= 3) return ms.some(m => st.area >= m.lo && st.area <= m.hi);
+  return ms.some(m => m.span === st.span && st.area >= m.lo && st.area <= m.hi);
+}
+function scopeWarnText(ms) {
+  return ms.map(m => `${SPAN_LABELS[m.span]}${m.lo > 1 || m.hi < 33 ? `（${m.lo}~${m.hi} 号区）` : ''}`).join('、');
+}
 
 /* 车辆物流数据源（LogisticsData_Sim，独立程序）：进厂确认从这里取下一辆进厂车，
  * 车牌/运单/配载与仿真沙盘消费的是同一条事件流；数据源离线时回退本地随机生成。 */
@@ -33,13 +57,14 @@ function setFeedCursor(db, seq) {
     .run(FEED_CONSUMER, seq);
 }
 
-/** 从物流数据源取下一辆未消费的进厂车事件（按本页独立游标）；取不到返回 null */
-async function nextSourceVehicle(db) {
-  if (typeof fetch !== 'function') return null;
-  const res = await fetch(`${LOGI_API}/api/events?type=in&after=${getFeedCursor(db)}&limit=1`,
+async function fetchSourceEvents(after) {
+  const res = await fetch(`${LOGI_API}/api/events?type=in&after=${after}&limit=1`,
     { signal: AbortSignal.timeout(1500) });
   if (!res.ok) throw new Error('HTTP ' + res.status);
-  const r = await res.json();
+  return res.json();
+}
+
+function readSourceEvent(r) {
   const ev = (r.events || [])[0];
   if (!ev) return { exhausted: true, lastSeq: r.lastSeq };
   const groups = (ev.manifest || [])        // 事件负载已扁平展开（ev.plate / ev.manifest ...）
@@ -47,6 +72,18 @@ async function nextSourceVehicle(db) {
     .filter(g => SPEC_FAMILY[g.spec] && g.bundles > 0);
   if (!groups.length) return { exhausted: false, skip: ev };   // 空配载/契约外规格：调用方跳过后推进游标
   return { event: ev, groups, plate: ev.plate, waybill: ev.waybill, mill: ev.mill };
+}
+
+/** 从物流数据源取下一辆未消费的进厂车事件（按本页独立游标）；取不到返回 null */
+async function nextSourceVehicle(db) {
+  if (typeof fetch !== 'function') return null;
+  let r = await fetchSourceEvents(getFeedCursor(db));
+  // 数据源事件流被重置（流长度回退到游标之前）：游标自愈重新对齐流头（与沙盘 ?feed 消费端同规则）
+  if ((r.lastSeq ?? 0) < getFeedCursor(db)) {
+    setFeedCursor(db, 0);
+    r = await fetchSourceEvents(0);
+  }
+  return readSourceEvent(r);
 }
 
 /* 「调度参数」schema 中 placement 段的中文标签（反馈留痕/前端展示用） */
@@ -113,8 +150,9 @@ function analyzeYard(yard, spec) {
  * comps 各维度独立记录，供人工调整后的权重学习对比。
  */
 function scoreStack(W, st, k, ctx, spec, spanHint) {
+  const cap = stackCap(spec);                                    // 物理垛容（与沙盘 stackCap 同口径，Φ200/400=30、Φ600=12）
   const fill = k.count;
-  if (fill >= BUNDLES_PER_STACK || k.pending > 0) return null;   // 满垛/待扫码垛不作落点
+  if (fill >= cap || k.pending > 0) return null;                 // 满垛/待扫码垛不作落点
   if (fill > 0 && k.spec !== spec) return null;                  // 硬规则：同垛不混异规格
   const { an, nearOf } = ctx;
   const agg = an.get(st.id);
@@ -124,8 +162,8 @@ function scoreStack(W, st, k, ctx, spec, spanHint) {
   };
   const parts = [];
   if (fill > 0) {                                                // ① 同规格归堆（按填充率加励）
-    comps.sameSpec = W.sameSpecBase + Math.round(W.sameSpecFill * fill / BUNDLES_PER_STACK);
-    parts.push(`同规格归堆 ${comps.sameSpec}（${fill}/${BUNDLES_PER_STACK}）`);
+    comps.sameSpec = W.sameSpecBase + Math.round(W.sameSpecFill * fill / cap);
+    parts.push(`同规格归堆 ${comps.sameSpec}（${fill}/${cap}）`);
   } else {                                                       // ② 空垛兜底（空垛多则惜用）
     comps.empty = Math.max(0, W.emptyBase - agg.emptyN * W.emptyPenalty);
     parts.push(`空垛兜底 ${comps.empty}`);
@@ -157,7 +195,9 @@ function scoreAt(db, W, yard, spec, slotId, stackNo) {
  * 贪心取最优候选垛，装满后再荐次优（同车同规格集中码放、垛满另荐），返回分配数组。
  */
 export function recommendAllocation(db, spec, bundles) {
-  const W = getSimParams(db).placement;
+  const P = getSimParams(db);
+  const W = P.placement;
+  const ms = monitoredScopesOf(P), restricted = regionRestrictedOf(ms);   // 监测范围受限：落点只在范围内
   const yard = loadYard(db);
   const ctx = analyzeYard(yard, spec);
   const out = [];
@@ -167,10 +207,11 @@ export function recommendAllocation(db, spec, bundles) {
     const cands = [];
     for (const st of yard) {
       if (st.state === 'locked') continue;
+      if (restricted && !slotInScope(st, ms)) continue;
       for (const k of st.stacks) {
         const r = scoreStack(W, st, k, ctx, spec, null);
         if (!r) continue;
-        const free = BUNDLES_PER_STACK - k.count - (claimed.get(`${st.id}:${k.stack_no}`) || 0);
+        const free = stackCap(spec) - k.count - (claimed.get(`${st.id}:${k.stack_no}`) || 0);
         if (free <= 0) continue;
         cands.push({ st, k, ...r, free });
       }
@@ -192,20 +233,24 @@ export function recommendAllocation(db, spec, bundles) {
 
 /** 候选落点列表（调整下拉框用）：按综合分降序，含剩余容量与评分分解 */
 export function listCandidates(db, spec, bundles, limit = 20) {
-  const W = getSimParams(db).placement;
+  const P = getSimParams(db);
+  const W = P.placement;
+  const ms = monitoredScopesOf(P), restricted = regionRestrictedOf(ms);
   const yard = loadYard(db);
   const ctx = analyzeYard(yard, spec);
   const cands = [];
   for (const st of yard) {
     if (st.state === 'locked') continue;
+    if (restricted && !slotInScope(st, ms)) continue;
     for (const k of st.stacks) {
       const r = scoreStack(W, st, k, ctx, spec, null);
       if (!r) continue;
-      const free = BUNDLES_PER_STACK - k.count;
+      const free = stackCap(spec) - k.count;
       if (free <= 0) continue;
       cands.push({
         slotId: st.id, stackNo: k.stack_no, code: st.code, zone: st.zone,
-        area: st.area, spanLabel: st.merged ? SPAN_LABELS[3] : SPAN_LABELS[st.span],
+        area: st.area, span: st.span, merged: !!st.merged,
+        spanLabel: st.merged ? SPAN_LABELS[3] : SPAN_LABELS[st.span],
         score: r.score, parts: r.parts, free, enough: free >= bundles,
       });
     }
@@ -292,11 +337,11 @@ function slotCodeMap(db) {
   return new Map(db.prepare('SELECT id, code FROM storage_slots').all().map(s => [s.id, s.code]));
 }
 
-/** 单车完整视图（loads 含推荐值与最终值；最终为空表示未调整、取推荐） */
-export function getVehicleView(db, id) {
+/** 单车完整视图（loads 含推荐值与最终值；最终为空表示未调整、取推荐）；
+ *  codes 传入本请求已建好的 slotId->code 映射可免逐车重复全表建表 */
+export function getVehicleView(db, id, codes = slotCodeMap(db)) {
   const v = db.prepare('SELECT * FROM inbound_vehicles WHERE id=?').get(id);
   if (!v) return null;
-  const codes = slotCodeMap(db);
   const loads = db.prepare('SELECT * FROM inbound_loads WHERE vehicle_id=? ORDER BY id').all(id)
     .map(l => ({
       id: l.id, spec: l.spec, bundles: l.bundles, adjusted: !!l.adjusted,
@@ -310,6 +355,7 @@ export function getVehicleView(db, id) {
   return {
     id: v.id, plate: v.plate, waybill: v.waybill, mill: v.mill,
     arriveTime: v.arrive_time, state: v.state, ...(v.confirmed_time ? { confirmedTime: v.confirmed_time } : {}),
+    ...(v.departed_time ? { departedTime: v.departed_time } : {}),
     bundles: loads.reduce((n, l) => n + l.bundles, 0),
     loads,
   };
@@ -320,8 +366,15 @@ function safeParse(json, fallback = []) {
 }
 
 export function listInboundVehicles(db, limit = 25) {
+  const codes = slotCodeMap(db);   // 整批共用一份码表，避免逐车重复全表扫描
   return db.prepare('SELECT id FROM inbound_vehicles ORDER BY id DESC LIMIT ?').all(limit)
-    .map(r => getVehicleView(db, r.id));
+    .map(r => getVehicleView(db, r.id, codes));
+}
+
+/** 批量取车辆视图（车辆记录页分页接口用）：一次码表 + 逐车查详情 */
+export function listVehicleViews(db, ids) {
+  const codes = slotCodeMap(db);
+  return ids.map(id => getVehicleView(db, id, codes)).filter(Boolean);
 }
 
 /** 组内已占容量统计：(slotId,stackNo) -> 已计划捆数；excludeLoadId 用于换垛时剔除自身旧计划 */
@@ -337,16 +390,21 @@ function buildClaims(db, vehicleId, excludeLoadId = 0) {
   return claims;
 }
 
-/** 校验某组落在指定垛位是否合法（库位可用、同垛单规格、容量含同车已计划量） */
-function validateTarget(yard, claims, spec, slotId, stackNo, bundles) {
+/** 校验某组落在指定垛位是否合法（库位可用、监测范围、同垛单规格、容量含同车已计划量） */
+function validateTarget(db, yard, claims, spec, slotId, stackNo, bundles) {
   const st = yard.find(s => s.id === slotId);
   if (!st) return '库位不存在';
   if (st.state === 'locked') return `库位 ${st.code} 已被任务锁定`;
+  const P = getSimParams(db);
+  const ms = monitoredScopesOf(P);
+  if (regionRestrictedOf(ms) && !slotInScope(st, ms)) {
+    return `库位 ${st.code} 不在监测范围内（当前仅监测 ${scopeWarnText(ms)}），不安排作业`;
+  }
   const k = st.stacks.find(x => x.stack_no === stackNo);
   if (!k) return `库位 ${st.code} 无第 ${stackNo} 垛`;
   if (k.pending > 0) return `库位 ${st.code} 第${stackNo}垛待扫码核验，暂不可作落点`;
   if (k.count > 0 && k.spec !== spec) return `库位 ${st.code} 第${stackNo}垛已有 ${k.spec}（同垛不混异规格）`;
-  const free = BUNDLES_PER_STACK - k.count - (claims.get(`${slotId}:${stackNo}`) || 0);
+  const free = stackCap(spec) - k.count - (claims.get(`${slotId}:${stackNo}`) || 0);
   if (bundles > free) return `库位 ${st.code} 第${stackNo}垛容量不足（余 ${Math.max(0, free)} 捆 < ${bundles} 捆）`;
   return null;
 }
@@ -360,7 +418,7 @@ export function adjustLoad(db, vehicleId, loadId, slotId, stackNo) {
   if (!v || !l) return { error: '车辆或分配组不存在' };
   if (v.state !== 'pending') return { error: '该车已确认下发，不可再调整' };
   const yard = loadYard(db);
-  const err = validateTarget(yard, buildClaims(db, vehicleId, loadId), l.spec, slotId, stackNo, l.bundles);
+  const err = validateTarget(db, yard, buildClaims(db, vehicleId, loadId), l.spec, slotId, stackNo, l.bundles);
   if (err) return { error: err };
   db.prepare('UPDATE inbound_loads SET slot_id=?, stack_no=?, adjusted=1 WHERE id=?').run(slotId, stackNo, loadId);
   return { vehicle: getVehicleView(db, vehicleId) };
@@ -396,7 +454,7 @@ export function confirmVehicle(db, vehicleId) {
 
   const claims = new Map();
   for (const l of loads) {
-    const err = validateTarget(yard, claims, l.spec, l.slot_id ?? l.rec_slot_id, l.stack_no ?? l.rec_stack_no, l.bundles);
+    const err = validateTarget(db, yard, claims, l.spec, l.slot_id ?? l.rec_slot_id, l.stack_no ?? l.rec_stack_no, l.bundles);
     if (err) return { error: `${l.spec} ×${l.bundles}：${err}` };
     const key = `${l.slot_id ?? l.rec_slot_id}:${l.stack_no ?? l.rec_stack_no}`;
     claims.set(key, (claims.get(key) || 0) + l.bundles);
@@ -450,16 +508,62 @@ export function deleteVehicle(db, vehicleId) {
   return { ok: true };
 }
 
+/* ================= 超时自动确认 =================
+ * 管理工长时间未确认的待确认车辆按当前推荐/调整方案自动确认下发
+ * （时限 = 调度参数 production.autoConfirmMin 分钟，0 = 关闭），
+ * 避免无人值守时确认队列积压、入库闭环卡住。 */
+
+/** 扫描并自动确认全部超时待确认车辆：返回本次处理结果 [{id, plate?, waybill?, error?}] */
+export function autoConfirmExpired(db) {
+  const minutes = Math.round(Number(getSimParams(db).production.autoConfirmMin) || 0);
+  if (!(minutes > 0)) return [];
+  const cutoff = new Date(Date.now() - minutes * 60000).toISOString();   // arrive_time 为 ISO 串，可字典序比较
+  const ids = db.prepare(
+    "SELECT id FROM inbound_vehicles WHERE state='pending' AND arrive_time <= ? ORDER BY id")
+    .all(cutoff).map(r => r.id);
+  return ids.map(id => {
+    const r = confirmVehicle(db, id);
+    return r.error
+      ? { id, error: r.error }
+      : { id, plate: r.vehicle.plate, waybill: r.vehicle.waybill };
+  });
+}
+
+/* ================= 确认单 -> 沙盘执行（闭环通道） =================
+ * 沙盘消费同一条物流事件流建入库任务时，按 车牌+运单 匹配已确认分配单，
+ * 按管理工确认的最终落点执行卸货；卸毕由沙盘回传 departed_time 台账闭环。 */
+
+/** 沙盘按车牌+运单查询已确认（或已完成）的进厂车分配单：命中返回车辆视图，未确认/不存在返回 null */
+export function matchConfirmedVehicle(db, plate, waybill) {
+  if (!plate || !waybill) return null;
+  const r = db.prepare(`
+    SELECT id FROM inbound_vehicles
+    WHERE plate=? AND waybill=? AND state IN ('confirmed','completed')
+    ORDER BY id DESC LIMIT 1`).get(plate, waybill);
+  return r ? getVehicleView(db, r.id) : null;
+}
+
+/** 沙盘回传：该车卸货完毕离场（台账生命周期 pending -> confirmed -> completed） */
+export function completeVehicle(db, vehicleId) {
+  const v = db.prepare('SELECT * FROM inbound_vehicles WHERE id=?').get(vehicleId);
+  if (!v) return { error: '车辆不存在' };
+  if (v.state === 'pending') return { error: '该车尚未确认，不能标记作业完成' };
+  if (v.state !== 'completed') {
+    db.prepare("UPDATE inbound_vehicles SET state='completed', departed_time=? WHERE id=?").run(nowIso(), vehicleId);
+  }
+  return { vehicle: getVehicleView(db, vehicleId) };
+}
+
 /* ================= 人工反馈统计（算法优化效果） ================= */
 
 export function feedbackStats(db, recentLimit = 12) {
   const totals = db.prepare(`
     SELECT COUNT(DISTINCT v.id)                          AS vehicles,
            COUNT(l.id)                                   AS groups,
-           COALESCE(SUM(l.adjusted AND v.state='confirmed'), 0) AS adjusted
+           COALESCE(SUM(l.adjusted AND v.state <> 'pending'), 0) AS adjusted
     FROM inbound_vehicles v
     LEFT JOIN inbound_loads l ON l.vehicle_id = v.id
-    WHERE v.state = 'confirmed'`).get();
+    WHERE v.state IN ('confirmed','completed')`).get();
   const recent = db.prepare(
     'SELECT * FROM placement_feedback ORDER BY id DESC LIMIT ?').all(recentLimit)
     .map(r => ({

@@ -5,9 +5,10 @@
 // 同时自动启动库存数据库 API（127.0.0.1:3001）：沙盘/页面期初数据从数据库加载、
 // 确认与参数写回，两端口需同时在线——用本命令一站式拉起（npm run sim）。
 import http from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { join, normalize, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { brotliCompressSync, gzipSync } from 'node:zlib';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.SIM_PORT || 5199);
@@ -22,6 +23,8 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
 };
+// 可压缩类型：单文件页面体积大（沙盘 300KB+ / three.inline.js 690KB），br/gzip 后传输量降一个量级
+const COMPRESSIBLE = new Set(['.html', '.js', '.mjs', '.css', '.json', '.svg']);
 
 // 页面短路径 -> 实际文件（其余路径按 simulation 目录内文件解析）
 const PAGES = {
@@ -43,15 +46,52 @@ const PAGES = {
   '/params.html': '/调度参数.html',
 };
 
+/* 静态文件缓存：路径 -> { mtimeMs, size, etag, raw, br, gz }
+ * 原文 + 预压缩各存一份（合计约几 MB），按 mtime+size 失效——
+ * 免去每次请求的磁盘读取与重复压缩；开发中改文件即时生效。 */
+const fileCache = new Map();
+async function loadFile(file) {
+  const st = await stat(file);
+  const hit = fileCache.get(file);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit;
+  const raw = await readFile(file);
+  const compressible = COMPRESSIBLE.has(extname(file)) && raw.length > 1024;
+  const entry = {
+    mtimeMs: st.mtimeMs,
+    size: st.size,
+    etag: `W/"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"`,
+    raw,
+    br: compressible ? brotliCompressSync(raw) : null,
+    gz: compressible ? gzipSync(raw) : null,
+  };
+  fileCache.set(file, entry);
+  return entry;
+}
+
 http.createServer(async (req, res) => {
   const url = decodeURIComponent(new URL(req.url, 'http://x').pathname);
   const target = PAGES[url] || url;
   const file = normalize(join(ROOT, target));
   if (file !== ROOT && !file.startsWith(ROOT + '\\') && !file.startsWith(ROOT + '/')) { res.writeHead(403); return res.end('Forbidden'); }
   try {
-    const data = await readFile(file);
-    res.writeHead(200, { 'Content-Type': MIME[extname(file)] || 'application/octet-stream' });
-    res.end(data);
+    const f = await loadFile(file);
+    // 协商缓存：ETag 命中直接 304，刷新页面零重传
+    if (req.headers['if-none-match'] === f.etag) {
+      res.writeHead(304, { ETag: f.etag });
+      return res.end();
+    }
+    const base = { 'Content-Type': MIME[extname(file)] || 'application/octet-stream', ETag: f.etag };
+    // 内容协商：优先 brotli，其次 gzip；预压缩产物直接发送（不再按请求即时压缩）
+    const ae = String(req.headers['accept-encoding'] || '');
+    let body = f.raw, headers = base;
+    if (ae.includes('br') && f.br) {
+      body = f.br; headers = { ...base, 'Content-Encoding': 'br', Vary: 'Accept-Encoding' };
+    } else if (ae.includes('gzip') && f.gz) {
+      body = f.gz; headers = { ...base, 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' };
+    }
+    headers['Content-Length'] = body.length;
+    res.writeHead(200, headers);
+    res.end(body);
   } catch {
     res.writeHead(404); res.end('Not Found');
   }

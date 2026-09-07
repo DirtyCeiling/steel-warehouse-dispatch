@@ -5,13 +5,14 @@ import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import {
   openDb, seed, getInventory, getSlots, getSlot, getSpecs, setStack,
-  syncBundlePositions, getBundlePositions,
+  syncBundlePositions, getBundlePositions, getSeedSlots,
   getAppData, seedAppData, createTask, updateTaskStatus, getSimParams, setSimParams, DB_PATH,
 } from './database.js';
 import { PARAM_SCHEMA } from './params.js';
 import {
-  spawnIncomingVehicle, listInboundVehicles, getVehicleView,
+  spawnIncomingVehicle, listInboundVehicles, getVehicleView, listVehicleViews,
   adjustLoad, confirmVehicle, deleteVehicle, listCandidates, feedbackStats,
+  matchConfirmedVehicle, completeVehicle, autoConfirmExpired,
 } from './inbound.js';
 
 const HOST = process.env.HOST || '127.0.0.1';
@@ -53,7 +54,12 @@ export function startServer({ host = HOST, port = PORT } = {}) {
       if (req.method === 'OPTIONS') return json(res, 204, {});
       if (req.method === 'GET' && p === '/api/health') return json(res, 200, { ok: true, db: DB_PATH });
       if (req.method === 'GET' && p === '/api/inventory') return json(res, 200, getInventory(db));
-      if (req.method === 'GET' && p === '/api/slots') return json(res, 200, { slots: getSlots(db) });
+      // ?variant=seed：期初种子分布（纯函数重建，与 /api/slots 行形状一致）——
+      // 沙盘 ?feed=all 全量回放以此为期初，避免在数据库当前值上重放历史事件导致重复计数
+      if (req.method === 'GET' && p === '/api/slots') {
+        if (url.searchParams.get('variant') === 'seed') return json(res, 200, { slots: getSeedSlots() });
+        return json(res, 200, { slots: getSlots(db) });
+      }
       if (req.method === 'GET' && p === '/api/specs') return json(res, 200, getSpecs(db));
 
       // 调度规划参数：主系统「调度参数」页与仿真沙盘共用（含 schema，前端按此渲染调节控件）
@@ -102,6 +108,16 @@ export function startServer({ host = HOST, port = PORT } = {}) {
         const spec = url.searchParams.get('spec') || '';
         const bundles = Math.max(1, Number(url.searchParams.get('bundles')) || 1);
         return json(res, 200, { candidates: listCandidates(db, spec, bundles) });
+      }
+      // 确认单 -> 沙盘执行闭环：沙盘按车牌+运单匹配已确认分配单（未命中返回 null，回退本地推荐）
+      if (req.method === 'GET' && p === '/api/inbound/match') {
+        const v = matchConfirmedVehicle(db, url.searchParams.get('plate') || '', url.searchParams.get('waybill') || '');
+        return json(res, 200, v);
+      }
+      const mUnload = p.match(/^\/api\/inbound\/(\d+)\/unload$/);
+      if (mUnload && req.method === 'POST') {
+        const r = completeVehicle(db, +mUnload[1]);
+        return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r);
       }
       const mLoad = p.match(/^\/api\/inbound\/(\d+)\/loads\/(\d+)$/);
       if (req.method === 'PUT' && mLoad) {
@@ -155,8 +171,7 @@ export function startServer({ host = HOST, port = PORT } = {}) {
         query += ' ORDER BY id DESC LIMIT ? OFFSET ?';
         params.push(limit, offset);
 
-        const vehicles = db.prepare(query).all(...params)
-          .map(r => getVehicleView(db, r.id));
+        const vehicles = listVehicleViews(db, db.prepare(query).all(...params).map(r => r.id));
 
         return json(res, 200, { vehicles, total, limit, offset });
       }
@@ -207,9 +222,32 @@ export function startServer({ host = HOST, port = PORT } = {}) {
     server.once('error', e => reject(e));
     server.listen(port, host, () => {
       console.log(`[库存数据库] 已启动：http://${host}:${port}  （库文件 ${DB_PATH}）`);
+      startAutoConfirmTimer(db);
       resolve(server);
     });
   });
+}
+
+/** 进厂确认超时自动下发：每 15s 扫一次待确认车辆，超时（默认 5 分钟，可调 / 0 关闭）按推荐方案确认。
+ *  确认失败（如库位被任务占用）保持待确认并只记一次日志，避免刷屏；车辆回到可确认状态即自动放行。 */
+function startAutoConfirmTimer(db) {
+  const failed = new Set();
+  const timer = setInterval(() => {
+    try {
+      for (const r of autoConfirmExpired(db)) {
+        if (r.error) {
+          if (!failed.has(r.id)) console.log(`[进厂确认] 车辆 #${r.id} 超时自动确认失败：${r.error}`);
+          failed.add(r.id);
+        } else {
+          failed.delete(r.id);
+          console.log(`[进厂确认] 车辆 #${r.id}（${r.plate} / ${r.waybill}）超时未确认，已按推荐方案自动确认下发`);
+        }
+      }
+    } catch (e) {
+      console.error('[进厂确认] 超时自动确认异常：', e && e.message || e);
+    }
+  }, 15000);
+  timer.unref();   // 不阻塞进程退出（测试环境起停服务时）
 }
 
 // 直接运行本文件则启动服务（跨平台判断：import.meta.url 与 argv[1] 转成同一 file:// 形式比较）

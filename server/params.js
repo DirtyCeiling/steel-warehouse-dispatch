@@ -5,10 +5,11 @@
 export const PARAM_SCHEMA = [
   {
     sec: 'production', secLabel: '生产节奏',
-    desc: '每日进厂 / 出厂车辆数，订单全天均匀铺开（不一次性下完）',
+    desc: '每日进厂 / 出厂车辆数，订单全天均匀铺开（不一次性下完）；进厂确认页超时未确认的车辆按推荐方案自动确认下发（0 = 关闭）',
     defs: [
       { key: 'inPerDay',  label: '每日进厂车辆', min: 1, max: 600, step: 1, unit: '辆/日', def: 150 },
       { key: 'outPerDay', label: '每日出厂车辆', min: 1, max: 600, step: 1, unit: '辆/日', def: 100 },
+      { key: 'autoConfirmMin', label: '确认超时自动下发', min: 0, max: 60, step: 1, unit: '分钟', def: 5 },
     ],
   },
   {
@@ -62,9 +63,10 @@ export const PARAM_SCHEMA = [
   },
   {
     sec: 'crane', secLabel: '天车（吊运装卸）',
-    desc: '6 台（每跨 2 台，TC-A1~TC-C2）：行进速度 / 吊取 / 放下耗时',
+    desc: '6 台（每跨 2 台，TC-A1~TC-C2）：行进速度（大车）/ 小车运行速度 / 吊取 / 放下耗时',
     defs: [
       { key: 'speed',     label: '行进速度', min: 0.5, max: 10, step: 0.1, unit: 'm/s', def: 4.0 },
+      { key: 'trolleySpeed', label: '小车运行速度', min: 0.2, max: 4, step: 0.1, unit: 'm/s', def: 1.0 },
       { key: 'hoistTime', label: '吊取时间', min: 0.5, max: 180, step: 0.1, unit: '秒', def: 2.0 },
       { key: 'lowerTime', label: '放下时间', min: 0.5, max: 180, step: 0.1, unit: '秒', def: 1.8 },
     ],

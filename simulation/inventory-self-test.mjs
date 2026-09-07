@@ -74,14 +74,14 @@ console.log('== 阶段二：捆级库存快照 ==');
 const B = dbg.bundles;
 const SPECS = dbg.specs;
 const SPECS_NAMES = SPECS.map(s => s.name);
-check('库存捆数在合理区间', B.length >= 800 && B.length <= 2600, B.length + ' 捆');
+check('库存捆数在合理区间', B.length >= 20000 && B.length <= 55000, B.length + ' 捆');
 check('捆号唯一且格式 B-xxxx', new Set(B.map(b => b.id)).size === B.length && /^B-\d{4}$/.test(B[0].id));
 check('每捆字段完整（钢种/长度/直径/支数/吨位/入库时间/二维码）',
   B.every(b => b.grade && b.len > 0 && b.rods > 0 && b.wt > 0 && b.inDay && b.inTime && b.qr.includes(b.id)));
 check('长度/钢种/支数与所属规格定义一致',
   B.every(b => SPECS[b.specIdx].lengths.includes(b.len) && SPECS[b.specIdx].grades.includes(b.grade)
     && b.rods === SPECS[b.specIdx].rods));
-check('每垛捆数 1..20 且垛内规格/钢种/长度一致',
+check('每垛捆数 1..400 且垛内规格/钢种/长度一致',
   (() => {
     const stMap = new Map();
     for (const b of B) {
@@ -92,7 +92,7 @@ check('每垛捆数 1..20 且垛内规格/钢种/长度一致',
       st.layers.push(b.layer);
     }
     for (const [, st] of stMap) {
-      if (st.n > 20) return false;
+      if (st.n > 400) return false;
       if (st.layers.some((l, i) => l !== i)) return false;   // 层号 = 垛内序号
     }
     return true;

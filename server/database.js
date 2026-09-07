@@ -1,5 +1,5 @@
 // 本地库存数据库（Node + SQLite / better-sqlite3）
-// 存储钢厂棒材库区库存/库位数据：库位 -> 8 垛 -> 每垛 20 捆
+// 存储钢厂棒材库区库存/库位数据：库位 -> 8 垛 -> 每垛 ≤ 400 捆（限高收窄）
 // 另含主应用（三维库区）数据：库区/跨/库位/钢卷/调度任务
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +11,7 @@ import { paramDefaults, clampParam } from './params.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export const STACKS_PER_SLOT = 8;          // 每库位垛数（竖着排列）
-export const BUNDLES_PER_STACK = 20;       // 每垛最多捆数
+export const BUNDLES_PER_STACK = 400;      // 通用每垛捆数上限（总库容 91×8×400=291200；实际垛容按料架限高逐规格收窄，见 stackCap）
 export const DB_PATH = process.env.WAREHOUSE_DB || join(__dirname, 'warehouse.db');
 
 /** 打开（不存在则创建）数据库并建表；首次打开时自动灌入主应用数据 */
@@ -125,8 +125,9 @@ function migrate(db) {
       waybill        TEXT NOT NULL,
       mill           TEXT NOT NULL,
       arrive_time    TEXT NOT NULL,
-      state          TEXT NOT NULL DEFAULT 'pending',   -- pending / confirmed
-      confirmed_time TEXT
+      state          TEXT NOT NULL DEFAULT 'pending',   -- pending / confirmed / completed
+      confirmed_time TEXT,
+      departed_time  TEXT                               -- 卸毕离场时刻（沙盘回传，台账闭环）
     );
     -- 进厂车辆的垛位分配（一组 = 同规格连续吊装、集中码放同一垛，垛满拆多组）
     CREATE TABLE IF NOT EXISTS inbound_loads (
@@ -158,6 +159,9 @@ function migrate(db) {
       deltas         TEXT NOT NULL DEFAULT '[]'       -- 权重变化 [{key,label,from,to}]
     );
   `);
+  // 轻量迁移：历史库文件补列（CREATE TABLE IF NOT EXISTS 不会给已存在的表加新列）
+  try { db.prepare('SELECT departed_time FROM inbound_vehicles LIMIT 1').get(); }
+  catch { db.exec('ALTER TABLE inbound_vehicles ADD COLUMN departed_time TEXT'); }
 }
 
 /* ================= 调度规划参数（sim_params 表） ================= */
@@ -244,6 +248,15 @@ export function seedAppData(db) {
   tx();
 }
 
+/** app_tasks 行 -> 前端字段（camelCase，空字段省略） */
+function taskView(t) {
+  return { id: t.id, type: t.type, status: t.status, steelCoilId: t.steel_coil_id,
+    ...(t.from_location_id ? { fromLocationId: t.from_location_id } : {}),
+    ...(t.to_location_id ? { toLocationId: t.to_location_id } : {}),
+    createTime: t.create_time,
+    ...(t.complete_time ? { completeTime: t.complete_time } : {}) };
+}
+
 /** 主应用全量数据（字段名与前端类型一致） */
 export function getAppData(db) {
   const w = db.prepare('SELECT * FROM app_warehouse LIMIT 1').get();
@@ -251,11 +264,10 @@ export function getAppData(db) {
   const spans = db.prepare('SELECT * FROM app_spans ORDER BY position').all()
     .map(s => ({ id: s.id, name: s.name, length: s.length, width: s.width, position: s.position }));
   const locations = db.prepare('SELECT * FROM app_locations ORDER BY span_id, row, col').all()
-    .map(l => ({ id: l.id, spanId: l.span_id, row: l.row, column: l.col, status: l.status, capacity: l.capacity, ...(l.steel_coil_id ? { steelCoilId: l.steel_coil_id } : {}) }));
+    .map(l => ({ id: l.id, spanId: l.spanId, row: l.row, column: l.col, status: l.status, capacity: l.capacity, ...(l.steel_coil_id ? { steelCoilId: l.steel_coil_id } : {}) }));
   const coils = db.prepare('SELECT * FROM app_coils ORDER BY coil_number').all()
     .map(c => ({ id: c.id, coilNumber: c.coil_number, specification: c.specification, weight: c.weight, diameter: c.diameter, material: c.material, status: c.status, ...(c.location_id ? { locationId: c.location_id } : {}) }));
-  const tasks = db.prepare('SELECT * FROM app_tasks ORDER BY create_time').all()
-    .map(t => ({ id: t.id, type: t.type, status: t.status, steelCoilId: t.steel_coil_id, ...(t.from_location_id ? { fromLocationId: t.from_location_id } : {}), ...(t.to_location_id ? { toLocationId: t.to_location_id } : {}), createTime: t.create_time, ...(t.complete_time ? { completeTime: t.complete_time } : {}) }));
+  const tasks = db.prepare('SELECT * FROM app_tasks ORDER BY create_time').all().map(taskView);
   return {
     warehouse: { id: w.id, name: w.name, totalArea: w.total_area, numberOfSpans: w.number_of_spans, spans },
     locations, coils, tasks,
@@ -271,7 +283,7 @@ export function createTask(db, task) {
     db.prepare('INSERT INTO app_tasks (id, type, status, steel_coil_id, from_location_id, to_location_id, create_time, complete_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(task.id, task.type, task.status || 'pending', task.steelCoilId, task.fromLocationId ?? null, task.toLocationId ?? null, task.createTime || new Date().toISOString(), task.completeTime ?? null);
   } catch { return null; }
-  return getAppData(db).tasks.find(t => t.id === task.id);
+  return taskView(db.prepare('SELECT * FROM app_tasks WHERE id=?').get(task.id));
 }
 
 /** 更新任务状态；置 completed 时自动记录完成时间 */
@@ -280,7 +292,7 @@ export function updateTaskStatus(db, id, status) {
   if (!cur) return null;
   const completeTime = status === 'completed' && !cur.complete_time ? new Date().toISOString() : cur.complete_time;
   db.prepare('UPDATE app_tasks SET status=?, complete_time=? WHERE id=?').run(status, completeTime, id);
-  return getAppData(db).tasks.find(t => t.id === id);
+  return taskView(db.prepare('SELECT * FROM app_tasks WHERE id=?').get(id));
 }
 
 /** 删除调度任务；不存在返回 false */
@@ -299,14 +311,60 @@ export function deleteTask(db, id) {
 const ZONE_SPEC_POOL = {
   '铁姆肯区':         ['圆钢 Φ50', '圆钢 Φ60'],
   '大棒区域':         ['螺纹钢 Φ20', '螺纹钢 Φ25'],
-  '大棒单支和长钢':   ['方钢 40×40'],
-  '中棒区域':         ['圆钢 Φ50', '圆钢 Φ60', '螺纹钢 Φ25'],
+  '大棒单支和长钢':   ['方钢 40×40', '管材 Φ200', '管材 Φ400', '管材 Φ600'],
+  '中棒区域':         ['圆钢 Φ50', '圆钢 Φ60', '螺纹钢 Φ25', '管材 Φ50', '管材 Φ100'],
 };
 const SPEC_FAMILY = {   // 规格族（形状）：同族视为"相似货物"，允许同库位邻垛混放
   '螺纹钢 Φ20': 'rebar', '螺纹钢 Φ25': 'rebar',
   '圆钢 Φ50': 'round', '圆钢 Φ60': 'round',
   '方钢 40×40': 'square',
+  '管材 Φ50': 'pipe', '管材 Φ100': 'pipe', '管材 Φ200': 'pipe', '管材 Φ400': 'pipe', '管材 Φ600': 'pipe',
 };
+/* 垛内码放物理模型（与沙盘 SPEC_META/ROD_ROWS/PILE_W/RACK_H 同口径，米制）：
+ * 捆径（一捆合起来的外接圆直径）最小 15cm、最大 50cm——细棒材增多支数成大捆，
+ * 粗管材超限即改单支吊运；Φ400/Φ600 单支管径本身 ≥40cm，不属打捆件、不受上限约束。
+ * 单捆宽 = 层内最大支数 × 杆径 × 1.08，垛内每层沿 2.7m 铺满并排（Z 向留 3cm 通风缝）；
+ * 单捆高 = 排数 × 杆径 × 1.06 + 垫木 15mm，料架立柱限高 3m。 */
+const SPEC_DIMS = {
+  '螺纹钢 Φ20': { dia: 20, rods: 21 }, '螺纹钢 Φ25': { dia: 25, rods: 15 },
+  '圆钢 Φ50': { dia: 50, rods: 4 },   '圆钢 Φ60': { dia: 60, rods: 3 },
+  '方钢 40×40': { dia: 40, rods: 5 },
+  '管材 Φ50': { dia: 50, rods: 6 },   '管材 Φ100': { dia: 100, rods: 6 },
+  '管材 Φ200': { dia: 200, rods: 1 }, '管材 Φ400': { dia: 400, rods: 1 }, '管材 Φ600': { dia: 600, rods: 1 },
+};
+/* 捆内支数排布（自下而上每层支数，金字塔式）；1 = 单支吊运不打带。
+ * 15 支 = 5+4+3+2+1，21 支 = 6+5+4+3+2+1（细棒材大捆）。 */
+const ROD_ROWS = { 1: [1], 3: [2, 1], 4: [2, 2], 5: [3, 2], 6: [3, 2, 1], 15: [5, 4, 3, 2, 1], 21: [6, 5, 4, 3, 2, 1] };
+const RACK_H = 3.0, PILE_W = 2.7;
+/** 规格码放几何：{ across 每层并排数, maxLayers 限高可堆层数, geo 物理垛容 }；未知规格返回 null */
+export function pileDims(specName) {
+  const d = SPEC_DIMS[specName];
+  if (!d) return null;
+  const rows = ROD_ROWS[d.rods], dia = d.dia / 1000;
+  const across = Math.max(2, Math.floor(PILE_W / (Math.max(...rows) * dia * 1.08 + 0.03)));
+  const maxLayers = Math.floor(RACK_H / (rows.length * dia * 1.06 + 0.015));
+  return { across, maxLayers, geo: across * maxLayers };
+}
+/** 垛容量（捆）：min(通用上限, 每层并排 × 限高层数)——与仿真沙盘 stackCap 完全同口径。
+ *  进厂确认的推荐/校验若超此口径，分配单会超出物理垛容、与沙盘实际落位背离。 */
+export function stackCap(specName) {
+  const p = pileDims(specName);
+  return p ? Math.min(BUNDLES_PER_STACK, p.geo) : BUNDLES_PER_STACK;
+}
+/** 每捆支数（未知规格返回 0；1 = 单支吊运不打带） */
+export function bundleRods(specName) {
+  return SPEC_DIMS[specName]?.rods ?? 0;
+}
+/** 捆径（一捆合起来的外接圆直径，cm）：矩形截面取对角线；单支吊运即管径本身。
+ *  打捆件（支数>1）口径须落在 15~50cm——见 SPEC_DIMS 注释。 */
+export function bundleDiaCm(specName) {
+  const d = SPEC_DIMS[specName];
+  if (!d) return null;
+  if (d.rods === 1) return d.dia / 10;
+  const rows = ROD_ROWS[d.rods], dia = d.dia / 1000;
+  const w = Math.max(...rows) * dia * 1.08, h = rows.length * dia * 1.06 + 0.015;
+  return Math.sqrt(w * w + h * h) * 100;
+}
 export { SPEC_FAMILY };
 function mulberry32(seed) {
   return function () {
@@ -318,12 +376,56 @@ function mulberry32(seed) {
 }
 
 /**
- * 重建数据：写入规格 + 91 库位 + 728 垛，并按分区专业化灌入实际钢材分布
- *（约 40~50% 利用率，均已扫码入账；保留约一成空库位作入库缓冲）。
+ * 期初钢材分布（纯函数，确定性随机流 mulberry32(20260825)，结果可复现）。
+ * seed(db) 据此灌库；GET /api/slots?variant=seed 原样返回同一分布 ——
+ * 沙盘 ?feed=all 全量回放时以此为期初（数据库当前值已含历史出入库结果，
+ * 直接在其上重放事件流会重复计数），从期初重建与驾驶实例一致的库存轨迹。
  */
-export function seed(db) {
+export function buildSeedSlots() {
   const slots = generateSlots();
   const rnd = mulberry32(20260825);
+  const out = [];
+  for (const s of slots) {
+    const pool = ZONE_SPEC_POOL[s.zone] || ['螺纹钢 Φ20'];
+    const occupied = rnd() >= 0.04;                    // 约 4% 空库位（入库缓冲位，其余靠未满垛顶装）
+    const primary = occupied ? pool[(s.area + s.span) % pool.length] : null;  // 按号区成带，相邻库位连片聚簇
+    const usedStacks = occupied ? 7 + (rnd() < 0.8 ? 1 : 0) : 0;   // 高密度：7~8 垛（八成库位满 8 垛），余下留空垛
+    const stacks = [];
+    for (let n = 1; n <= STACKS_PER_SLOT; n++) {
+      if (n > usedStacks) { stacks.push({ stack_no: n, spec: null, count: 0, pending: 0, in_time: null }); continue; }
+      let spec = primary;
+      if (n === usedStacks && pool.length > 1 && rnd() < 0.3) {    // 末垛 30% 概率混入同族相近规格（相似货物同库位）
+        spec = pool[(s.area + s.span + 1) % pool.length];
+      }
+      const dim = pileDims(spec);
+      // 铺层策略：按限高可堆层数的 18~24% 铺放、至少 3 层（替代旧固定 28~33 捆——只铺底下一两层）；
+      // 铺层比例随机流按垛均匀消耗（与规格无关，保证空库位数量稳定）；大口径单支管
+      //（Φ200/Φ400/Φ600，单支吊运）保持满垛，作为「限高收窄」样例
+      const fillF = 0.18 + 0.08 * rnd();
+      const count = (spec === '管材 Φ200' || spec === '管材 Φ400' || spec === '管材 Φ600')
+        ? stackCap(spec)
+        : Math.min(dim.across * Math.max(3, Math.round(dim.maxLayers * fillF)), stackCap(spec));
+      const inTime = -(600 + Math.floor(rnd() * 85800)); // 期初入账（前一日的负时刻，FIFO 基准）
+      stacks.push({ stack_no: n, spec, count, pending: 0, in_time: inTime });
+    }
+    out.push({ id: s.id, code: s.code, zone: s.zone, area: s.area, span: s.span, merged: s.merged,
+      state: occupied ? 'occupied' : 'free', stacks });
+  }
+  return out;
+}
+/** 期初种子分布（与 /api/slots 行形状一致，供沙盘全量回放重建期初） */
+export function getSeedSlots() {
+  return buildSeedSlots();
+}
+
+/**
+ * 重建数据：写入规格 + 91 库位 + 728 垛，并按分区专业化灌入实际钢材分布
+ *（按料架限高可堆层数的 18~24% 铺层，总量约 4.7 万捆——捆径 15~50cm 口径下单捆
+ *  支数增多、捆数相应减少；总库容 291,200 捆（91×8×400 通用上限，
+ *  实际垛容按规格限高收窄），均已扫码入账；保留少量空库位与未满垛作入库缓冲）。
+ */
+export function seed(db) {
+  const slots = buildSeedSlots();
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM bundle_positions').run();   // 捆级落位坐标随重建清空（外键依赖 storage_slots，须先删）
     db.prepare('DELETE FROM stacks').run();
@@ -336,26 +438,10 @@ export function seed(db) {
     const insSlot = db.prepare(
       'INSERT INTO storage_slots (id, code, zone, area, span, merged, state) VALUES (?, ?, ?, ?, ?, ?, ?)');
     const insStack = db.prepare(
-      'INSERT INTO stacks (slot_id, stack_no, spec, count, pending, in_time) VALUES (?, ?, ?, ?, 0, ?)');
+      'INSERT INTO stacks (slot_id, stack_no, spec, count, pending, in_time) VALUES (?, ?, ?, ?, ?, ?)');
     for (const s of slots) {
-      insSlot.run(s.id, s.code, s.zone, s.area, s.span, s.merged, 'free');
-      const pool = ZONE_SPEC_POOL[s.zone] || ['螺纹钢 Φ20'];
-      const occupied = rnd() >= 0.10;                    // 约一成空库位（入库缓冲位）
-      const primary = occupied ? pool[(s.area + s.span) % pool.length] : null;  // 按号区成带，相邻库位连片聚簇
-      const usedStacks = occupied ? 3 + Math.floor(rnd() * 5) : 0;   // 占用 3~7 垛，其余留空垛
-      for (let n = 1; n <= STACKS_PER_SLOT; n++) {
-        if (n > usedStacks) { insStack.run(s.id, n, null, 0, null); continue; }
-        let spec = primary;
-        if (n === usedStacks && pool.length > 1 && rnd() < 0.3) {    // 末垛 30% 概率混入同族相近规格（相似货物同库位）
-          spec = pool[(s.area + s.span + 1) % pool.length];
-        }
-        const count = 12 + Math.floor(rnd() * 9);        // 每垛 12~20 捆（接近满垛的真实码放）
-        const inTime = -(600 + Math.floor(rnd() * 85800)); // 期初入账（前一日的负时刻，FIFO 基准）
-        insStack.run(s.id, n, spec, count, inTime);
-      }
-      if (occupied) {
-        db.prepare("UPDATE storage_slots SET state='occupied' WHERE id=?").run(s.id);
-      }
+      insSlot.run(s.id, s.code, s.zone, s.area, s.span, s.merged, s.state);
+      for (const k of s.stacks) insStack.run(s.id, k.stack_no, k.spec, k.count, k.pending, k.in_time);
     }
   });
   tx();
@@ -383,10 +469,16 @@ export function getInventory(db) {
   };
 }
 
-/** 全部库位（含各垛） */
+/** 全部库位（含各垛）：两条查询 + 内存归并，避免逐库位 N+1 */
 export function getSlots(db) {
-  return db.prepare('SELECT * FROM storage_slots ORDER BY id').all()
-    .map(s => ({ ...s, stacks: getStacks(db, s.id) }));
+  const slots = db.prepare('SELECT * FROM storage_slots ORDER BY id').all()
+    .map(s => ({ ...s, stacks: [] }));
+  const byId = new Map(slots.map(s => [s.id, s]));
+  for (const k of db.prepare('SELECT * FROM stacks ORDER BY slot_id, stack_no').all()) {
+    const st = byId.get(k.slot_id);
+    if (st) st.stacks.push(k);
+  }
+  return slots;
 }
 
 /** 单个库位（含各垛）；不存在返回 null */

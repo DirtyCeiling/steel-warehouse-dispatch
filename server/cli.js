@@ -36,7 +36,7 @@ switch (cmd) {
     const db = openDb();
     seed(db);
     db.close();
-    console.log('已初始化数据库（91 库位 × 8 垛 × 20 捆 + 分区专业化实际钢材分布）');
+    console.log('已初始化数据库（91 库位 × 8 垛 × 400 捆 + 分区专业化实际钢材分布）');
     printSummary(openDb());
     break;
   }

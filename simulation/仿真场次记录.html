@@ -74,12 +74,15 @@
   .run-head .rid { font-family: var(--mono); color: var(--cyan); font-size: 12.5px; font-weight: 700; }
   .run-head .rk { font-size: 11.5px; color: var(--dim); white-space: nowrap; }
   .run-head .rk b { color: var(--text); font-family: var(--mono); font-weight: 600; }
-  .run-head .arrow { margin-left: auto; color: var(--dim); font-size: 11px; transition: transform .15s; }
+  .run-head .arrow { margin-left: 2px; color: var(--dim); font-size: 11px; transition: transform .15s; }
+  .run-head .head-acts { margin-left: auto; display: flex; gap: 6px; flex: none; }
+  .run-head .head-acts button { padding: 2px 8px; font-size: 11px; }
   .run-card.open > .run-head .arrow { transform: rotate(90deg); }
   .run-body { display: none; padding: 12px 14px 14px; }
   .run-card.open > .run-body { display: block; }
   .sec-title { font-size: 12px; font-weight: 700; color: var(--teal); margin: 14px 0 6px; }
   .sec-title:first-child { margin-top: 0; }
+  .sec-title button { margin-left: 8px; padding: 1px 8px; font-size: 11px; }
   .kv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
   .kv { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: rgba(14, 29, 58, .45); }
   .kv .k { font-size: 10.5px; color: var(--dim); }
@@ -122,7 +125,7 @@ if (new URLSearchParams(location.search).get('embed') === '1') document.document
 <header>
   <div class="brand">
     <div class="logo">📊</div>
-    <div><h1>仿真场次记录 · 调度参数 / 车辆 / 扫描时效留档</h1></div>
+    <div><h1>仿真场次记录 · 调度参数 / 车辆 / 扫描时效 / 捆级明细留档</h1></div>
   </div>
   <nav title="新标签打开，不打断各页面状态">
     <a href="/" target="_blank">🗺 仿真沙盘</a>
@@ -144,7 +147,8 @@ if (new URLSearchParams(location.search).get('embed') === '1') document.document
     <p class="desc">
       每场仿真的留档回看：沙盘<b>默认不启动</b>，点击「▶ 启动」开跑一场；<b>重置</b>或<b>关闭页面</b>时该场自动归档 ——
       记录当场的<b>调度参数</b>（启动时 + 归档时两份快照，可对照中途调整）、<b>车辆记录</b>（车牌 / 方向 / 吊数 / 进出场时间）、
-      <b>扫描时效</b>（扫码延时均值 / P95 / 最大，按场次号过滤任务台账）与 KPI。
+      <b>扫描时效</b>（扫码延时均值 / P95 / 最大，按场次号过滤任务台账）、<b>捆级明细</b>（每一捆的捆号、放好时刻、机器狗开始扫码 / 扫码入库时刻、入账完成时刻）与 KPI。
+      每场卡片支持 <b>⤓ 导出本场</b>（完整数据记录 CSV）与 <b>🗑 删除单场留档</b>。
       数据存于本浏览器 localStorage（最近 50 场），多窗口共享。
     </p>
     <div id="msg"></div>
@@ -166,12 +170,20 @@ if (new URLSearchParams(location.search).get('embed') === '1') document.document
  * 每场记录：id/reason/wallStart/wallEnd/simSeconds/feedMode/kpi{...}
  *   + paramsStart/paramsEnd（六段调度参数快照）
  *   + vehicles[{plate,kind,loads,batch,spec,summonAt,leftAt}]
- *   + scan{inCount,delayAvg,delayP95,delayMax,postAvg,perRobot[...]} */
+ *   + scan{inCount,delayAvg,delayP95,delayMax,postAvg,perRobot[...]}
+ *   + bundles[{bundle,io,spec,slot,stack,putAt,scanStartAt,scanDoneAt,doneAt,scanDelay,plate,batch,order,anomaly,skip}]
+ *     （捆级明细：每捆放好 -> 机器狗扫码 -> 入账/装车时刻；旧版归档无此字段时显示提示） */
 const LS_KEY = 'steelSimRunsV1';
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtWall = iso => iso ? new Date(iso).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-';
 const fmtSim = s => s == null ? '-' : (s >= 3600 ? `${Math.floor(s / 3600)}时${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}分` : `${Math.floor(s / 60)}分${String(Math.round(s % 60)).padStart(2, '0')}秒`);
+const fmtSimClock = s => {   // 仿真世界时钟（与沙盘 fmtClock 同源：08:00 起算；负值 = 期初库存捆）
+  if (s == null) return '-';
+  if (s < 0) return '期初';
+  const t = Math.floor(8 * 3600 + s), p = n => String(n).padStart(2, '0');
+  return `${p(Math.floor(t / 3600) % 24)}:${p(Math.floor(t / 60) % 60)}:${p(t % 60)}`;
+};
 const num = (v, digits = 1) => v == null ? '-' : (+v).toFixed(digits).replace(/\.0$/, '');
 const delayCls = v => v == null ? 't-dim' : v <= 120 ? 'd-ok' : v <= 300 ? 'd-mid' : 'd-bad';
 
@@ -243,8 +255,19 @@ function renderRun(r, idx) {
     `<span class="rk">车辆 <b>${r.vehicles?.length ?? 0}</b> 辆</span>` +
     `<span class="rk">扫码延时 <b class="${delayCls(sc.delayAvg)}">${sc.delayAvg != null ? sc.delayAvg + 's' : '-'}</b></span>` +
     `<span class="rk">数据源 <b>${r.feedMode === 'local' ? '本地' : r.feedMode}</b></span>` +
+    `<span class="head-acts">` +
+    `<button data-exp="${esc(r.id)}" title="导出本场完整数据记录 CSV（概览/KPI + 参数快照 + 车辆 + 机器狗时效 + 捆级明细）">⤓ 导出本场</button>` +
+    `<button data-del="${esc(r.id)}" title="删除本场留档（不影响其他场次与任务台账，不可恢复）">🗑</button>` +
+    `</span>` +
     `<span class="arrow">▶</span>`;
-  head.addEventListener('click', () => {
+  head.addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    if (btn) {   // 卡片头操作按钮：导出/删除单场，不触发展开收起
+      e.stopPropagation();
+      if (btn.dataset.exp) exportRunFull(btn.dataset.exp);
+      else if (btn.dataset.del) deleteRun(btn.dataset.del);
+      return;
+    }
     card.classList.toggle('open');
     if (card.classList.contains('open')) state.open.add(r.id); else state.open.delete(r.id);
   });
@@ -307,6 +330,34 @@ function renderRun(r, idx) {
     html += `</table>`;
   }
 
+  /* 捆级明细（每一捆：放好 -> 机器狗扫码 -> 入账/装车，时刻为仿真世界时钟） */
+  const bs = r.bundles || [];
+  html += `<div class="sec-title">📦 捆级明细（${bs.length} 捆${r.bundlesTruncated ? ' · 仅保留最后 600 条，完整明细见沙盘任务台账' : ''}）` +
+    (bs.length ? `<button data-expbundles="${esc(r.id)}" title="导出本场逐捆明细 CSV（捆号 / 放好 / 开始扫码 / 扫码完成 / 入账时刻）">导出捆级 CSV</button>` : '') + `</div>`;
+  if (bs.length) {
+    html += `<table><tr><th>捆号</th><th>类型</th><th>规格</th><th>库位</th><th>垛</th>` +
+      `<th>放好(时钟)</th><th>开始扫码</th><th>扫码完成</th><th>入账/装车</th><th>扫码延时(s)</th>` +
+      `<th>车牌</th><th>车次</th><th>合同</th><th>标记</th></tr>`;
+    for (const b of bs) {
+      const marks = (b.anomaly ? '<span class="d-bad">异常</span>' : '') + (b.skip ? '<span class="t-dim">免检</span>' : '');
+      html += `<tr><td class="mono">${esc(b.bundle || '-')}</td>` +
+        `<td class="${b.io === 'in' ? 't-in' : 't-out'}">${b.io === 'in' ? '入库' : '出库'}</td>` +
+        `<td>${esc(b.spec)}</td><td class="mono">${esc(b.slot)}</td><td class="mono">${b.stack}</td>` +
+        `<td class="mono">${fmtSimClock(b.putAt)}</td>` +
+        `<td class="mono">${fmtSimClock(b.scanStartAt)}</td>` +
+        `<td class="mono">${fmtSimClock(b.scanDoneAt)}</td>` +
+        `<td class="mono">${fmtSimClock(b.doneAt)}</td>` +
+        `<td class="${delayCls(b.scanDelay)}">${b.scanDelay != null ? b.scanDelay : '-'}</td>` +
+        `<td class="mono">${esc(b.plate || '-')}</td><td class="mono">${esc(b.batch || '-')}</td><td class="mono">${esc(b.order || '-')}</td>` +
+        `<td>${marks}</td></tr>`;
+    }
+    html += `</table>`;
+  } else if (r.ledgerCount) {
+    html += `<div class="t-dim" style="padding:4px 0">本场次为旧版归档，未含捆级明细 —— 重新开跑的场次会自动记录每一捆的放好 / 扫码 / 入账时刻</div>`;
+  } else {
+    html += `<div class="t-dim" style="padding:4px 0">本场无完成任务的捆</div>`;
+  }
+
   body.innerHTML = html;
   card.appendChild(body);
   return card;
@@ -332,6 +383,97 @@ function exportCsv() {
   flash(`已导出 ${runs.length} 场留档`);
 }
 
+/* ---------------- 导出 CSV（单场次捆级明细） ---------------- */
+function exportRunBundles(runId) {
+  const r = runs.find(x => x.id === runId);
+  const bs = (r && r.bundles) || [];
+  if (!bs.length) { flash('该场次无捆级明细', false); return; }
+  const head = ['场次号', '捆号', '类型', '规格', '库位', '垛', '放好(时钟)', '开始扫码(时钟)', '扫码完成(时钟)', '入账/装车完成(时钟)', '扫码延时(秒)', '车牌', '车次', '合同号', '异常', '免检'];
+  const rows = bs.map(b => [
+    r.id, b.bundle || '', b.io === 'in' ? '入库' : '出库', b.spec, b.slot, b.stack,
+    fmtSimClock(b.putAt), fmtSimClock(b.scanStartAt), fmtSimClock(b.scanDoneAt), fmtSimClock(b.doneAt),
+    b.scanDelay != null ? b.scanDelay : '', b.plate || '', b.batch || '', b.order || '',
+    b.anomaly ? '是' : '', b.skip ? '是' : '',
+  ].join(','));
+  const csv = '﻿' + head.join(',') + '\n' + rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `场次捆级明细-${runId}-${bs.length}捆.csv`;
+  a.click();
+  flash(`已导出 ${runId} 捆级明细 ${bs.length} 条`);
+}
+
+/* ---------------- 删除 / 导出（单场次） ---------------- */
+function persistRuns(list) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(list)); } catch (_) { flash('写入 localStorage 失败（存储不可用或已满）', false); }
+}
+function deleteRun(runId) {
+  const idx = runs.findIndex(x => x.id === runId);
+  if (idx < 0) { flash('未找到该场次留档', false); return; }
+  if (!confirm(`确认删除场次 ${runId} 的留档？（不影响其他场次与任务台账，不可恢复）`)) return;
+  runs.splice(idx, 1);
+  persistRuns(runs);
+  state.open.delete(runId);
+  refresh();
+  flash(`场次 ${runId} 留档已删除`);
+}
+const csvCell = v => {   // CSV 单元格转义（含逗号/引号/换行时加引号）
+  const s = String(v ?? '');
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+};
+function exportRunFull(runId) {   // 单场完整数据记录：概览/KPI + 参数快照 + 车辆 + 机器狗时效 + 捆级明细（一个 CSV 分节）
+  const r = runs.find(x => x.id === runId);
+  if (!r) { flash('未找到该场次留档', false); return; }
+  const k = r.kpi || {}, sc = r.scan || {};
+  const L = [];
+  const pushTable = (head, rows) => { L.push(head.join(',')); for (const row of rows) L.push(row.map(csvCell).join(',')); };
+  L.push('【场次概览】');
+  for (const [label, v] of [
+    ['场次号', r.id], ['归档原因', ({ reset: '重置归档', end: '手动结束' })[r.reason] || '关页归档'],
+    ['开始(真实)', r.wallStart || ''], ['结束(真实)', r.wallEnd || ''],
+    ['仿真时长(秒)', r.simSeconds ?? ''], ['数据源', r.feedMode || ''],
+    ['完成任务', k.tasksDone ?? ''], ['车次完成', k.trucksDone ?? ''], ['订单闭环', k.ordersDone ?? ''],
+    ['入台账', k.ledgerIn ?? ''], ['出台账', k.ledgerOut ?? ''], ['吞吐量(捆/时)', k.throughputPerHour ?? ''],
+    ['平均任务时长(秒)', k.avgTaskDur ?? ''], ['异常任务', k.anomalies ?? ''], ['免检直通', k.skips ?? ''],
+    ['台账留痕(条)', r.ledgerCount ?? ''],
+    ['扫码延时均值(秒)', sc.delayAvg ?? ''], ['P95(秒)', sc.delayP95 ?? ''], ['最大(秒)', sc.delayMax ?? ''],
+    ['入账延时均值(秒)', sc.postAvg ?? ''],
+  ]) L.push([csvCell(label), csvCell(v)].join(','));
+  L.push('');
+  L.push('【调度参数快照】');
+  pushTable(['段', '参数', '启动时', '归档时'],
+    paramRows(r).map(row => [SEC_NAMES[row.sec] || row.sec, row.label, row.sv ?? '', row.ev ?? '']));
+  L.push('');
+  const vs = r.vehicles || [];
+  L.push(`【车辆记录（${vs.length} 辆）】`);
+  pushTable(['车牌', '方向', '吊数', '规格', '车次', '进场(仿真秒)', '离场(仿真秒)', '在场时长(秒)'],
+    vs.map(v => [v.plate || '', v.kind === 'in' ? '入库' : '出库', v.loads, v.spec || '', v.batch || '',
+      v.summonAt ?? '', v.leftAt ?? '', v.leftAt != null && v.summonAt != null ? v.leftAt - v.summonAt : '']));
+  L.push('');
+  const pr = sc.perRobot || [];
+  if (pr.length) {
+    L.push('【机器狗统计】');
+    pushTable(['机器狗', '扫码次数', '完成任务', '行驶里程(m)', '忙碌占比(%)'],
+      pr.map(p => [p.name, p.scans, p.tasksDone, p.distTotal, p.busyPct != null ? p.busyPct : '']));
+    L.push('');
+  }
+  const bs = r.bundles || [];
+  L.push(`【捆级明细（${bs.length} 捆）】`);
+  pushTable(['捆号', '类型', '规格', '库位', '垛', '放好(时钟)', '开始扫码(时钟)', '扫码完成(时钟)', '入账/装车完成(时钟)', '扫码延时(秒)', '车牌', '车次', '合同号', '异常', '免检'],
+    bs.map(b => [b.bundle || '', b.io === 'in' ? '入库' : '出库', b.spec, b.slot, b.stack,
+      fmtSimClock(b.putAt), fmtSimClock(b.scanStartAt), fmtSimClock(b.scanDoneAt), fmtSimClock(b.doneAt),
+      b.scanDelay != null ? b.scanDelay : '', b.plate || '', b.batch || '', b.order || '',
+      b.anomaly ? '是' : '', b.skip ? '是' : '']));
+  const csv = '\ufeff' + L.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `仿真场次-${r.id}.csv`;
+  a.click();
+  flash(`已导出场次 ${r.id} 完整记录（捆级明细 ${bs.length} 条）`);
+}
+
 /* ---------------- 消息 / 联动 ---------------- */
 let msgTimer = null;
 function flash(text, ok = true) {
@@ -351,6 +493,10 @@ function refresh(live = false) {
 }
 $('btnRefresh').addEventListener('click', () => refresh());
 $('btnExport').addEventListener('click', exportCsv);
+$('content').addEventListener('click', e => {   // 场次卡片内「导出捆级 CSV」（事件委托，卡片为动态渲染）
+  const btn = e.target.closest('button[data-expbundles]');
+  if (btn) exportRunBundles(btn.getAttribute('data-expbundles'));
+});
 $('btnClear').addEventListener('click', () => {
   if (!runs.length) { flash('留档已为空'); return; }
   if (!confirm(`确认清空 ${runs.length} 场历史留档？（不影响任务台账与库存数据）`)) return;

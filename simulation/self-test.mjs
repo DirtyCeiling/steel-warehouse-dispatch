@@ -213,8 +213,8 @@ await pump(2);
 check('参数调整后零错误', sandbox.__dbg.errs.length === 0, '');
 sandbox.restoreDefaultParams(); // 恢复默认，避免污染后续阶段
 await pump(1);
-check('恢复默认参数（天车速度回到 4.0 m/s）',
-  el('robotCards').innerHTML.includes('速度 4 m/s'), el('robotCards').innerHTML.match(/速度 [\d.]+ m\/s/)?.[0] || '无');
+check('恢复默认参数（天车大车速度回到 4.0 m/s · 小车回到 1.0 m/s）',
+  el('robotCards').innerHTML.includes('大车 4 · 小车 1 m/s'), el('robotCards').innerHTML.match(/大车 [\d.]+ · 小车 [\d.]+ m\/s/)?.[0] || '无');
 
 console.log('== 阶段二：1× 自然运行 540 仿真秒（一车 6-10 吊，需走完一个完整出入库车次） ==');
 for (let i = 0; i < 54; i++) await pump(10);   // 分段泵：本地排产按节奏到点生成车辆（消费与作业链并行推进）
@@ -266,7 +266,7 @@ check('存在 6-10 吊的满车次（一车多吊）', batchLoads.some(n => n >=
 check('所有车次吊数 1..10（一车不超过 10 吊）', batchLoads.every(n => n >= 1 && n <= 10), '');
 const inv = el('kpiInv').textContent;
 const invN = parseInt(inv);
-check('库存在合理区间（捆，总库容 14560）', invN >= 1 && invN <= 14560, inv);
+check('库存在合理区间（捆，总库容 291200）', invN >= 1 && invN <= 291200, inv);
 check('利用率已统计', el('kpiUtil').textContent.includes('%'), el('kpiUtil').textContent);
 check('平均任务时长已统计', /^\d{2}:\d{2}$/.test(el('kpiAvg').textContent.trim()), el('kpiAvg').textContent);
 check('流程链路条渲染', el('flowStrip').innerHTML.includes('库存更新'), '');

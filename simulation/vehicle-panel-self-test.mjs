@@ -122,6 +122,13 @@ check('运行零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.sli
 check('累计车辆留档 > 0', sandbox.__dbg.truckHistory.length > 0, sandbox.__dbg.truckHistory.length + ' 辆');
 const doneC = +el('kpiDone').textContent;
 check('有任务完成（卸货/取货闭环）', doneC > 0, '完成 ' + doneC);
+// 采样瞬间全部车辆可能已收尾离场（面板按设计将「已出厂且全部吊闭环」的车移出下拉，显示暂无车辆）——
+// 补一单入库车并泵到其至少有吊完成，保证面板有可见车辆再验明细
+if (el('vehDetail').innerHTML.includes('暂无车辆')) {
+  sandbox.createTask('in');
+  sandbox.forceDispatchBatches();
+  for (let i = 0; i < 120 && !sandbox.__dbg.truckHistory.some(t => t.inScene && t.done > 0); i++) pump(5);
+}
 const detailHtml = el('vehDetail').innerHTML;
 check('明细含完成状态（已卸货/已装车）', detailHtml.includes('已卸货') || detailHtml.includes('已装车'), '');
 check('明细含进度标签（x/y 吊完成）', /\/\d+ 吊完成/.test(detailHtml), (detailHtml.match(/\/\d+ 吊完成/))?.[0] || '无');

@@ -113,6 +113,9 @@
   .status.confirmed {
     background: rgba(52, 211, 153, .1); border: 1px solid rgba(52, 211, 153, .3); color: var(--green);
   }
+  .status.completed {
+    background: rgba(56, 189, 248, .1); border: 1px solid rgba(56, 189, 248, .3); color: var(--cyan);
+  }
   .status.outbound {
     background: rgba(56, 189, 248, .1); border: 1px solid rgba(56, 189, 248, .3); color: var(--cyan);
   }
@@ -222,6 +225,7 @@ if (new URLSearchParams(location.search).get('embed') === '1') document.document
           <option value="">全部</option>
           <option value="pending">待确认</option>
           <option value="confirmed">已确认</option>
+          <option value="completed">已完成</option>
         </select>
       </div>
       <div class="filter-group">
@@ -288,6 +292,8 @@ const SPEC_COLORS = {
   '圆钢 Φ50': '#38bdf8', '圆钢 Φ60': '#7dd3fc', '方钢 40×40': '#a78bfa',
 };
 const specColor = s => SPEC_COLORS[s] || '#94a3b8';
+const stateText = s => s === 'pending' ? '待确认' : s === 'completed' ? '已完成' : '已确认';
+const stateClass = s => s === 'pending' ? 'pending' : s === 'completed' ? 'completed' : 'confirmed';
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtFull = iso => iso ? new Date(iso).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
 const fmtClock = iso => iso ? new Date(iso).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' }) : '-';
@@ -399,8 +405,8 @@ function renderVehicles() {
     <tbody>`;
   
   for (const v of state.filtered) {
-    const statusClass = v.state === 'pending' ? 'pending' : 'confirmed';
-    const statusText = v.state === 'pending' ? '待确认' : '已确认';
+    const statusClass = stateClass(v.state);
+    const statusText = stateText(v.state);
     const loadsSummary = v.loads ? v.loads.map(l => 
       `<span class="load-chip"><span class="spec">${esc(l.spec)}</span><span class="qty">${l.bundles}吊</span></span>`
     ).join('') : '<span class="load-chip">无配载</span>';
@@ -453,8 +459,12 @@ function showDetail(vehicleId) {
       <span class="detail-value">${v.confirmedTime ? fmtFull(v.confirmedTime) : '未确认'}</span>
     </div>
     <div class="detail-row">
+      <span class="detail-label">作业完成（离场）</span>
+      <span class="detail-value">${v.departedTime ? fmtFull(v.departedTime) : (v.state === 'completed' ? '-' : '未完成')}</span>
+    </div>
+    <div class="detail-row">
       <span class="detail-label">状态</span>
-      <span class="detail-value">${v.state === 'pending' ? '待确认' : '已确认'}</span>
+      <span class="detail-value">${stateText(v.state)}</span>
     </div>`;
   
   if (v.loads && v.loads.length) {
@@ -520,7 +530,7 @@ function exportCSV() {
     return;
   }
   
-  const headers = ['车牌号', '运单号', '钢厂', '到达时间', '确认时间', '状态', '运送规格', '总吊数'];
+  const headers = ['车牌号', '运单号', '钢厂', '到达时间', '确认时间', '作业完成（离场）', '状态', '运送规格', '总吊数'];
   const rows = state.filtered.map(v => {
     const specs = v.loads ? [...new Set(v.loads.map(l => l.spec))].join('; ') : '';
     const totalBundles = v.loads ? v.loads.reduce((s, l) => s + l.bundles, 0) : 0;
@@ -530,7 +540,8 @@ function exportCSV() {
       v.mill,
       v.arriveTime,
       v.confirmedTime || '',
-      v.state === 'pending' ? '待确认' : '已确认',
+      v.departedTime || '',
+      stateText(v.state),
       specs,
       totalBundles
     ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(',');

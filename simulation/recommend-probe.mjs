@@ -144,8 +144,8 @@ check('同车归并规格正确（沿用垛不混异规格）', mergeLog.every(m
   const k = st && st.stacks[m.stackIdx];
   return !k || !k.spec || k.spec.name === m.spec;
 }), '');
-check('归并不超垛容（每垛 <= 20 捆）',
-  storages.every(st => st.stacks.every(k => k.count <= 20)), '');
+check('归并不超垛容（每垛 <= 通用上限 400 捆）',
+  storages.every(st => st.stacks.every(k => k.count <= 400)), '');
 check('归堆权重快照可用（CFG.placement 参数化）',
   typeof sandbox.__dbg.placementCfg.sameSpecBase === 'number', JSON.stringify(sandbox.__dbg.placementCfg));
 

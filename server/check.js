@@ -6,8 +6,10 @@ import { join } from 'node:path';
 import {
   openDb, seed, getInventory, getSlots, getSlot, setStack,
   syncBundlePositions, getBundlePositions,
+  bundleDiaCm, bundleRods,
   STACKS_PER_SLOT, BUNDLES_PER_STACK,
 } from './database.js';
+import { SPECS } from './layout.js';
 
 let failed = 0;
 function check(name, cond, detail = '') {
@@ -35,12 +37,20 @@ const inv = getInventory(db);
 check('库位总数 91', inv.slotCount === 91, String(inv.slotCount));
 const stackCount = getSlots(db).reduce((s, x) => s + x.stacks.length, 0);
 check(`每库位 ${STACKS_PER_SLOT} 垛 -> 垛位总数 ${91 * STACKS_PER_SLOT}`, stackCount === 91 * STACKS_PER_SLOT, String(stackCount));
-check(`总库容 91×${STACKS_PER_SLOT}×${BUNDLES_PER_STACK}=${91 * STACKS_PER_SLOT * BUNDLES_PER_STACK}`, inv.totalCapacity === 14560, String(inv.totalCapacity));
-check('初始库存为实际钢材分布（>3000 捆，利用率 30~60%，均已入账）',
-  inv.totalBundles > 3000 && inv.utilization > 0.3 && inv.utilization < 0.6 && inv.pending === 0,
+check(`总库容 91×${STACKS_PER_SLOT}×${BUNDLES_PER_STACK}=${91 * STACKS_PER_SLOT * BUNDLES_PER_STACK}`, inv.totalCapacity === 291200, String(inv.totalCapacity));
+check('初始库存为实际钢材分布（捆径 15~50cm 口径约 4.7 万捆，利用率 ~16%，均已入账）',
+  inv.totalBundles > 40000 && inv.totalBundles < 52000 && inv.utilization > 0.13 && inv.utilization < 0.2 && inv.pending === 0,
   `${inv.totalBundles} 捆 · ${(inv.utilization * 100).toFixed(1)}%`);
 check('存在空闲库位（入库缓冲位）', inv.occupiedSlots < inv.slotCount, `${inv.slotCount - inv.occupiedSlots} 个空库位`);
 check('分区统计齐全', inv.perZone.length === 4, JSON.stringify(inv.perZone.map(z => `${z.zone}:${z.slots}`)));
+
+console.log('== 捆径口径（一捆合起来的直径 15~50cm） ==');
+for (const sp of SPECS) {
+  const rods = bundleRods(sp.name), d = bundleDiaCm(sp.name);
+  const ok = d != null && (rods === 1 ? d >= 15 : d >= 15 && d <= 50);
+  check(`${sp.name}：${rods === 1 ? '单支吊运不打带' : `${rods} 支/捆`} · 捆径 ${d?.toFixed(1)}cm（${rods === 1 ? '管径本身 ≥ 15' : '须 15~50'}）`,
+    ok, d?.toFixed(1));
+}
 
 console.log('== 写入 / 状态同步 ==');
 // 选一个初始为空闲的库位做写入测试，保证状态同步断言不受随机撒点影响

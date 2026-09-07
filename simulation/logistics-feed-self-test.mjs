@@ -209,5 +209,55 @@ console.log('== 阶段四：数据源离线 —— 外部模式下不本地生�
   check('手动下单仍可用', sb.sandbox.__dbg.batches.length === 1, '');
 }
 
+console.log('== 阶段五：确认单联动（进厂确认 -> 现场执行闭环）+ 车牌贯穿 + 卸毕回传 ==');
+{
+  const sb = makeSandbox('?feed=all');
+  const feedFetch = makeFeedFetch(() => sb.sandbox.__dbg.simTime, { quiet: true });
+  // 期初：先建沙盘（确认单落点要在沙盘地图上找一个空垛），再挂组合 fetch（确认单接口 -> 桩库；其余 -> 物流源桩）
+  sb.sandbox.init(); sb.sandbox.setPaused(false);
+  sb.pump(1); await sb.flush();
+  const storages = sb.sandbox.__dbg.storages;
+  const tgt = storages.find(s => s.state !== 'locked' && s.stacks[0].count === 0 && s.stacks[0].pending === 0);
+  const k0 = tgt.stacks[0];
+  k0.count = 0; k0.pending = 0; k0.reserved = 0; k0.spec = null; k0.bundles.length = 0;   // 保证确认落点可用
+  const planVehicle = {
+    id: 7, plate: IN1.plate, waybill: IN1.waybill, mill: IN1.mill, state: 'confirmed',
+    bundles: 6,
+    loads: [{ id: 1, spec: '螺纹钢 Φ20', bundles: 6, adjusted: true,
+      recSlotId: -1, recStackNo: 1, recCode: tgt.code, recScore: 99, recParts: [],
+      slotId: -1, stackNo: 1, code: tgt.code }],   // 管理工改垛后的最终落点
+  };
+  let unloadPosted = 0;
+  sb.sandbox.fetch = async url => {
+    const u = String(url);
+    if (u.includes('/api/inbound/match')) {
+      return { ok: true, status: 200, json: async () => (u.includes(encodeURIComponent(IN1.plate)) ? planVehicle : null) };
+    }
+    if (u.includes('/api/inbound/7/unload')) { unloadPosted++; return { ok: true, status: 200, json: async () => ({}) }; }
+    return feedFetch(url);
+  };
+  feedFetch.inject('in', { ...IN1 });
+  feedFetch.inject('in', { plate: '鲁B·22222', waybill: 'YD26-10002', mill: '唐山瑞丰', manifest: [{ spec: '圆钢 Φ50', bundles: 5 }, { spec: '圆钢 Φ60', bundles: 4 }], tons: 25.4 });
+  sb.pump(3); await sb.flush(); sb.pump(3); await sb.flush();
+  check('两条进厂事件全部消费', sb.sandbox.__dbg.feed.processed === 2, `processed=${sb.sandbox.__dbg.feed.processed}`);
+  check('确认单命中：按确认垛位下发（留痕日志）',
+    sb.el('logList').children.some(ch => ch.innerHTML.includes('按进厂确认单落位') && ch.innerHTML.includes(tgt.code)), '');
+  check('确认单联动日志只记一次（车级）',
+    sb.el('logList').children.filter(ch => ch.innerHTML.includes('进厂确认单联动')).length === 1, '');
+  check('车牌贯穿：货车车牌 = 物流源车牌（确认单车）',
+    sb.sandbox.__dbg.truckHistory.some(t => t.plate === IN1.plate), sb.sandbox.__dbg.truckHistory.map(t => t.plate).join(','));
+  check('车牌贯穿：无确认单车同样沿用源车牌（车次级；混装分跨凑车未满不派车）',
+    sb.sandbox.__dbg.batches.some(b => b.plate === '鲁B·22222'), '');
+  check('无确认单车未触发确认单联动', !sb.el('logList').children.some(ch => ch.innerHTML.includes('鲁B·22222') && ch.innerHTML.includes('确认单')), '');
+  // 16× 加速跑完确认单车装卸 + 机器狗扫码，直至卸毕离场回传
+  sb.sandbox.setSpeed(16);
+  for (let i = 0; i < 80 && unloadPosted === 0; i++) { sb.pump(10); await sb.flush(); }
+  sb.sandbox.setSpeed(1);
+  check('确认单落位物理执行：目标垛落满 6 捆同规格',
+    k0.count === 6 && k0.spec.name === '螺纹钢 Φ20', `count=${k0.count} spec=${k0.spec && k0.spec.name}`);
+  check('卸毕回传台账闭环（POST /api/inbound/7/unload 恰一次）', unloadPosted === 1, `posted=${unloadPosted}`);
+  check('运行零错误', sb.sandbox.__dbg.errs.length === 0, sb.sandbox.__dbg.errs.slice(0, 3).join('|'));
+}
+
 console.log(failed === 0 ? '\n物流源消费自检通过 ✓' : `\n${failed} 项断言失败 ✗`);
 process.exitCode = failed === 0 ? 0 : 1;

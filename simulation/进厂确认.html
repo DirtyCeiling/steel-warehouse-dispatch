@@ -149,7 +149,8 @@ if (new URLSearchParams(location.search).get('embed') === '1') document.document
     <p class="desc">
       车辆进厂并识别到钢材物流信息后，系统按归堆策略生成垛位分配推荐；请逐组核对，可在下拉框中直接改垛
       （容量 / 同垛不混规格约束实时校验）。确认即下发调度，人工调整会与推荐逐维度对比、自动微调归堆策略权重，
-      让下次推荐更贴近现场经验。
+      让下次推荐更贴近现场经验。进厂车辆超时未确认将按推荐方案自动确认下发（当前时限
+      <b id="cdHint">5 分钟</b>，可在「调度参数」页调整，0 = 关闭），避免确认队列积压。
     </p>
     <div id="msg"></div>
     <div class="cols">
@@ -174,7 +175,11 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const fmtFull = iso => new Date(iso).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 const fmtClock = iso => new Date(iso).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
 
-const state = { vehicles: [], stats: null, cands: {}, banners: {}, busyVid: null, spawning: false, phase: 'loading' };
+const state = {
+  vehicles: [], stats: null, cands: {}, banners: {}, busyVid: null, spawning: false, phase: 'loading',
+  autoConfirmMin: 5,   // 超时自动确认时限（分钟），从调度参数 production.autoConfirmMin 同步；0 = 关闭
+  dirty: false,        // 轮询发现数据有变但当前不宜重绘（正在改垛/下拉聚焦）时挂起，焦点释放后补绘
+};
 
 const $vehicles = document.getElementById('vehicles');
 const $learning = document.getElementById('learning');
@@ -272,6 +277,9 @@ function vehicleHTML(v) {
          <button class="primary" data-confirm="${v.id}"${busy || !v.loads.length ? ' disabled' : ''}>${busy ? '处理中…' : '✓ 确认下发'}</button>
        </div>`
     : (state.banners[v.id] ? bannerHTML(state.banners[v.id].deltas) : '');
+  const cd = pending && state.autoConfirmMin > 0
+    ? `<span class="tag autocd" data-arrive="${esc(v.arriveTime)}" data-limit="${state.autoConfirmMin}">⏱ …</span>`
+    : '';
   return `<div class="veh${pending ? '' : ' confirmed'}">
     <div class="vhead">
       <div>
@@ -279,6 +287,7 @@ function vehicleHTML(v) {
           <span class="tag">运单 ${esc(v.waybill)}</span>
           <span class="tag">${esc(v.mill)}</span>
           <span class="tag ${pending ? 'pend' : 'done'}">${pending ? '待确认' : '已下发'}</span>
+          ${cd}
         </div>
         <p class="meta">进厂时间 ${fmtFull(v.arriveTime)} · 共 ${v.bundles} 捆 / ${v.loads.length} 组垛位分配</p>
       </div>
@@ -310,6 +319,75 @@ function renderVehicles() {
   });
   $vehicles.querySelectorAll('button[data-confirm]').forEach(b => { b.onclick = () => confirmVeh(+b.dataset.confirm); });
   $vehicles.querySelectorAll('button[data-del]').forEach(b => { b.onclick = () => delVeh(+b.dataset.del); });
+  updateCountdowns();
+}
+
+/* ---------------- 超时自动确认：倒计时与轮询 ---------------- */
+
+/** 每秒刷新待确认车辆的自动确认倒计时（直接改文本，不重绘卡片，避免打断改垛下拉） */
+function updateCountdowns() {
+  const now = Date.now();
+  document.querySelectorAll('#vehicles .autocd').forEach(el => {
+    const left = (+el.dataset.limit || 0) * 60000 - (now - Date.parse(el.dataset.arrive));
+    el.textContent = left > 0
+      ? `⏱ ${Math.floor(left / 60000)}:${String(Math.floor(left / 1000) % 60).padStart(2, '0')} 后自动确认`
+      : '⏱ 已超时，等待自动确认…';
+    el.style.color = left <= 60000 ? 'var(--red)' : 'var(--amber)';
+  });
+}
+
+/** 超时自动确认时限：与「调度参数」页同源（production.autoConfirmMin） */
+async function loadParams() {
+  try {
+    const r = await api('/api/params', {}, '');
+    const m = Math.max(0, Math.round(Number(r.values && r.values.production && r.values.production.autoConfirmMin) || 0));
+    if (m !== state.autoConfirmMin) {
+      state.autoConfirmMin = m;
+      if (state.phase === 'ready') { renderVehicles(); }
+    }
+    document.getElementById('cdHint').textContent = m > 0 ? `${m} 分钟` : '已关闭';
+  } catch { /* 参数页不可达：沿用默认 5 分钟 */ }
+}
+
+/** 是否处于可安全重绘状态：无进行中的改垛/识别操作，且用户没在车辆卡片里操作下拉/按钮 */
+function canRender() {
+  if (state.busyVid != null || state.spawning) return false;
+  const ae = document.activeElement;
+  return !(ae && $vehicles.contains(ae) && (ae.tagName === 'SELECT' || ae.tagName === 'BUTTON'));
+}
+
+/** 后台轮询（每 3s）：同步服务端超时自动确认结果与台账变化；数据有变但不宜重绘时挂起补绘 */
+async function poll() {
+  if (state.phase !== 'ready' || state.spawning) return;
+  try {
+    const [v, s, p] = await Promise.all([
+      api('/api/inbound', {}, ''),
+      api('/api/inbound/stats', {}, ''),
+      api('/api/params', {}, '').catch(() => null),
+    ]);
+    const prevState = new Map(state.vehicles.map(x => [x.id, x.state]));
+    for (const nv of v.vehicles) {
+      // 手动确认在发起时就已写 banner；这里查到的 pending -> 已下发均为服务端超时放行
+      if (prevState.get(nv.id) === 'pending' && nv.state !== 'pending' && !state.banners[nv.id]) {
+        showMsg(true, `⏱ 车辆 ${nv.plate}（运单 ${nv.waybill}）超时未确认，已按推荐方案自动确认下发。`);
+      }
+    }
+    if (p) {
+      const m = Math.max(0, Math.round(Number(p.values && p.values.production && p.values.production.autoConfirmMin) || 0));
+      if (m !== state.autoConfirmMin) { state.autoConfirmMin = m; state.dirty = true; document.getElementById('cdHint').textContent = m > 0 ? `${m} 分钟` : '已关闭'; }
+    }
+    const vehChanged = JSON.stringify(v.vehicles) !== JSON.stringify(state.vehicles);
+    const statsChanged = JSON.stringify(s) !== JSON.stringify(state.stats);
+    state.vehicles = v.vehicles;
+    state.stats = s;
+    if ((vehChanged || statsChanged || state.dirty) && canRender()) {
+      state.dirty = false;
+      renderVehicles();
+      renderLearning();
+    } else if (vehChanged || statsChanged) {
+      state.dirty = true;
+    }
+  } catch { /* 服务暂不可达：下轮轮询重试，不打断当前页面 */ }
 }
 
 /* ---------------- 渲染：学习面板 ---------------- */
@@ -441,7 +519,12 @@ async function delVeh(vid) {
 
 btnSpawn.onclick = spawn;
 btnRefresh.onclick = load;
-load();
+loadParams().then(load);              // 先取超时时限再渲染，倒计时时限一次到位
+setInterval(() => {                   // 每秒：倒计时走秒 + 补绘被挂起的变更
+  updateCountdowns();
+  if (state.dirty && canRender()) { state.dirty = false; renderVehicles(); }
+}, 1000);
+setInterval(poll, 3000);              // 每 3s 同步服务端自动确认结果
 </script>
 </body>
 </html>

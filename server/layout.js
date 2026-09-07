@@ -1,16 +1,22 @@
 // 库区布局生成：与仿真「调度仿真沙盘.html」的 buildMap 完全一致
-// 91 库位（36 库位列 × 三跨，含 14~16 整跨合并位），每库位 8 垛 × 每垛 20 捆
+// 91 库位（36 库位列 × 三跨，含 14~16 整跨合并位），每库位 8 垛 × 每垛 400 捆（通用上限，实际按限高收窄）
 
 /** 三条竖向（横贯三跨）车辆进出通道列：不设库位 */
 export const LANE_COLS = [7, 19, 31];
 
-/** 棒材规格（与仿真 SPECS 一致） */
+/** 棒材/管材规格（与仿真 SPECS 一致；weight = 9m 基准单捆吨位，按捆内支数 × 理论米重核算） */
 export const SPECS = [
-  { name: '螺纹钢 Φ20', weight: 2.1, color: '#f59e0b' },
-  { name: '螺纹钢 Φ25', weight: 3.2, color: '#fb923c' },
-  { name: '圆钢 Φ50', weight: 2.6, color: '#38bdf8' },
-  { name: '圆钢 Φ60', weight: 3.5, color: '#7dd3fc' },
-  { name: '方钢 40×40', weight: 1.9, color: '#a78bfa' },
+  { name: '螺纹钢 Φ20', weight: 0.47, color: '#f59e0b' },   // 21 支 × 2.47kg/m × 9m ≈ 0.47t
+  { name: '螺纹钢 Φ25', weight: 0.52, color: '#fb923c' },   // 15 支 × 3.85kg/m × 9m ≈ 0.52t
+  { name: '圆钢 Φ50', weight: 0.56, color: '#38bdf8' },     // 4 支 × 15.41kg/m × 9m ≈ 0.56t
+  { name: '圆钢 Φ60', weight: 0.6, color: '#7dd3fc' },      // 3 支 × 22.20kg/m × 9m ≈ 0.60t
+  { name: '方钢 40×40', weight: 0.57, color: '#a78bfa' },   // 5 支 × 12.56kg/m × 9m ≈ 0.57t
+  // 管材（无缝钢管，Φ50~Φ600；小口径成捆、Φ200 起单支吊运不打带）
+  { name: '管材 Φ50', weight: 0.3, color: '#2dd4bf' },
+  { name: '管材 Φ100', weight: 0.8, color: '#34d399' },
+  { name: '管材 Φ200', weight: 1.1, color: '#4ade80' },
+  { name: '管材 Φ400', weight: 0.9, color: '#a3e635' },
+  { name: '管材 Φ600', weight: 1.8, color: '#16a34a' },
 ];
 
 /** 栅格列 -> 1~33 号区编号（通道列返回 null） */

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>钢厂棒材库 · 库存三维查看</title>
 <!--
-  库存三维查看页（与《调度仿真沙盘.html》同一布局/库容模型：91 库位 × 8 垛 × 20 捆）
+  库存三维查看页（与《调度仿真沙盘.html》同一布局/库容模型：91 库位 × 8 垛 × 400 捆）
   · 左侧 Three.js 三维视图：库区总览 -> 库位 -> 垛 -> 捆 四级下钻，点击/悬停联动
   · 点击垛位：详情卡列出该垛全部捆明细（可再下钻单捆），右侧列表同步聚焦本垛
   · 捆体按类圆形打捆（圆钢/螺纹钢六方密排、方钢平铺），垛内按金字塔嵌槽自然码放
@@ -221,6 +221,8 @@
   #listRows .c-ton { color: var(--amber); }
   #listRows .c-day { color: var(--dim); }
   #listEmpty { padding: 30px 0; text-align: center; color: var(--dim); font-size: 12px; display: none; }
+/* 三维 FPS 角标（调试：帧率 + 实际使用 GPU） */
+.fps3d { position: absolute; top: 8px; right: 10px; z-index: 9; font: 600 12px/1 Consolas, Menlo, monospace; letter-spacing: .4px; color: #86efac; background: rgba(8,12,18,.62); border: 1px solid rgba(134,239,172,.25); padding: 4px 9px; border-radius: 5px; pointer-events: none; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -229,7 +231,7 @@
     <div class="logo">🧱</div>
     <div>
       <h1>库存三维查看</h1>
-      <p>棒材库快照 · 91 库位 × 8 垛 × 20 捆 · 捆级明细（钢种 / 长度 / 直径 / 支数）</p>
+      <p>棒材库快照 · 91 库位 × 8 垛 × 400 捆 · 捆级明细（钢种 / 长度 / 直径 / 支数）</p>
     </div>
   </div>
   <nav id="crumb"></nav>
@@ -252,12 +254,12 @@
   </section>
   <aside>
     <div class="kpis">
-      <div class="kpi"><div class="kl">库存捆数</div><div class="kv c1" id="kBundles">–</div><div class="ks">总库容 14,560 捆</div></div>
+      <div class="kpi"><div class="kl">库存捆数</div><div class="kv c1" id="kBundles">–</div><div class="ks">总库容 291,200 捆</div></div>
       <div class="kpi"><div class="kl">累计支数</div><div class="kv c2" id="kRods">–</div><div class="ks">Σ 每捆支数</div></div>
       <div class="kpi"><div class="kl">库存吨位</div><div class="kv c4" id="kTons">–</div><div class="ks">吨（按捆累计）</div></div>
       <div class="kpi"><div class="kl">有料库位</div><div class="kv c3" id="kSlots">–</div><div class="ks">共 91 库位</div></div>
       <div class="kpi"><div class="kl">有料垛位</div><div class="kv c5" id="kStacks">–</div><div class="ks">共 728 垛</div></div>
-      <div class="kpi"><div class="kl">库容利用率</div><div class="kv c6" id="kUtil">–</div><div class="ks">捆数 ÷ 14,560</div></div>
+      <div class="kpi"><div class="kl">库容利用率</div><div class="kv c6" id="kUtil">–</div><div class="ks">捆数 ÷ 291,200</div></div>
     </div>
     <div class="panel specp">
       <h2>规格库存分布（按吨位）<span class="cnt" id="specCnt"></span></h2>
@@ -306,7 +308,7 @@ window.addEventListener('error', e => {
  * 钢厂棒材库 · 库存三维查看
  * 布局 / 库容模型与《调度仿真沙盘.html》同源：
  *   300m × 90m 三跨（A/B/C 各 30m）+ 4 条 2m 横向通道 + 3 条竖向车辆通道
- *   91 库位（每库位 8 垛 × 每垛 20 捆 = 160 捆）-> 全库 14,560 捆
+ *   91 库位（每库位 8 垛 × 每垛 400 捆 = 3200 捆）-> 全库 291,200 捆
  * 本页为独立库存快照（捆级明细），three.js 不可用时自动降级为纯列表模式。
  * ===================================================================== */
 
@@ -323,7 +325,7 @@ const cellCX = c => (c - 1.5) * M.CELL_L;
 const SPAN_ROWS = [1, 3, 5];
 const SPAN_NAMES = ['一跨 A', '二跨 B', '三跨 C'];
 const LANE_COLS = [7, 19, 31];
-const STACKS_PER_SLOT = 8, BUNDLES_PER_STACK = 20;
+const STACKS_PER_SLOT = 8, BUNDLES_PER_STACK = 400;
 const TOTAL_BUNDLE_CAP = M.SLOTS * STACKS_PER_SLOT * BUNDLES_PER_STACK;
 const MAP_BOT = rowY(7) + M.SVC_W;                  // 101m（含充电服务带）
 const WX = x => x - M.L / 2;                        // 米制 x -> 世界 x（居中）
@@ -350,21 +352,21 @@ const ZONES = {
   '铁姆肯区':       { tint: 0xfacc14, label: '#fde047' },
 };
 
-/* ---------------- 棒材规格（在沙盘 5 种规格上补充钢种/长度维度） ---------------- */
+/* ---------------- 棒材规格（在沙盘 5 种规格上补充钢种/长度维度；rods 每捆支数按捆径 15~50cm 口径） ---------------- */
 const SPECS = [
-  { name: '螺纹钢 Φ20', shape: 'rebar',  dia: 20, rods: 6, color: '#f59e0b', w9: 2.1, lengths: [9, 12], grades: ['HRB400E', 'HRB500E'] },
-  { name: '螺纹钢 Φ25', shape: 'rebar',  dia: 25, rods: 5, color: '#fb923c', w9: 3.2, lengths: [9, 12], grades: ['HRB400E', 'HRB500E'] },
-  { name: '圆钢 Φ50',  shape: 'round',  dia: 50, rods: 4, color: '#38bdf8', w9: 2.6, lengths: [6, 9],  grades: ['45#', '40Cr'] },
-  { name: '圆钢 Φ60',  shape: 'round',  dia: 60, rods: 3, color: '#7dd3fc', w9: 3.5, lengths: [6, 9],  grades: ['45#', 'GCr15'] },
-  { name: '方钢 40×40', shape: 'square', dia: 40, rods: 5, color: '#a78bfa', w9: 1.9, lengths: [6, 9],  grades: ['Q235B', 'Q345B'] },
+  { name: '螺纹钢 Φ20', shape: 'rebar',  dia: 20, rods: 21, color: '#f59e0b', w9: 0.47, lengths: [9, 12], grades: ['HRB400E', 'HRB500E'] },
+  { name: '螺纹钢 Φ25', shape: 'rebar',  dia: 25, rods: 15, color: '#fb923c', w9: 0.52, lengths: [9, 12], grades: ['HRB400E', 'HRB500E'] },
+  { name: '圆钢 Φ50',  shape: 'round',  dia: 50, rods: 4, color: '#38bdf8', w9: 0.56, lengths: [6, 9],  grades: ['45#', '40Cr'] },
+  { name: '圆钢 Φ60',  shape: 'round',  dia: 60, rods: 3, color: '#7dd3fc', w9: 0.6, lengths: [6, 9],  grades: ['45#', 'GCr15'] },
+  { name: '方钢 40×40', shape: 'square', dia: 40, rods: 5, color: '#a78bfa', w9: 0.57, lengths: [6, 9],  grades: ['Q235B', 'Q345B'] },
 ];
 /*
  * 捆内支数排布（类圆形打捆）：圆钢/螺纹钢按六方密排——上排嵌进下排凹槽、杆杆相切，
- * 截面外轮廓接近圆形；方钢不滚动，保持矩形平铺。
+ * 截面外轮廓接近圆形；方钢不滚动，保持矩形平铺。捆径口径：一捆合起来的直径最小 15cm、最大 50cm。
  */
 const SQRT3 = Math.sqrt(3);
 const ROD_ROWS = {
-  round: { 3: [2, 1], 4: [1, 2, 1], 5: [2, 1, 2], 6: [3, 2, 1] },   // 圆截面（圆钢/螺纹钢）
+  round: { 3: [2, 1], 4: [1, 2, 1], 5: [2, 1, 2], 6: [3, 2, 1], 15: [5, 4, 3, 2, 1], 21: [6, 5, 4, 3, 2, 1] },   // 圆截面（圆钢/螺纹钢）
   square: { 5: [3, 2] },                                            // 方钢：平铺
 };
 const rodRowsOf = sp => ROD_ROWS[sp.shape === 'square' ? 'square' : 'round'][sp.rods];
@@ -811,7 +813,28 @@ function bindUI() {
  * ===================================================================== */
 let T = null;    // three 上下文（renderer/scene/camera/…）
 function initThree() {
-  const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true });
+  const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, powerPreference: 'high-performance' });
+  // FPS 角标：统计实际渲染帧率（500ms 汇总），并显示当前 WebGL 实际使用的 GPU（验证独显是否生效）
+  {
+    const fpsEl = document.createElement('div');
+    fpsEl.className = 'fps3d';
+    const host3d = renderer.domElement.parentElement || document.body;
+    if (getComputedStyle(host3d).position === 'static') host3d.style.position = 'relative';
+    host3d.appendChild(fpsEl);
+    const gl3d = renderer.getContext();
+    const dbg3d = gl3d.getExtension('WEBGL_debug_renderer_info');
+    const gpu3d = String(dbg3d ? gl3d.getParameter(dbg3d.UNMASKED_RENDERER_WEBGL) : gl3d.getParameter(gl3d.RENDERER));
+    const gpuShort = (gpu3d.match(/RTX \d+\s*(Ti)?|GTX \d+\s*(Ti)?|Radeon [^,()]*/i) || gpu3d.match(/Intel[^,()]*/i) || [gpu3d])[0].trim().slice(0, 26) || 'GPU';
+    console.log('[3D] WebGL GPU:', gpu3d);
+    let fpsN = 0, fpsT = performance.now();
+    const render0 = renderer.render.bind(renderer);
+    renderer.render = function (scene, camera) {
+      fpsN++;
+      const dt = performance.now() - fpsT;
+      if (dt >= 500) { fpsEl.textContent = `FPS ${Math.round(fpsN * 1000 / dt)} · ${gpuShort}`; fpsN = 0; fpsT = performance.now(); }
+      return render0(scene, camera);
+    };
+  }
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
