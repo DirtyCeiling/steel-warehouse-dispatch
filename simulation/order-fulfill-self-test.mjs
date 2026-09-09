@@ -2,6 +2,7 @@
 // 桩掉 DOM/Canvas，在 Node VM 中运行"调度仿真沙盘.html"完整脚本，手动泵 rAF 帧驱动仿真。
 // 用法：node simulation/order-fulfill-self-test.mjs
 import { readFileSync } from 'node:fs';
+import { injectCoreSegs } from './sandbox-page-loader.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
@@ -9,7 +10,7 @@ import { makeFeedFetch } from './feed-stub.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, '调度仿真沙盘.html'), 'utf8');
-const code = html.match(/<script>([\s\S]*)<\/script>/)[1];
+const code = injectCoreSegs(html.match(/<script>([\s\S]*)<\/script>/)[1]);
 
 const absorber = new Proxy(function () {}, {
   get(t, p) { if (p === Symbol.toPrimitive) return () => 0; return absorber; },
@@ -141,21 +142,39 @@ check('车辆吊装按车认领（认领唯一；代吊仅限结构不可达兜�
   tc2.served > 0 && tc2.multiCrane * 4 <= tc2.served,
   `单天车 ${tc2.served - tc2.multiCrane}/${tc2.served} 车 · 跨天车 ${tc2.multiCrane} · 代吊 ${tc2.assists}`);
 
-console.log('== 倒垛降级修复：restackWaiting 机制 ==');
-// 构造场景：把某出库任务的目标垛塞满同规格压货，且全库无空位 -> maybePushCraneJob 必须拒绝入队（不再误核销）
+console.log('== 出库免倒垛：垛顶直取（能取就行，不清空整垛） ==');
 sandbox.setSpeed(1);
+const topTask = sandbox.createTask('out');
+check('探针出库任务可创建', !!topTask, topTask && topTask.id);
+const kTop = topTask.slot.stacks[topTask.stackIdx];
+check('目标捆 = 所选垛的垛顶捆（非垛底 FIFO 捆）',
+  topTask.bundleId === kTop.bundles[kTop.bundles.length - 1].id,
+  `${topTask.bundleId} = 垛顶（全垛 ${kTop.bundles.length} 捆只出 1 捆）`);
+topTask.state = 'pending';
+topTask.batch = { truck: { state: 'WORKING', x: 0, targetY: 0 } }; topTask.truck = topTask.batch.truck;
+const qLen0 = sandbox.__dbg.craneJobsDebug.length;
+sandbox.maybePushCraneJob(topTask);
+const qTop = sandbox.__dbg.craneJobsDebug;
+check('垛顶直取：无倒垛吊，仅 1 吊装车吊入队（不倒空整垛）',
+  qTop.length === qLen0 + 1 && qTop[qTop.length - 1].kind === 'out' && topTask.cranePushed && !topTask.restackWaiting,
+  JSON.stringify(qTop.slice(qLen0)));
+
+console.log('== 倒垛兜底：指定捆被压 + 全库无落点 -> restackWaiting ==');
+// 构造场景：把某出库任务的目标捆指定为垛底捆（被全垛压货），且全库各垛塞满（count 顶到通用上限 400，
+// 任何规格 stackCap = min(400, 物理垛容) 均无剩余落点）-> maybePushCraneJob 必须拒绝入队（不再误核销）
 const outTask = sandbox.createTask('out');
 check('探针出库任务可创建', !!outTask, outTask && outTask.id);
-// 直接模拟：全库垛位填满（含目标垛上方压货），planRestackJobs 必然返回 null
 for (const s of sandbox.__dbg.storages) {
   for (const k of s.stacks) {
-    while (k.count < 20) {
+    while (k.count < 400) {
       if (k.count === 0) { k.spec = outTask.spec; k.inTime = -100; }
       k.count++; k.pending = 0;
-      k.bundles.push({ id: 'X', slotId: s.id, stackIdx: s.stacks.indexOf(k), specIdx: 0, grade: 'Q', len: 9, heat: 'HT0', rods: 1, wt: 1, inTime: -50, pending: false });
+      k.bundles.push({ id: 'X' + k.count + '-' + s.id, slotId: s.id, stackIdx: s.stacks.indexOf(k), specIdx: 0, grade: 'Q', len: 9, heat: 'HT0', rods: 1, wt: 1, inTime: -50, pending: false });
     }
   }
 }
+const kBur = outTask.slot.stacks[outTask.stackIdx];
+outTask.bundleId = kBur.bundles[0].id;   // 指定垛底捆出库：上方压货须全部倒垛，而全库无落点
 outTask.state = 'pending';   // 新流程：出库天车先行吊运装车，任务吊走前保持 pending（装车后机器狗才扫码确认）
 outTask.batch = { truck: { state: 'WORKING', x: 0, targetY: 0 } }; outTask.truck = outTask.batch.truck;
 const before = sandbox.__dbg.bundleSyncOK;   // 填充后仍同步
@@ -163,6 +182,63 @@ sandbox.maybePushCraneJob(outTask);
 check('全库无倒垛落点时：任务不入队（restackWaiting=true）', outTask.restackWaiting === true && !outTask.cranePushed, '');
 check('此时不核销库存（目标捆仍在垛中）', sandbox.__dbg.bundleSyncOK === before, '');
 check('等待文案已提示', logText().includes('装车排队等待'), '');
+
+console.log('== 倒垛确认扫码：机器狗先后扫描源垛 + 目标垛 ==');
+// 构造一吊倒垛作业：源垛顶捆 -> 同库位另一空垛（天车限本跨，同库位倒垛天然合法）
+// 注：上一节把全库各垛塞满到 400 捆（约 29 万捆，专测无落点），逐帧泵进会拖慢绘制/遍历——先裁剪回常规规模
+for (const s of sandbox.__dbg.storages) {
+  for (const k of s.stacks) {
+    if (k.bundles.length > 2) { k.bundles.length = 2; k.count = 2; }
+  }
+}
+const rsTask = sandbox.createTask('out');
+check('探针出库任务可创建', !!rsTask, rsTask && rsTask.id);
+const rsSrc = rsTask.slot, rsIdx = rsTask.stackIdx;
+const rsDestIdx = rsSrc.stacks.findIndex((k, i) => i !== rsIdx);   // 同库位另一垛作目标垛
+const kRsDest = rsSrc.stacks[rsDestIdx];
+kRsDest.bundles = []; kRsDest.count = 0; kRsDest.pending = 0; kRsDest.reserved = 0; kRsDest.spec = null;
+const kRsSrc = rsSrc.stacks[rsIdx];
+const rsJob = {
+  kind: 'restack', taskId: rsTask.id, spec: rsTask.spec, slot: rsSrc, task: rsTask,
+  span: 0, from: { x: 0, y: 0 }, to: { x: 0, y: 0 },
+  fromStack: rsIdx, dest: rsSrc, destStack: rsDestIdx,
+  queuedAt: sandbox.__dbg.simTime,
+  bundleId: kRsSrc.bundles[kRsSrc.bundles.length - 1].id,   // 垛顶捆（真实流程在 LOWER 落位时由天车写入）
+};
+rsTask.batch = { truck: { state: 'WORKING', x: 0, targetY: 0 } }; rsTask.truck = rsTask.batch.truck;
+const rsConfirm = sandbox.spawnRestackScanTask(rsJob);
+check('倒垛落位即下发确认任务（type=restack · 源垛/目标垛两点）',
+  !!rsConfirm && rsConfirm.type === 'restack' && rsConfirm.state === 'pending'
+  && rsConfirm.slot === rsSrc && rsConfirm.destSlot === rsSrc && rsConfirm.stopIdx === 0,
+  rsConfirm && `${rsConfirm.id} ${rsConfirm.slot.code}.${rsConfirm.stackIdx + 1} -> ${rsConfirm.destSlot.code}.${rsConfirm.destStack + 1}`);
+check('确认任务继承车牌/车次（时效页按车分组追溯）',
+  rsConfirm.truck === rsTask.truck && rsConfirm.batch === rsTask.batch, '');
+const rbFree = sandbox.__dbg.robots.find(r => r.battery < 100);   // 保证一台立即满电可派（避开充电长等）
+if (rbFree) rbFree.battery = 100;
+const scansBefore = sandbox.__dbg.robots.reduce((s, r) => s + r.scans, 0);
+sandbox.setSpeed(8);   // 泵帧加速：等机器狗接单->源垛->转场->目标垛
+let rsDone = false;
+for (let i = 0; i < 90 && !rsDone; i++) { await pump(1); rsDone = rsConfirm.state === 'done'; }
+check('机器狗双点核验后闭环（源垛扫毕转场目标垛）',
+  rsDone && rsConfirm.stopIdx === 1 && rsConfirm.scanStartAt > 0 && rsConfirm.scanDoneAt > rsConfirm.scanStartAt,
+  `state=${rsConfirm.state} stop=${rsConfirm.stopIdx + 1}/2 延时=${rsConfirm.scanDoneAt - rsConfirm.materialReadyAt}s`);
+check('倒垛确认扫码计入狗扫码数（两点 = +2）',
+  sandbox.__dbg.robots.reduce((s, r) => s + r.scans, 0) >= scansBefore + 2, '');
+const rsLedger = sandbox.__dbg.tasks.filter(t => t.type === 'restack' && t.state === 'done').length;
+check('倒垛确认任务入任务流（不混计入/出库任务）', rsLedger >= 1, `restack done=${rsLedger}`);
+
+console.log('== 倒垛确认监测范围：全库免检 -> 整单免检直通 ==');
+sandbox.setDeviceParam('robot', 'spanA', false);
+sandbox.setDeviceParam('robot', 'spanB', false);
+sandbox.setDeviceParam('robot', 'spanC', false);
+const rsJob2 = { ...rsJob, bundleId: kRsSrc.bundles[kRsSrc.bundles.length - 1].id, queuedAt: sandbox.__dbg.simTime };
+const rsConfirm2 = sandbox.spawnRestackScanTask(rsJob2);
+await pump(1);
+check('两垛均不在监测范围：免检直通即时闭环（不占机器狗）',
+  rsConfirm2.state === 'done' && rsConfirm2.scanSkipped === true && rsConfirm2.scanManual === false && rsConfirm2.robot === null,
+  `state=${rsConfirm2.state} skip=${rsConfirm2.scanSkipped} manual=${rsConfirm2.scanManual}`);
+check('范围外直通已执行且留痕（探针计数，不受日志窗口 260 条挤出影响）',
+  (sandbox.__restackScopeSkip || 0) >= 1, `__restackScopeSkip=${sandbox.__restackScopeSkip || 0}`);
 
 console.log(failed === 0 ? 'ALL PROBE CHECKS PASSED' : `${failed} FAILED`);
 if (failed) console.log('FAILED_IDX:', JSON.stringify(failIdx));

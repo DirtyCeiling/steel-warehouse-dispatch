@@ -44,22 +44,39 @@ const PAGES = {
   '/runs.html': '/仿真场次记录.html',
   '/params': '/调度参数.html',
   '/params.html': '/调度参数.html',
+  '/whcfg': '/库房参数设计.html',
+  '/whcfg.html': '/库房参数设计.html',
 };
 
 /* 静态文件缓存：路径 -> { mtimeMs, size, etag, raw, br, gz }
  * 原文 + 预压缩各存一份（合计约几 MB），按 mtime+size 失效——
  * 免去每次请求的磁盘读取与重复压缩；开发中改文件即时生效。 */
 const fileCache = new Map();
+/* 沙盘去重注入：页面内 / *@@core-seg-N@@* / 占位由 shared/sandbox-core.mjs 对应片段原位替换
+ * （tool-split-sandbox.mjs 生成产物后自动生效；未含占位符的页面零开销走原路径）。 */
+const corePath = join(ROOT, 'shared', 'sandbox-core.mjs');
+async function injectCoreSegs(raw) {
+  if (!raw.includes('/*@@core-seg-')) return raw;
+  const core = await loadFile(corePath);
+  const text = core.raw.toString('utf8');
+  const parts = text.split(/\/\*@@core-seg-(\d+)@@\*\//);
+  const map = new Map();
+  for (let i = 1; i < parts.length; i += 2) map.set(+parts[i], parts[i + 1]);
+  return raw.replace(/\/\*@@core-seg-(\d+)@@\*\//g, (m, n) => map.get(+n) ?? '');
+}
 async function loadFile(file) {
   const st = await stat(file);
   const hit = fileCache.get(file);
-  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit;
-  const raw = await readFile(file);
+  // core 依赖：页面缓存命中须同时核对 core 的 mtime（core 修改后页面注入产物即时失效）
+  const coreMt = (await stat(corePath).catch(() => null))?.mtimeMs ?? 0;
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size && hit.coreMt === coreMt) return hit;
+  const raw = await injectCoreSegs(await readFile(file));
   const compressible = COMPRESSIBLE.has(extname(file)) && raw.length > 1024;
   const entry = {
     mtimeMs: st.mtimeMs,
-    size: st.size,
-    etag: `W/"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"`,
+    size: raw.length,
+    coreMt,
+    etag: `W/"${raw.length.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}-${Math.floor(coreMt).toString(16)}"`,
     raw,
     br: compressible ? brotliCompressSync(raw) : null,
     gz: compressible ? gzipSync(raw) : null,

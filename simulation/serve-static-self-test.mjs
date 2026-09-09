@@ -65,19 +65,20 @@ check('车辆记录可按 completed 筛选', vehDone.vehicles.some(v => v.id ===
 const reUnl = await (await fetch(`${API}/api/inbound/${sp.id}/unload`, { method: 'POST' })).json();
 check('重复回传幂等（不重复记时）', !reUnl.error && reUnl.vehicle.departedTime === unl.vehicle.departedTime, '');
 
+const { stackCap } = await import('../server/database.js');
 const cands600 = await (await fetch(`${API}/api/inbound/candidates?spec=${encodeURIComponent('管材 Φ600')}&bundles=1`)).json();
-check('Φ600 候选余量 ≤ 12（物理垛容口径与沙盘一致）',
-  cands600.candidates.length > 0 && cands600.candidates.every(c => c.free <= 12),
-  cands600.candidates.length ? `maxFree=${Math.max(...cands600.candidates.map(c => c.free))}` : '无候选');
+check('Φ600 候选余量 ≤ 物理垛容（stackCap 口径与沙盘一致）',
+  cands600.candidates.length > 0 && cands600.candidates.every(c => c.free <= stackCap('管材 Φ600')),
+  cands600.candidates.length ? `maxFree=${Math.max(...cands600.candidates.map(c => c.free))}/cap=${stackCap('管材 Φ600')}` : '无候选');
 const seedSlots = await (await fetch(`${API}/api/slots?variant=seed`)).json();
 check('seed 变体：91 库位 × 8 垛，形状与 /api/slots 一致',
   seedSlots.slots.length === 91 && seedSlots.slots.every(s => s.stacks.length === 8)
   && seedSlots.slots.every((s, i) => s.code === slots[i].code),
   `${seedSlots.slots.length} 库位`);
-check('seed 分布 Φ200 ≤ 130、Φ400 ≤ 30、Φ600 ≤ 12（单支管限高收窄）',
+check('seed 分布大口径单支管不超物理垛容（Φ200/Φ400/Φ600 = stackCap 口径）',
   seedSlots.slots.flatMap(s => s.stacks).every(k => !k.spec || !['管材 Φ200', '管材 Φ400', '管材 Φ600'].includes(k.spec)
-    || k.count <= ({ '管材 Φ200': 130, '管材 Φ400': 30, '管材 Φ600': 12 })[k.spec]),
-  '');
+    || k.count <= stackCap(k.spec)),
+  ['管材 Φ200', '管材 Φ400', '管材 Φ600'].map(sp => `${sp}≤${stackCap(sp)}`).join(' '));
 await fetch(`${API}/api/params`, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ values: { robot: { spanB: 0, spanC: 0 } } }) });
 const mc = await (await fetch(`${API}/api/inbound/candidates?spec=${encodeURIComponent('螺纹钢 Φ20')}&bundles=1`)).json();
@@ -85,7 +86,14 @@ check('监测范围受限：服务端候选全部落在监测跨（A 跨或整�
   mc.candidates.length > 0 && mc.candidates.every(c => c.span === 0 || c.merged),
   `n=${mc.candidates.length} spans=[${[...new Set(mc.candidates.map(c => c.span))].join(',')}]`);
 await fetch(`${API}/api/params`, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ values: { robot: { spanB: 1, spanC: 1 } } }) });   // 恢复默认
+  body: JSON.stringify({ values: { robot: { fromA: 17, toA: 33 } } }) });   // A 跨扫描 17~33 号区：作业仍限整跨
+const pcol = await (await fetch(`${API}/api/inbound/candidates?spec=${encodeURIComponent('螺纹钢 Φ20')}&bundles=1`)).json();
+check('扫描范围受限（A 跨扫描 17~33）：服务端候选仍覆盖 A 跨全部号区（作业范围=监测跨整跨，号区只限定机器狗扫描）',
+  pcol.candidates.length > 0 && pcol.candidates.every(c => c.span === 0 || c.merged)
+  && pcol.candidates.some(c => !c.merged && c.area < 17),
+  `n=${pcol.candidates.length} areas=${[...new Set(pcol.candidates.filter(c => !c.merged).map(c => c.area))].sort((a, b) => a - b).join(',')}`);
+await fetch(`${API}/api/params`, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ values: { robot: { spanB: 1, spanC: 1, fromA: 1, toA: 33 } } }) });   // 恢复默认
 
 // 3) 主应用任务接口（createTask/updateTaskStatus 单行映射路径）
 const coil = (await (await fetch(`${API}/api/app/data`)).json())?.coils?.[0];

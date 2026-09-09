@@ -2,6 +2,7 @@
 // 桩掉 DOM/Canvas，在 Node VM 中运行"调度仿真沙盘.html"完整脚本，泵 rAF 帧驱动仿真。
 // 用法：node simulation/vehicle-panel-self-test.mjs
 import { readFileSync } from 'node:fs';
+import { injectCoreSegs } from './sandbox-page-loader.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
@@ -10,7 +11,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, '调度仿真沙盘.html'), 'utf8');
 const m = html.match(/<script>([\s\S]*)<\/script>/);
 if (!m) throw new Error('未找到 <script> 内容');
-const code = m[1];
+const code = injectCoreSegs(m[1]);
 
 const absorber = new Proxy(function () {}, {
   get(t, p) { if (p === Symbol.toPrimitive) return () => 0; return absorber; },
@@ -21,7 +22,7 @@ const absorber = new Proxy(function () {}, {
 const elements = new Map();
 function makeEl(id = '') {
   const el = {
-    id, textContent: '', innerHTML: '', className: '', checked: false, value: '',
+    id, textContent: '', innerHTML: '', className: '', checked: false, value: '', style: {},
     children: [],
     appendChild(ch) { this.children.push(ch); return ch; },
     removeChild(ch) { const i = this.children.indexOf(ch); if (i >= 0) this.children.splice(i, 1); return ch; },
@@ -129,6 +130,7 @@ if (el('vehDetail').innerHTML.includes('暂无车辆')) {
   sandbox.forceDispatchBatches();
   for (let i = 0; i < 120 && !sandbox.__dbg.truckHistory.some(t => t.inScene && t.done > 0); i++) pump(5);
 }
+sandbox.renderVehiclePanel();   // 面板按 0.2 仿真秒节流刷新：采样前强制重渲染，保证面板与任务状态同拍（出库免倒垛后装车节奏更快，节流窗内易差一吊）
 const detailHtml = el('vehDetail').innerHTML;
 check('明细含完成状态（已卸货/已装车）', detailHtml.includes('已卸货') || detailHtml.includes('已装车'), '');
 check('明细含进度标签（x/y 吊完成）', /\/\d+ 吊完成/.test(detailHtml), (detailHtml.match(/\/\d+ 吊完成/))?.[0] || '无');

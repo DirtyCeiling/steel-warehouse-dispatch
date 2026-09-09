@@ -20,6 +20,8 @@ export function openDb(path = DB_PATH) {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   migrate(db);
+  syncGeoCfg(db);     // 库房几何/捆制参数：sim_params warehouse 段 -> geoCfg
+  syncSpecRules(db);  // 捆制规则覆盖 -> specRulesCache
   if (!hasAppData(db)) {
     try { seedAppData(db); } catch { /* 种子 JSON 缺失时保持空库 */ }
   }
@@ -32,6 +34,12 @@ function migrate(db) {
       name   TEXT PRIMARY KEY,
       weight REAL NOT NULL,
       color  TEXT NOT NULL
+    );
+    -- 捆制规则覆盖（「库房参数设计」页编辑）：每规格每捆支数；0 = 引擎自动推导；
+    -- 无行 = 预置值（SPEC_DIMS.rods）
+    CREATE TABLE IF NOT EXISTS spec_rules (
+      spec  TEXT PRIMARY KEY,
+      rods  INTEGER NOT NULL CHECK (rods BETWEEN 0 AND 999)
     );
     CREATE TABLE IF NOT EXISTS storage_slots (
       id     INTEGER PRIMARY KEY,
@@ -192,6 +200,7 @@ export function setSimParams(db, patch = {}) {
     }
   });
   tx();
+  syncGeoCfg(db);   // warehouse 段参数即时生效（垛容/捆径/限高等几何函数实时读取）
   return getSimParams(db);
 }
 
@@ -320,11 +329,10 @@ const SPEC_FAMILY = {   // 规格族（形状）：同族视为"相似货物"，
   '方钢 40×40': 'square',
   '管材 Φ50': 'pipe', '管材 Φ100': 'pipe', '管材 Φ200': 'pipe', '管材 Φ400': 'pipe', '管材 Φ600': 'pipe',
 };
-/* 垛内码放物理模型（与沙盘 SPEC_META/ROD_ROWS/PILE_W/RACK_H 同口径，米制）：
- * 捆径（一捆合起来的外接圆直径）最小 15cm、最大 50cm——细棒材增多支数成大捆，
- * 粗管材超限即改单支吊运；Φ400/Φ600 单支管径本身 ≥40cm，不属打捆件、不受上限约束。
- * 单捆宽 = 层内最大支数 × 杆径 × 1.08，垛内每层沿 2.7m 铺满并排（Z 向留 3cm 通风缝）；
- * 单捆高 = 排数 × 杆径 × 1.06 + 垫木 15mm，料架立柱限高 3m。 */
+/* 垛内码放物理模型（与沙盘 SPEC_META/ROD_ROWS 同口径，米制）：
+ * 捆径（一捆合起来的外接圆直径）上下限、料架限高、垛内铺宽、垫木/通风缝/截面系数、
+ * 每垛捆数上限均为可调参数（sim_params warehouse 段 -> geoCfg，「库房参数设计」页编辑），
+ * 此处为默认值（与历史常量一致）；每规格每捆支数 = spec_rules 覆盖 > 预置值 > 引擎自动推导。 */
 const SPEC_DIMS = {
   '螺纹钢 Φ20': { dia: 20, rods: 21 }, '螺纹钢 Φ25': { dia: 25, rods: 15 },
   '圆钢 Φ50': { dia: 50, rods: 4 },   '圆钢 Φ60': { dia: 60, rods: 3 },
@@ -332,38 +340,140 @@ const SPEC_DIMS = {
   '管材 Φ50': { dia: 50, rods: 6 },   '管材 Φ100': { dia: 100, rods: 6 },
   '管材 Φ200': { dia: 200, rods: 1 }, '管材 Φ400': { dia: 400, rods: 1 }, '管材 Φ600': { dia: 600, rods: 1 },
 };
-/* 捆内支数排布（自下而上每层支数，金字塔式）；1 = 单支吊运不打带。
- * 15 支 = 5+4+3+2+1，21 支 = 6+5+4+3+2+1（细棒材大捆）。 */
-const ROD_ROWS = { 1: [1], 3: [2, 1], 4: [2, 2], 5: [3, 2], 6: [3, 2, 1], 15: [5, 4, 3, 2, 1], 21: [6, 5, 4, 3, 2, 1] };
-const RACK_H = 3.0, PILE_W = 2.7;
+/* 捆内支数排布：仅保留非三角数的手工排布（4=2+2 平铺、5=3+2）；三角数 k(k+1)/2
+ * （1,3,6,10,15,21…）由 rowsOf() 通用生成金字塔 [k..1]。 */
+const ROD_ROWS = { 1: [1], 4: [2, 2], 5: [3, 2] };
+/** 捆内支数 -> 自下而上每层支数：三角数生成金字塔；非三角数在金字塔顶补余数 */
+function rowsOf(rods) {
+  if (ROD_ROWS[rods]) return ROD_ROWS[rods];
+  const k = Math.floor((Math.sqrt(8 * rods + 1) - 1) / 2);
+  const rows = Array.from({ length: k }, (_, i) => k - i);
+  const rem = rods - k * (k + 1) / 2;
+  if (rem > 0) rows.unshift(rem);
+  return rows;
+}
+
+/* 库房几何参数（默认 = 历史常量；openDb / setSimParams / 规则保存时与 sim_params 同步）
+ * fillRatio = 库容装载比例（%）：仅期初灌库（seed/buildSeedSlots）按此比例铺层，重建库区生效 */
+export const GEO_DEFAULTS = {
+  rackH: 3.0, pileW: 2.7, railTop: 0.41, packShim: 15, packGap: 30,
+  diaKw: 1.08, diaKh: 1.06, bundlesPerStack: 400, minDiaCm: 15, maxDiaCm: 50,
+  fillRatio: 22,
+};
+let geoCfg = { ...GEO_DEFAULTS };
+/** 当前库房几何参数快照（只读副本） */
+export function getGeoCfg() { return { ...geoCfg }; };
+function syncGeoCfg(db) {
+  const w = getSimParams(db).warehouse || {};
+  for (const k of Object.keys(GEO_DEFAULTS)) if (Number.isFinite(w[k])) geoCfg[k] = w[k];
+}
+/* spec_rules 覆盖缓存（与表同步：openDb / applyBundleRules / 查询时刷新） */
+let specRulesCache = new Map();
+function syncSpecRules(db) {
+  specRulesCache = new Map(db.prepare('SELECT spec, rods FROM spec_rules').all().map(r => [r.spec, r.rods]));
+}
+
+/** 捆制规则引擎：给定杆径(mm)，按三角数支数（1,3,6,10,15,21…）推导使捆径落入
+ *  [minCm, maxCm] 的最小支数；单支即达标 -> 1（单支吊运）；单支仍超上限（如 Φ600）
+ *  也返回 1——单支是物理下限，由调用方警示。 */
+export function deriveRods(diaMm, minCm = geoCfg.minDiaCm, maxCm = geoCfg.maxDiaCm) {
+  let lastBelow = null;
+  for (let k = 1; k <= 40; k++) {
+    const n = k * (k + 1) / 2;
+    const d = k === 1 ? diaMm / 10 : bundleDiaFromRows(rowsOf(n), diaMm);
+    if (d > maxCm) return lastBelow ? lastBelow.n : 1;
+    if (d >= minCm) return n;
+    lastBelow = { n };
+  }
+  return lastBelow ? lastBelow.n : 1;
+}
+/** 捆径核算（cm）：矩形截面取对角线；单支吊运即管径本身 */
+function bundleDiaFromRows(rows, diaMm) {
+  const dia = diaMm / 1000;
+  const w = Math.max(...rows) * dia * geoCfg.diaKw;
+  const h = rows.length * dia * geoCfg.diaKh + geoCfg.packShim / 1000;
+  return Math.sqrt(w * w + h * h) * 100;
+}
+/** 每捆支数：spec_rules 覆盖（>0=手工覆盖 / 0=引擎自动）> 预置值 > 自动推导；未知规格返回 0 */
+export function bundleRods(specName) {
+  const d = SPEC_DIMS[specName];
+  if (!d) return 0;
+  const rule = specRulesCache.get(specName);
+  if (rule != null) return rule > 0 ? rule : deriveRods(d.dia);
+  return d.rods;
+}
+/** 捆径（一捆合起来的外接圆直径，cm）：打捆件（支数>1）口径须落在 min~max 上下限内 */
+export function bundleDiaCm(specName) {
+  const d = SPEC_DIMS[specName];
+  if (!d) return null;
+  const rods = bundleRods(specName);
+  if (!rods) return null;
+  return rods === 1 ? d.dia / 10 : bundleDiaFromRows(rowsOf(rods), d.dia);
+}
 /** 规格码放几何：{ across 每层并排数, maxLayers 限高可堆层数, geo 物理垛容 }；未知规格返回 null */
 export function pileDims(specName) {
   const d = SPEC_DIMS[specName];
   if (!d) return null;
-  const rows = ROD_ROWS[d.rods], dia = d.dia / 1000;
-  const across = Math.max(2, Math.floor(PILE_W / (Math.max(...rows) * dia * 1.08 + 0.03)));
-  const maxLayers = Math.floor(RACK_H / (rows.length * dia * 1.06 + 0.015));
+  const rows = rowsOf(bundleRods(specName)), dia = d.dia / 1000;
+  const across = Math.max(2, Math.floor(geoCfg.pileW / (Math.max(...rows) * dia * geoCfg.diaKw + geoCfg.packGap / 1000)));
+  const maxLayers = Math.floor(geoCfg.rackH / (rows.length * dia * geoCfg.diaKh + geoCfg.packShim / 1000));
   return { across, maxLayers, geo: across * maxLayers };
 }
-/** 垛容量（捆）：min(通用上限, 每层并排 × 限高层数)——与仿真沙盘 stackCap 完全同口径。
+/** 垛容量（捆）：min(每垛通用上限, 每层并排 × 限高层数)——与仿真沙盘 stackCap 完全同口径。
  *  进厂确认的推荐/校验若超此口径，分配单会超出物理垛容、与沙盘实际落位背离。 */
 export function stackCap(specName) {
   const p = pileDims(specName);
-  return p ? Math.min(BUNDLES_PER_STACK, p.geo) : BUNDLES_PER_STACK;
+  return p ? Math.min(geoCfg.bundlesPerStack, p.geo) : geoCfg.bundlesPerStack;
 }
-/** 每捆支数（未知规格返回 0；1 = 单支吊运不打带） */
-export function bundleRods(specName) {
-  return SPEC_DIMS[specName]?.rods ?? 0;
+/** 全量捆制规则（含几何核算与来源）：供 GET /api/bundle-rules 与规则页展示 */
+export function getBundleRules(db) {
+  syncGeoCfg(db); syncSpecRules(db);
+  const weightOf = db.prepare('SELECT weight FROM specs WHERE name=?');
+  return Object.keys(SPEC_DIMS).map(spec => {
+    const d = SPEC_DIMS[spec];
+    const rule = specRulesCache.get(spec);
+    const rods = bundleRods(spec);
+    return {
+      spec, dia: d.dia, shape: SPEC_FAMILY[spec],
+      rods, source: rule == null ? 'preset' : (rule > 0 ? 'override' : 'auto'),
+      presetRods: d.rods,
+      rows: rowsOf(rods), diaCm: +bundleDiaCm(spec).toFixed(1),
+      cap: stackCap(spec), single: rods === 1,
+      weight: weightOf.get(spec)?.weight ?? null,
+    };
+  });
 }
-/** 捆径（一捆合起来的外接圆直径，cm）：矩形截面取对角线；单支吊运即管径本身。
- *  打捆件（支数>1）口径须落在 15~50cm——见 SPEC_DIMS 注释。 */
-export function bundleDiaCm(specName) {
-  const d = SPEC_DIMS[specName];
-  if (!d) return null;
-  if (d.rods === 1) return d.dia / 10;
-  const rows = ROD_ROWS[d.rods], dia = d.dia / 1000;
-  const w = Math.max(...rows) * dia * 1.08, h = rows.length * dia * 1.06 + 0.015;
-  return Math.sqrt(w * w + h * h) * 100;
+/** 更新捆制规则覆盖：rules = [{ spec, rods }]（rods>0 覆盖 / 0=引擎自动 / null=恢复预置）。
+ *  棒材（非管材）按理论米重自动重算单捆吨位（圆/螺纹 d²×0.00617、方钢 d²×0.00785 kg/m，9m 基准）。
+ *  返回 { warnings 捆径越界警示, weights 吨位变更 [{spec,from,to}] } */
+export function applyBundleRules(db, rules = []) {
+  const warnings = [], weights = [];
+  const up = db.prepare('INSERT INTO spec_rules (spec, rods) VALUES (?, ?) ON CONFLICT(spec) DO UPDATE SET rods=excluded.rods');
+  const del = db.prepare('DELETE FROM spec_rules WHERE spec=?');
+  const setW = db.prepare('UPDATE specs SET weight=? WHERE name=?');
+  const tx = db.transaction(() => {
+    for (const r of rules || []) {
+      if (!r || !(r.spec in SPEC_DIMS)) continue;
+      if (r.rods == null) { del.run(r.spec); specRulesCache.delete(r.spec); continue; }
+      const rods = Math.max(0, Math.min(999, Math.round(Number(r.rods) || 0)));
+      up.run(r.spec, rods);
+      specRulesCache.set(r.spec, rods);
+    }
+    for (const name of Object.keys(SPEC_DIMS)) {
+      const d = SPEC_DIMS[name], rods = bundleRods(name), diaCm = bundleDiaCm(name);
+      if (!rods || diaCm == null) continue;
+      if (rods > 1 && (diaCm < geoCfg.minDiaCm - 1e-9 || diaCm > geoCfg.maxDiaCm + 1e-9))
+        warnings.push(`${name}：${rods} 支/捆 · 捆径 ${diaCm.toFixed(1)}cm 超出口径 ${geoCfg.minDiaCm}~${geoCfg.maxDiaCm}cm`);
+      const fam = SPEC_FAMILY[name];
+      if (fam === 'pipe') continue;   // 管材无壁厚数据，吨位保持手工值
+      const kgm = d.dia * d.dia * (fam === 'square' ? 0.00785 : 0.00617);
+      const w = +(kgm * 9 * rods / 1000).toFixed(2);
+      const cur = db.prepare('SELECT weight FROM specs WHERE name=?').get(name);
+      if (cur && Math.abs(cur.weight - w) > 1e-9) { setW.run(w, name); weights.push({ spec: name, from: cur.weight, to: w }); }
+    }
+  });
+  tx();
+  return { warnings, weights };
 }
 export { SPEC_FAMILY };
 function mulberry32(seed) {
@@ -398,10 +508,11 @@ export function buildSeedSlots() {
         spec = pool[(s.area + s.span + 1) % pool.length];
       }
       const dim = pileDims(spec);
-      // 铺层策略：按限高可堆层数的 18~24% 铺放、至少 3 层（替代旧固定 28~33 捆——只铺底下一两层）；
-      // 铺层比例随机流按垛均匀消耗（与规格无关，保证空库位数量稳定）；大口径单支管
-      //（Φ200/Φ400/Φ600，单支吊运）保持满垛，作为「限高收窄」样例
-      const fillF = 0.18 + 0.08 * rnd();
+      // 铺层策略：按限高可堆层数的「库容装载比例」（geoCfg.fillRatio，%）±4% 抖动铺放、每垛至少 3 层
+      //（垛体稳定下限，低比例时以 3 层为准）；铺层比例随机流按垛均匀消耗（与规格无关，
+      //  保证空库位数量稳定）；大口径单支管（Φ200/Φ400/Φ600，单支吊运）保持满垛，
+      //  作为「限高收窄」样例。默认 22% 即原 18~26% 区间，随机流逐次调用不变、分布可复现。
+      const fillF = Math.min(1, Math.max(0.05, geoCfg.fillRatio / 100 - 0.04 + 0.08 * rnd()));
       const count = (spec === '管材 Φ200' || spec === '管材 Φ400' || spec === '管材 Φ600')
         ? stackCap(spec)
         : Math.min(dim.across * Math.max(3, Math.round(dim.maxLayers * fillF)), stackCap(spec));
@@ -420,11 +531,12 @@ export function getSeedSlots() {
 
 /**
  * 重建数据：写入规格 + 91 库位 + 728 垛，并按分区专业化灌入实际钢材分布
- *（按料架限高可堆层数的 18~24% 铺层，总量约 4.7 万捆——捆径 15~50cm 口径下单捆
- *  支数增多、捆数相应减少；总库容 291,200 捆（91×8×400 通用上限，
+ *（按限高可堆层数的「库容装载比例」铺层——默认 22%，约 4.7 万捆；可在
+ *  「库房参数设计」页调整 fillRatio 后重建。总库容 291,200 捆（91×8×400 通用上限，
  *  实际垛容按规格限高收窄），均已扫码入账；保留少量空库位与未满垛作入库缓冲）。
  */
 export function seed(db) {
+  syncGeoCfg(db); syncSpecRules(db);   // 重建按当前库房参数/捆制规则铺层
   const slots = buildSeedSlots();
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM bundle_positions').run();   // 捆级落位坐标随重建清空（外键依赖 storage_slots，须先删）
@@ -453,7 +565,7 @@ export function getInventory(db) {
   const totalBundles = db.prepare('SELECT COALESCE(SUM(count), 0) n FROM stacks').get().n;
   const pending = db.prepare('SELECT COALESCE(SUM(pending), 0) n FROM stacks').get().n;
   const occupiedSlots = db.prepare("SELECT COUNT(*) n FROM storage_slots WHERE state='occupied'").get().n;
-  const totalCapacity = slotCount * STACKS_PER_SLOT * BUNDLES_PER_STACK;
+  const totalCapacity = slotCount * STACKS_PER_SLOT * geoCfg.bundlesPerStack;
   const perZone = db.prepare(`
     SELECT s.zone,
            COUNT(DISTINCT s.id)          AS slots,
@@ -509,6 +621,7 @@ export function setStack(db, slotId, stackNo, patch = {}) {
   let count = patch.count !== undefined ? patch.count : cur.count;
   let pending = patch.pending !== undefined ? patch.pending : cur.pending;
   const in_time = patch.in_time !== undefined ? patch.in_time : cur.in_time;
+  if (count > geoCfg.bundlesPerStack) count = geoCfg.bundlesPerStack;   // 每垛通用上限（库房参数）
   if (!count || count <= 0) {
     spec = null; pending = 0; count = 0;
     db.prepare('DELETE FROM bundle_positions WHERE slot_id=? AND stack_no=?').run(slotId, stackNo);

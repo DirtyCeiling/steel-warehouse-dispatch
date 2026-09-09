@@ -7,6 +7,7 @@ import {
   openDb, seed, getInventory, getSlots, getSlot, getSpecs, setStack,
   syncBundlePositions, getBundlePositions, getSeedSlots,
   getAppData, seedAppData, createTask, updateTaskStatus, getSimParams, setSimParams, DB_PATH,
+  getBundleRules, applyBundleRules,
 } from './database.js';
 import { PARAM_SCHEMA } from './params.js';
 import {
@@ -69,6 +70,16 @@ export function startServer({ host = HOST, port = PORT } = {}) {
       if (req.method === 'PUT' && p === '/api/params') {
         const body = await readBody(req);
         return json(res, 200, { schema: PARAM_SCHEMA, values: setSimParams(db, body.values || body) });
+      }
+
+      // 捆制规则（「库房参数设计」页）：每规格每捆支数（覆盖/自动/预置）+ 捆径/垛容核算 + 吨位
+      if (req.method === 'GET' && p === '/api/bundle-rules') {
+        return json(res, 200, { rules: getBundleRules(db) });
+      }
+      if (req.method === 'PUT' && p === '/api/bundle-rules') {
+        const body = await readBody(req);
+        const { warnings, weights } = applyBundleRules(db, body.rules || []);
+        return json(res, 200, { rules: getBundleRules(db), warnings, weights });
       }
 
       // 主应用（三维库区）数据接口：前端启动时从这里加载全量数据

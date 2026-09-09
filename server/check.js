@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import {
   openDb, seed, getInventory, getSlots, getSlot, setStack,
   syncBundlePositions, getBundlePositions,
-  bundleDiaCm, bundleRods,
+  bundleDiaCm, bundleRods, getBundleRules, applyBundleRules, getGeoCfg, deriveRods,
   STACKS_PER_SLOT, BUNDLES_PER_STACK,
 } from './database.js';
 import { SPECS } from './layout.js';
@@ -37,20 +37,37 @@ const inv = getInventory(db);
 check('库位总数 91', inv.slotCount === 91, String(inv.slotCount));
 const stackCount = getSlots(db).reduce((s, x) => s + x.stacks.length, 0);
 check(`每库位 ${STACKS_PER_SLOT} 垛 -> 垛位总数 ${91 * STACKS_PER_SLOT}`, stackCount === 91 * STACKS_PER_SLOT, String(stackCount));
-check(`总库容 91×${STACKS_PER_SLOT}×${BUNDLES_PER_STACK}=${91 * STACKS_PER_SLOT * BUNDLES_PER_STACK}`, inv.totalCapacity === 291200, String(inv.totalCapacity));
+check(`总库容 91×${STACKS_PER_SLOT}×${BUNDLES_PER_STACK}=${91 * STACKS_PER_SLOT * BUNDLES_PER_STACK}`, inv.totalCapacity === 91 * STACKS_PER_SLOT * getGeoCfg().bundlesPerStack, String(inv.totalCapacity));
 check('初始库存为实际钢材分布（捆径 15~50cm 口径约 4.7 万捆，利用率 ~16%，均已入账）',
   inv.totalBundles > 40000 && inv.totalBundles < 52000 && inv.utilization > 0.13 && inv.utilization < 0.2 && inv.pending === 0,
   `${inv.totalBundles} 捆 · ${(inv.utilization * 100).toFixed(1)}%`);
 check('存在空闲库位（入库缓冲位）', inv.occupiedSlots < inv.slotCount, `${inv.slotCount - inv.occupiedSlots} 个空库位`);
 check('分区统计齐全', inv.perZone.length === 4, JSON.stringify(inv.perZone.map(z => `${z.zone}:${z.slots}`)));
 
-console.log('== 捆径口径（一捆合起来的直径 15~50cm） ==');
+console.log('== 捆径口径（一捆合起来的直径，参数化上下限） ==');
+const diaMin = getGeoCfg().minDiaCm, diaMax = getGeoCfg().maxDiaCm;
 for (const sp of SPECS) {
   const rods = bundleRods(sp.name), d = bundleDiaCm(sp.name);
-  const ok = d != null && (rods === 1 ? d >= 15 : d >= 15 && d <= 50);
-  check(`${sp.name}：${rods === 1 ? '单支吊运不打带' : `${rods} 支/捆`} · 捆径 ${d?.toFixed(1)}cm（${rods === 1 ? '管径本身 ≥ 15' : '须 15~50'}）`,
+  const ok = d != null && (rods === 1 ? d >= diaMin : d >= diaMin && d <= diaMax);
+  check(`${sp.name}：${rods === 1 ? '单支吊运不打带' : `${rods} 支/捆`} · 捆径 ${d?.toFixed(1)}cm（${rods === 1 ? `管径本身 ≥ ${diaMin}` : `须 ${diaMin}~${diaMax}`}）`,
     ok, d?.toFixed(1));
 }
+check('规则引擎自动推导（Φ12 杆径 -> 三角数最小合规支数）', deriveRods(12) >= 3, `${deriveRods(12)} 支`);
+check('规则引擎单支判定（Φ200 单支达标 / Φ600 单支物理下限）', deriveRods(200) === 1 && deriveRods(600) === 1, '');
+
+console.log('== 捆制规则覆盖（spec_rules） ==');
+const rulesBefore = getBundleRules(db);
+const r20 = rulesBefore.find(r => r.spec === '螺纹钢 Φ20');
+check('期初全部为预置规则（无覆盖）', rulesBefore.every(r => r.source === 'preset'), rulesBefore.filter(r => r.source !== 'preset').map(r => r.spec).join(','));
+const ap = applyBundleRules(db, [{ spec: '螺纹钢 Φ20', rods: 10 }, { spec: '圆钢 Φ50', rods: 0 }]);
+check('覆盖支数生效（Φ20 -> 10 支/捆）', bundleRods('螺纹钢 Φ20') === 10, String(bundleRods('螺纹钢 Φ20')));
+check('越界覆盖返回警示（10 支 Φ20 捆径 < 下限）', ap.warnings.length === 1 && ap.warnings[0].includes('螺纹钢 Φ20'), ap.warnings[0] || '');
+check('自动推导来源生效（圆钢 Φ50 -> auto）', bundleRods('圆钢 Φ50') === deriveRods(50) && getBundleRules(db).find(r => r.spec === '圆钢 Φ50').source === 'auto', `${bundleRods('圆钢 Φ50')} 支`);
+check('棒材吨位随支数重算（Φ20 2.1 基准 -> 按米重）', ap.weights.some(w => w.spec === '螺纹钢 Φ20'), JSON.stringify(ap.weights));
+const ap2 = applyBundleRules(db, [{ spec: '螺纹钢 Φ20', rods: null }, { spec: '圆钢 Φ50', rods: null }]);
+check('清除覆盖恢复预置（Φ20 -> 21 支、吨位回写）',
+  bundleRods('螺纹钢 Φ20') === r20.rods && getBundleRules(db).every(r => r.source === 'preset')
+  && getBundleRules(db).find(r => r.spec === '螺纹钢 Φ20').weight === r20.weight, String(bundleRods('螺纹钢 Φ20')));
 
 console.log('== 写入 / 状态同步 ==');
 // 选一个初始为空闲的库位做写入测试，保证状态同步断言不受随机撒点影响

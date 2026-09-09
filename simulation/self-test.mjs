@@ -4,6 +4,7 @@
 // 自检见 logistics-feed-self-test.mjs / production-pace-self-test.mjs）。
 // 用法：node simulation/self-test.mjs
 import { readFileSync } from 'node:fs';
+import { injectCoreSegs } from './sandbox-page-loader.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
@@ -12,7 +13,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, '调度仿真沙盘.html'), 'utf8');
 const m = html.match(/<script>([\s\S]*)<\/script>/);
 if (!m) throw new Error('未找到 <script> 内容');
-const code = m[1];
+const code = injectCoreSegs(m[1]);
 
 /* ---- 通用"黑洞"对象：吞掉任意方法调用与属性读写（充当 Canvas 2D 上下文） ---- */
 const absorber = new Proxy(function () {}, {
@@ -271,6 +272,31 @@ check('利用率已统计', el('kpiUtil').textContent.includes('%'), el('kpiUtil
 check('平均任务时长已统计', /^\d{2}:\d{2}$/.test(el('kpiAvg').textContent.trim()), el('kpiAvg').textContent);
 check('流程链路条渲染', el('flowStrip').innerHTML.includes('库存更新'), '');
 
+console.log('== 阶段三点六：今日进厂 / 进厂等待 / 扫描能力评估 ==');
+const assess1 = sandbox.__dbg.assess;
+check('评估模型有结论（满足/紧张/不满足）', assess1 && ['ok', 'tight', 'fail'].includes(assess1.verdict), assess1 && assess1.verdict);
+check('需求侧为正（捆/时 = 日吊数 ÷ 日时长）', assess1 && assess1.demandPerHour > 0,
+  assess1 && `${assess1.demandPerHour} 捆/时（车均 ${assess1.avgLoads} 吊）`);
+check('能力侧为正且含充电占空比', assess1 && assess1.capPerHour > 0 && assess1.dutyPct > 0 && assess1.dutyPct <= 100,
+  assess1 && `${assess1.capPerHour} 捆/时 · 占空比 ${assess1.dutyPct}% · ${assess1.robots} 台`);
+check('单捆周期分解成立（固定 + 路程 + 扫码 = 周期）',
+  assess1 && Math.abs(assess1.fixedSec + assess1.travelSec + assess1.scanSec - assess1.cycleSec) < 0.05,
+  assess1 && `${assess1.fixedSec}+${assess1.travelSec}+${assess1.scanSec}=${assess1.cycleSec}s`);
+check('评估阈值可调并夹取', sandbox.setDeviceParam('assess', 'tightRho', 999) === 100
+  && sandbox.setDeviceParam('assess', 'failDelayP95', 0) === 60, '');
+sandbox.setDeviceParam('assess', 'tightRho', 70);
+sandbox.setDeviceParam('assess', 'failDelayP95', 300);
+check('首页「今日进厂车辆」KPI 渲染', /^\d+$/.test(String(el('kpiTodayIn').textContent).trim()),
+  `${el('kpiTodayIn').textContent} · ${el('kpiTodayInSub').textContent}`);
+check('首页「进厂等待」KPI 渲染', String(el('kpiWait').textContent).trim().length > 0,
+  `${el('kpiWait').textContent} · ${el('kpiWaitSub').textContent}`);
+check('首页「扫描能力评估」KPI 渲染（结论 + 利用率副行）',
+  /满足|紧张|不满足/.test(String(el('kpiAssess').textContent)) && /ρ \d+%/.test(String(el('kpiAssessSub').textContent)),
+  `${el('kpiAssess').textContent} · ${el('kpiAssessSub').textContent}`);
+check('待扫码积压探针可用（非负整数）', Number.isInteger(sandbox.__dbg.scanBacklog) && sandbox.__dbg.scanBacklog >= 0,
+  '积压 ' + sandbox.__dbg.scanBacklog);
+check('评估阶段零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.slice(0, 3).join('|'));
+
 console.log('== 阶段三点五：机器狗续航（满电 3 小时）与充电循环 ==');
 const rcfg = sandbox.__dbg.robotCfg;
 check('满电续航参数为 3 小时', rcfg.endurance === 3, `endurance=${rcfg.endurance}h`);
@@ -400,38 +426,51 @@ check('仅开监测 A 跨：新派货车停靠目标均为一跨 A 行',
 check('监测跨调度阶段零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.join('|'));
 sandbox.restoreDefaultParams();   // 恢复三跨全监测（不限跨），再交由阶段五b2
 
-console.log('== 阶段五b2：跨内号区范围监测（A 跨 17~33 号区 -> 车辆限 A 跨、物资只入该号区范围） ==');
+console.log('== 阶段五b2：跨内号区扫描范围（A 跨扫描 17~33 号区 -> 作业限 A 跨全部号区，机器狗只扫 17~33，区外转人工核对） ==');
 sandbox.setDeviceParam('robot', 'spanA', 1);
 sandbox.setDeviceParam('robot', 'spanB', 0);
 sandbox.setDeviceParam('robot', 'spanC', 0);
 check('跨内号区范围参数可写并夹取（1~33 号区）',
   sandbox.setDeviceParam('robot', 'fromA', 99) === 33 && sandbox.setDeviceParam('robot', 'toB', 0) === 1, '');
-sandbox.setDeviceParam('robot', 'fromA', 17);   // 17~33 号区 = 右侧中棒区域
+sandbox.setDeviceParam('robot', 'fromA', 17);   // 扫描 17~33 号区 = 右侧中棒区域
 sandbox.setDeviceParam('robot', 'toA', 33);
 const znIn = [];
-for (let i = 0; i < 6; i++) { const t = sandbox.createTask('in'); if (t) znIn.push(t); }
-check('A 跨 17~33 号区：新入库任务车次全在一跨 A', znIn.length >= 1 && znIn.every(t => t.batch.span === 0),
+const znHas = lo => znIn.some(t => lo ? t.slot.area >= 17 : t.slot.area < 17);
+for (let i = 0; i < 30 && !(znHas(1) && znHas(0)); i++) { const t = sandbox.createTask('in'); if (t) znIn.push(t); }
+check('A 跨扫描 17~33：新入库任务车次全在一跨 A（作业范围=监测跨）',
+  znIn.length >= 2 && znIn.every(t => t.batch.span === 0),
   znIn.length ? znIn.map(t => t.slot.code).slice(0, 4).join(',') : '未建任务');
-check('A 跨 17~33 号区：入库落点全为中棒区域库位（17~33 号区 且 A 跨行）',
-  znIn.length >= 1 && znIn.every(t => t.slot.zone === '中棒区域' && t.slot.goalR === 1),
-  znIn.length ? znIn.map(t => t.slot.code).slice(0, 4).join(',') : '未建任务');
+check('A 跨扫描 17~33：入库落点覆盖扫描区外号区（作业范围=A 跨全部号区，不再限扫描区）',
+  znHas(0) && znIn.every(t => t.slot.goalR === 1),
+  znIn.filter(t => t.slot.area < 17).map(t => t.slot.code).slice(0, 4).join(',') || '无扫描区外落点');
 const znOut = sandbox.createTask('out');
-check('A 跨 17~33 号区：出库任务同样限定（该范围无可出库存则不下任务，不放宽）',
-  !znOut || (znOut.batch.span === 0 && znOut.slot.zone === '中棒区域'),
-  znOut ? `${znOut.slot.code} · ${znOut.slot.zone}` : '17~33 号区暂无可出库存，未下任务');
-check('号区范围监测策略快照（受限 · 仅 A 跨）',
+check('A 跨扫描 17~33：出库任务同样限 A 跨全部号区（未监测跨无货则不下任务，不放宽）',
+  !znOut || (znOut.batch.span === 0 && znOut.slot.goalR === 1),
+  znOut ? `${znOut.slot.code} · 跨 ${znOut.batch.span}` : 'A 跨暂无可出库存，未下任务');
+check('扫描范围调度策略快照（受限 · 仅 A 跨）',
   sandbox.__dbg.truckSpanPolicy.restricted === true
   && sandbox.__dbg.truckSpanPolicy.spans.join(',') === '0',
   sandbox.__dbg.truckSpanPolicy.text);
-sandbox.forceDispatchBatches();   // 派车清空在组车次，避免下一窗口归并到旧范围垛位
+sandbox.forceDispatchBatches();   // 派车推进在组车次：让扫码/人工核对判定落到调度器
+const znMark = t => t.scanSkipped ? (t.scanManual ? '人工核对' : '免检') : (t.robot ? '机器狗扫码' : '待派');
+for (let i = 0; i < 60 && !znIn.some(t => t.scanSkipped); i++) await pump(5);   // 泵进仿真时间：落料就位后调度器即对扫描区外任务直通
+const znLow = znIn.filter(t => t.slot.area < 17 && (t.materialReady || t.state === 'done'));
+const znHigh = znIn.filter(t => t.slot.area >= 17);
+check('A 跨扫描 17~33：扫描区外（1~16 号区）入库任务跳过机器狗、标记人工核对',
+  znLow.length > 0 && znLow.every(t => t.scanSkipped && t.scanManual === true),
+  znIn.map(t => `${t.slot.code}:${znMark(t)}`).join(' '));
+check('A 跨扫描 17~33：扫描区内任务不直通，仍由机器狗扫码',
+  znHigh.length > 0 && znHigh.every(t => !t.scanSkipped),
+  znHigh.map(t => `${t.slot.code}:${znMark(t)}`).join(' '));
+sandbox.forceDispatchBatches();
 sandbox.setDeviceParam('robot', 'fromA', 18);   // 非分区整段的局部区段：18~25 号区
 sandbox.setDeviceParam('robot', 'toA', 25);
 const zn3In = [];
 for (let i = 0; i < 6; i++) { const t = sandbox.createTask('in'); if (t) zn3In.push(t); }
-check('A 跨 18~25 号区（局部区段）：入库落点号区均在 18~25 且在 A 跨',
-  zn3In.length >= 1 && zn3In.every(t => t.slot.area >= 18 && t.slot.area <= 25 && t.slot.goalR === 1),
+check('A 跨扫描 18~25（局部区段）：入库落点仍在 A 跨全部号区（作业范围不随扫描区收窄）',
+  zn3In.length >= 1 && zn3In.every(t => t.slot.goalR === 1),
   zn3In.length ? zn3In.map(t => t.slot.code).slice(0, 4).join(',') : '未建任务');
-sandbox.setDeviceParam('robot', 'spanB', 1);   // 三跨全开但每跨都限定 17~33：范围仍为全库真子集，保持受限
+sandbox.setDeviceParam('robot', 'spanB', 1);   // 三跨全开但每跨都扫描 17~33：扫描范围仍为全库真子集，保持受限
 sandbox.setDeviceParam('robot', 'fromB', 17);
 sandbox.setDeviceParam('robot', 'toB', 33);
 sandbox.setDeviceParam('robot', 'spanC', 1);
@@ -439,12 +478,12 @@ sandbox.setDeviceParam('robot', 'fromC', 17);
 sandbox.setDeviceParam('robot', 'toC', 33);
 const zn2In = [];
 for (let i = 0; i < 6; i++) { const t = sandbox.createTask('in'); if (t) zn2In.push(t); }
-check('三跨均 17~33 号区：入库落点全部为中棒区域库位（跨不限，整跨合并位除外）',
-  zn2In.length >= 1 && zn2In.every(t => t.slot.zone === '中棒区域'),
+check('三跨均扫描 17~33：入库落点遍布各跨（作业范围=全库，跨内号区只限定机器狗扫描区）',
+  zn2In.length >= 1,
   zn2In.length ? zn2In.map(t => `${t.slot.code}@${{ 1: 'A', 3: 'B', 5: 'C' }[t.slot.goalR] || '-'}`).slice(0, 4).join(',') : '未建任务');
-check('三跨均 17~33 号区：仍为受限调度（全库真子集）', sandbox.__dbg.truckSpanPolicy.restricted === true,
+check('三跨均扫描 17~33：仍为受限调度（扫描范围全库真子集）', sandbox.__dbg.truckSpanPolicy.restricted === true,
   sandbox.__dbg.truckSpanPolicy.text);
-check('跨内号区范围监测阶段零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.join('|'));
+check('跨内号区扫描范围阶段零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.join('|'));
 sandbox.restoreDefaultParams();   // 恢复三跨整跨全监测（1~33），再交由阶段五c
 
 console.log('== 阶段五c：结束场次（手动归档 -> 暂停 -> 再启动开新场次） ==');
@@ -454,6 +493,19 @@ check('结束场次：归档留痕（reason=end）',
   endedOK === true && (sandbox.__runsArchived || 0) === runsBefore + 1
   && sandbox.__lastRun && sandbox.__lastRun.reason === 'end',
   sandbox.__lastRun && `${sandbox.__lastRun.id} · 完成 ${sandbox.__lastRun.kpi.tasksDone} 任务 · ${sandbox.__lastRun.vehicles.length} 辆车`);
+const lrVS = sandbox.__lastRun && sandbox.__lastRun.vehStats;
+check('归档含车辆时效三段拆解（vehStats：进/出厂 + 组车/排队/在场）',
+  lrVS && Number.isInteger(lrVS.inCount) && Number.isInteger(lrVS.outCount)
+  && lrVS.inCount + lrVS.outCount >= sandbox.__lastRun.vehicles.length,
+  lrVS && `进 ${lrVS.inCount}（离场 ${lrVS.inLeft}）· 出 ${lrVS.outCount} · 组车 ${lrVS.batchWait && lrVS.batchWait.avg}s · 排队 ${lrVS.queueWait && lrVS.queueWait.avg}s`);
+const lrA = sandbox.__lastRun && sandbox.__lastRun.assess;
+check('归档含扫描能力评估（结论/利用率/积压峰值）',
+  lrA && ['ok', 'tight', 'fail'].includes(lrA.verdict) && lrA.rhoPct != null && lrA.backlogMax != null,
+  lrA && `${lrA.verdict} · ρ ${lrA.rhoPct}% · 需求 ${lrA.demandPerHour}/能力 ${lrA.capPerHour} 捆时 · 积压峰 ${lrA.backlogMax}`);
+const lrV0 = sandbox.__lastRun && sandbox.__lastRun.vehicles[0];
+check('归档车辆含进场/组建时刻（等待分段基础）',
+  lrV0 && (lrV0.enterAt != null || lrV0.leftAt != null) && lrV0.created >= 0,
+  lrV0 && `${lrV0.plate}: enterAt=${lrV0.enterAt} created=${lrV0.created} leftAt=${lrV0.leftAt}`);
 check('结束后仿真暂停 + 按钮回到「▶ 启动」', el('btnPause').textContent.includes('▶'), el('btnPause').textContent);
 const endedId = sandbox.__lastRun.id;
 const firstLog = logText().includes('场次已手动结束');

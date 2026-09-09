@@ -16,8 +16,9 @@ const MILLS = ['承德建龙', '新兴铸管', '唐山瑞丰', '敬业集团', '
 const PROVINCES = ['冀', '京', '津', '鲁', '豫', '晋', '辽', '陕', '蒙'];
 
 /* ================= 监测范围（与仿真沙盘 robot 参数同口径） =================
- * 调度参数 robot 段配置监测跨与跨内号区范围：监测范围为全库真子集时，
- * 入库落点只在监测范围内推荐/放行（沙盘同规则：范围外物资不入库）；全关 = 全库免检。 */
+ * 调度参数 robot 段配置监测跨与跨内号区范围，两级口径：
+ * 「监测 X 跨」开关决定作业范围（跨级）——监测范围为全库真子集时，入库落点只在监测跨的
+ * 【全部号区】内推荐/放行（跨内号区只限定机器狗扫描区，区外转人工核对）；全关 = 全库免检。 */
 function monitoredScopesOf(W) {
   const r = W.robot || {};
   const mk = (on, si) => {
@@ -31,9 +32,9 @@ function regionRestrictedOf(ms) {   // 监测范围是否为全库真子集（�
   if (ms.length < 3) return ms.length > 0;
   return ms.some(m => m.lo > 1 || m.hi < 33);
 }
-function slotInScope(st, ms) {      // 整跨合并位纵贯 A~C：任一监测跨的范围覆盖其号区即算
-  if (st.merged || st.span >= 3) return ms.some(m => st.area >= m.lo && st.area <= m.hi);
-  return ms.some(m => m.span === st.span && st.area >= m.lo && st.area <= m.hi);
+function slotInOpScope(st, ms) {    // 作业范围（跨级）：普通库位所在跨被监测即可（跨内全部号区均可）；整跨合并位纵贯 A~C，任一跨监测即可荐
+  if (st.merged || st.span >= 3) return ms.length > 0;
+  return ms.some(m => m.span === st.span);
 }
 function scopeWarnText(ms) {
   return ms.map(m => `${SPAN_LABELS[m.span]}${m.lo > 1 || m.hi < 33 ? `（${m.lo}~${m.hi} 号区）` : ''}`).join('、');
@@ -207,7 +208,7 @@ export function recommendAllocation(db, spec, bundles) {
     const cands = [];
     for (const st of yard) {
       if (st.state === 'locked') continue;
-      if (restricted && !slotInScope(st, ms)) continue;
+      if (restricted && !slotInOpScope(st, ms)) continue;
       for (const k of st.stacks) {
         const r = scoreStack(W, st, k, ctx, spec, null);
         if (!r) continue;
@@ -241,7 +242,7 @@ export function listCandidates(db, spec, bundles, limit = 20) {
   const cands = [];
   for (const st of yard) {
     if (st.state === 'locked') continue;
-    if (restricted && !slotInScope(st, ms)) continue;
+    if (restricted && !slotInOpScope(st, ms)) continue;
     for (const k of st.stacks) {
       const r = scoreStack(W, st, k, ctx, spec, null);
       if (!r) continue;
@@ -397,8 +398,8 @@ function validateTarget(db, yard, claims, spec, slotId, stackNo, bundles) {
   if (st.state === 'locked') return `库位 ${st.code} 已被任务锁定`;
   const P = getSimParams(db);
   const ms = monitoredScopesOf(P);
-  if (regionRestrictedOf(ms) && !slotInScope(st, ms)) {
-    return `库位 ${st.code} 不在监测范围内（当前仅监测 ${scopeWarnText(ms)}），不安排作业`;
+  if (regionRestrictedOf(ms) && !slotInOpScope(st, ms)) {
+    return `库位 ${st.code} 不在作业范围·未监测跨（当前仅监测 ${scopeWarnText(ms)}），不安排作业`;
   }
   const k = st.stacks.find(x => x.stack_no === stackNo);
   if (!k) return `库位 ${st.code} 无第 ${stackNo} 垛`;

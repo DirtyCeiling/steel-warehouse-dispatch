@@ -4,59 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>扫描时效记录 · 钢厂棒材库区调度系统</title>
+<link rel="stylesheet" href="./shared/tokens.css">
+<link rel="stylesheet" href="./shared/base.css">
 <style>
-  :root {
-    --bg: #050b1a; --bg2: #071021;
-    --panel: #0b1730; --panel2: #0e1d3a;
-    --line: #16294f; --line2: #1f3a6b;
-    --text: #dbe7ff; --dim: #7288b3;
-    --cyan: #38bdf8; --teal: #2dd4bf; --amber: #fbbf24;
-    --orange: #fb923c; --violet: #a78bfa; --red: #f87171; --green: #34d399;
-    --mono: "Cascadia Mono", Consolas, "Courier New", monospace;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; }
-  body {
-    background: radial-gradient(1200px 600px at 70% -10%, #0a1a38 0%, var(--bg) 55%);
-    color: var(--text);
-    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
-    display: flex; flex-direction: column; min-width: 1180px;
-  }
-  header {
-    display: flex; align-items: center; gap: 12px; padding: 8px 14px;
-    border-bottom: 1px solid var(--line); background: rgba(8, 18, 38, .7); flex: none;
-  }
-  .brand { display: flex; align-items: center; gap: 8px; }
-  .logo {
-    width: 30px; height: 30px; border-radius: 8px; flex: none;
-    background: linear-gradient(135deg, #0ea5e9, #1d4ed8);
-    display: flex; align-items: center; justify-content: center; font-size: 15px;
-    box-shadow: 0 0 14px rgba(56, 189, 248, .35);
-  }
-  .brand h1 { font-size: 14px; font-weight: 700; letter-spacing: .5px; }
-  nav { display: flex; gap: 6px; margin-left: 10px; }
-  nav a {
-    color: var(--dim); text-decoration: none; font-size: 12px;
-    border: 1px solid var(--line2); border-radius: 6px; padding: 4px 10px;
-    transition: all .15s; background: var(--panel2);
-  }
-  nav a:hover { border-color: var(--cyan); color: #fff; }
-  nav a.on { background: var(--cyan); color: #04121f; font-weight: 700; border-color: var(--cyan); }
-  .actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
-  button {
-    background: var(--panel2); color: var(--text); border: 1px solid var(--line2);
-    border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer;
-    font-family: inherit; transition: all .15s;
-  }
-  button:hover { border-color: var(--cyan); color: #fff; box-shadow: 0 0 10px rgba(56,189,248,.2); }
-  button.primary { border-color: rgba(56, 189, 248, .5); color: var(--cyan); }
+  body { min-width: 1180px; }
   .livedot { font-size: 11px; color: var(--dim); margin-right: 4px; transition: color .3s; }
   .livedot.flash { color: var(--green); }
-  main { flex: 1; overflow-y: auto; padding: 16px; }
   .wrap { max-width: 1400px; margin: 0 auto; }
   .desc { font-size: 12px; color: var(--dim); line-height: 1.7; margin-bottom: 12px; max-width: 1000px; }
   .desc b { color: var(--text); }
-  .msg { border-radius: 8px; padding: 8px 12px; font-size: 12.5px; margin-bottom: 12px; border: 1px solid; }
   .msg.warn { border-color: rgba(251, 191, 36, .4); background: rgba(251, 191, 36, .08); color: var(--amber); }
   .filters { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
   .filter-group { display: flex; align-items: center; gap: 6px; }
@@ -93,6 +49,7 @@
   .chip { font-size: 11px; border-radius: 4px; padding: 2px 8px; border: 1px solid; }
   .chip.in { background: rgba(52, 211, 153, .1); border-color: rgba(52, 211, 153, .3); color: var(--green); }
   .chip.out { background: rgba(56, 189, 248, .1); border-color: rgba(56, 189, 248, .3); color: var(--cyan); }
+  .chip.restack { background: rgba(167, 139, 250, .1); border-color: rgba(167, 139, 250, .3); color: #a78bfa; }
   .chip.warn { background: rgba(251, 191, 36, .1); border-color: rgba(251, 191, 36, .3); color: var(--amber); }
   .chip.dim { background: rgba(114, 136, 179, .1); border-color: rgba(114, 136, 179, .3); color: var(--dim); }
   .m { font-size: 12px; color: var(--dim); }
@@ -122,37 +79,24 @@
   .mark { display: inline-block; font-size: 10.5px; border-radius: 4px; padding: 1px 6px; margin-left: 4px; border: 1px solid; }
   .mark.anom { background: rgba(248, 113, 113, .1); border-color: rgba(248, 113, 113, .35); color: var(--red); }
   .mark.skip { background: rgba(167, 139, 250, .1); border-color: rgba(167, 139, 250, .35); color: var(--violet); }
-  .empty {
-    border: 1px dashed var(--line2); border-radius: 10px; text-align: center;
-    padding: 60px 0; color: var(--dim); font-size: 12.5px;
-  }
-  .empty .big { font-size: 30px; margin-bottom: 8px; }
+  .mark.manual { background: rgba(251, 191, 36, .1); border-color: rgba(251, 191, 36, .35); color: var(--amber); }
   .hint-more { text-align: center; color: var(--dim); font-size: 11.5px; padding: 10px 0 0; }
 </style>
 </head>
 <body>
-<script>/* 页内工作台嵌入模式（?embed=1）：隐藏本页导航，沙盘顶部导航已提供页内切换 */
-if (new URLSearchParams(location.search).get('embed') === '1') document.documentElement.classList.add('embed');</script>
-<style>html.embed header nav { display: none; }</style>
 <header>
   <div class="brand">
     <div class="logo">⏱</div>
     <div><h1>扫描时效记录 · 历史完成情况</h1></div>
   </div>
-  <nav title="新标签打开，不打断各页面状态">
-    <a href="/" target="_blank">🗺 仿真沙盘</a>
-    <a href="/inbound" target="_blank">🚚 进厂确认</a>
-    <a href="/vehicles" target="_blank">📋 车辆记录</a>
-    <a class="on">⏱ 扫描时效</a>
-    <a href="/params" target="_blank">⚙ 调度参数</a>
-    <a href="/runs" target="_blank">📊 仿真场次</a>
-  </nav>
+  <nav data-sim-nav="scans" title="新标签打开，不打断各页面状态"></nav>
   <div class="actions">
     <span class="livedot" id="liveDot" title="沙盘台账落盘时自动刷新（storage 事件联动），也可手动刷新">● 台账联动</span>
     <button id="btnRefresh" class="primary">↻ 刷新</button>
     <button id="btnExport">导出 CSV</button>
   </div>
 </header>
+<script src="./shared/nav.js"></script>
 <main>
   <div class="wrap">
     <p class="desc">
@@ -171,6 +115,7 @@ if (new URLSearchParams(location.search).get('embed') === '1') document.document
           <option value="">全部</option>
           <option value="in">入库</option>
           <option value="out">出库</option>
+          <option value="restack">倒垛确认</option>
         </select>
       </div>
       <div class="filter-group">
@@ -188,7 +133,7 @@ if (new URLSearchParams(location.search).get('embed') === '1') document.document
         <label><input type="checkbox" id="filterAnom"> 仅看异常</label>
       </div>
       <div class="filter-group">
-        <label><input type="checkbox" id="filterSkip"> 仅看免检</label>
+        <label><input type="checkbox" id="filterSkip"> 仅看直通（免检/人工核对）</label>
       </div>
       <button id="btnResetF" style="margin-left: auto;">重置筛选</button>
     </div>
@@ -216,8 +161,10 @@ if (new URLSearchParams(location.search).get('embed') === '1') document.document
   </div>
 </main>
 
+<script src="./shared/sim-common.js"></script>
 <script>
 'use strict';
+const { esc, delayCls } = SIM;
 /* ---------------- 数据源：沙盘任务台账（localStorage，同源共享） ----------------
  * 记录字段（新版台账）：id/type/spec/slot/stack/order/created/ended/dur/anomaly
  *   + plate(车牌) batch(车次) placedAt(放货放好) scanStartAt(开始扫码)
@@ -245,13 +192,7 @@ function fmtDur(s) {
   s = Math.max(0, Math.floor(s));
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
-function esc(v) {
-  return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-function delayCls(v) {   // 延时着色阈值：120s 内绿 / 300s 内黄 / 超出红
-  if (v == null) return 't-dim';
-  return v <= 120 ? 'd-ok' : v <= 300 ? 'd-mid' : 'd-bad';
-}
+// esc / delayCls 来自 public SIM（与沙盘同口径延时着色阈值）
 
 /* ---------------- 载入与筛选 ---------------- */
 function loadRows() {
@@ -280,12 +221,14 @@ function applyFilters() {
 function statsOf(list) {
   const delays = list.map(r => r.delay).filter(v => v != null);
   const inN = list.filter(r => r.type === 'in').length;
+  const rsN = list.filter(r => r.type === 'restack').length;   // 倒垛确认（源垛+目标垛双点核验）：单列计数，不混出入库口径
   return {
-    n: list.length, inN, outN: list.length - inN,
+    n: list.length, inN, outN: list.length - inN - rsN, rsN,
     avg: delays.length ? Math.round(delays.reduce((a, b) => a + b, 0) / delays.length) : null,
     max: delays.length ? Math.max(...delays) : null,
     anom: list.filter(r => r.anomaly).length,
-    skip: list.filter(r => r.skip).length,
+    skip: list.filter(r => r.skip && !r.manual).length,
+    manual: list.filter(r => r.skip && r.manual).length,
   };
 }
 function buildGroups(list) {   // 按车分组：优先车次号，其次车牌，旧台账归入「未记录车次」
@@ -321,7 +264,9 @@ function bundleRow(r, withTruckCol) {
   const truckCols = withTruckCol
     ? `<td class="mono">${esc(r.plate || '-')}</td><td class="mono">${esc(r.batch || '-')}</td>` : '';
   const marks = (r.anomaly ? '<span class="mark anom" title="扫码重扫 / 人工介入 / 运单不符">异常</span>' : '')
-    + (r.skip ? '<span class="mark skip" title="未监测跨免检直通（不占机器狗）">免检</span>' : '');
+    + (r.skip ? (r.manual
+      ? '<span class="mark manual" title="监测跨内、机器狗扫描号区之外：转人工核对（不占机器狗）">人工核对</span>'
+      : '<span class="mark skip" title="未监测跨免检直通（不占机器狗）">免检</span>') : '');
   return `<tr>
     <td class="tid">${esc(r.id)}</td>${truckCols}
     <td>${esc(r.spec)}</td>
@@ -355,9 +300,10 @@ function renderGroupView(groups) {
   return groups.map(g => {
     const st = g.st;
     const chips = [
-      `<span class="chip ${g.type === 'in' ? 'in' : 'out'}">${g.type === 'in' ? '入库' : '出库'}</span>`,
+      `<span class="chip ${g.type === 'in' ? 'in' : g.type === 'restack' ? 'restack' : 'out'}">${g.type === 'in' ? '入库' : g.type === 'restack' ? '倒垛确认' : '出库'}</span>`,
       st.anom ? `<span class="chip warn" title="重扫/人工介入/运单不符的捆数">异常 ${st.anom}</span>` : '',
       st.skip ? `<span class="chip dim" title="未监测跨免检直通的捆数">免检 ${st.skip}</span>` : '',
+      st.manual ? `<span class="chip dim" title="监测跨内、扫描号区之外转人工核对的捆数">人工核对 ${st.manual}</span>` : '',
     ].filter(Boolean).join(' ');
     const open = state.open.has(g.key);
     return `<div class="truck-card ${open ? 'open' : ''}" data-g="${esc(g.key)}">
@@ -394,7 +340,7 @@ function renderEmpty() {
 }
 function renderStats() {
   const st = statsOf(rows);
-  $('stTotal').innerHTML = `${st.n}<small>（入 ${st.inN} · 出 ${st.outN}）</small>`;
+  $('stTotal').innerHTML = `${st.n}<small>（入 ${st.inN} · 出 ${st.outN}${st.rsN ? ` · 倒垛 ${st.rsN}` : ''}）</small>`;
   $('stTrucks').textContent = buildGroups(rows).length;
   $('stAvg').textContent = st.avg != null ? `${st.avg}s（${fmtDur(st.avg)}）` : '-';
   $('stMax').textContent = st.max != null ? `${st.max}s（${fmtDur(st.max)}）` : '-';
@@ -445,14 +391,14 @@ $('btnExport').addEventListener('click', () => {
   const head = ['任务号', '类型', '车牌', '车次', '规格', '库位', '垛', '合同号',
     '下发(仿真秒)', '放货放好(仿真秒)', '开始扫码(仿真秒)', '扫码完成(仿真秒)', '任务完成(仿真秒)',
     '下发(时钟)', '放货放好(时钟)', '开始扫码(时钟)', '扫码完成(时钟)', '任务完成(时钟)',
-    '扫码延时(秒)', '入账延时(秒)', '耗时(秒)', '异常', '免检'];
+    '扫码延时(秒)', '入账延时(秒)', '耗时(秒)', '异常', '直通'];
   const body = rows.slice().sort((a, b) => b.ended - a.ended).map(r => [
-    r.id, r.type === 'in' ? '入库' : '出库', r.plate || '', r.batch || '', r.spec, r.slot, r.stack, r.order || '',
+    r.id, r.type === 'in' ? '入库' : r.type === 'restack' ? '倒垛确认' : '出库', r.plate || '', r.batch || '', r.spec, r.slot, r.stack, r.order || '',
     r.created, r.placedAt || '', r.scanStartAt || '', r.scanDoneAt || '', r.ended,
     fmtClock(r.created), r.placedAt > 0 ? fmtClock(r.placedAt) : '', r.scanStartAt > 0 ? fmtClock(r.scanStartAt) : '',
     r.scanDoneAt > 0 ? fmtClock(r.scanDoneAt) : '', fmtClock(r.ended),
     r.delay != null ? r.delay : '', r.delayEnd != null ? r.delayEnd : '', r.dur,
-    r.anomaly ? '是' : '', r.skip ? '是' : '',
+    r.anomaly ? '是' : '', r.skip ? (r.manual ? '人工核对' : '免检') : '',
   ].join(','));
   const csv = '\ufeff' + head.join(',') + '\n' + body.join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });

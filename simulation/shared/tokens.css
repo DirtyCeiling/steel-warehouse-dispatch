@@ -1,0 +1,14 @@
+/* 全站设计令牌（各页 <style> 逐字重复的 :root 抽出）+ 嵌入模式规则。
+ * 引用：<link rel="stylesheet" href="./shared/tokens.css">（置于页面 <style> 之前，
+ * 页面自有样式可按同名选择器覆盖）。 */
+:root {
+  --bg: #050b1a; --bg2: #071021;
+  --panel: #0b1730; --panel2: #0e1d3a;
+  --line: #16294f; --line2: #1f3a6b;
+  --text: #dbe7ff; --dim: #7288b3;
+  --cyan: #38bdf8; --teal: #2dd4bf; --amber: #fbbf24;
+  --orange: #fb923c; --violet: #a78bfa; --red: #f87171; --green: #34d399;
+  --mono: "Cascadia Mono", Consolas, "Courier New", monospace;
+}
+/* 页内工作台嵌入模式（?embed=1）：隐藏本页导航，沙盘顶部导航已提供页内切换（class 由 shared/nav.js 添加） */
+html.embed header nav { display: none; }

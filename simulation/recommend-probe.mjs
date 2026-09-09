@@ -1,17 +1,18 @@
 // 定向探针：验证「数据库实际钢材分布加载 + 卸货推荐算法归堆」
-// 1) 用 stub fetch 把真实 warehouse.db 的 /api/slots 注入沙盘，验证期初加载成功；
+// 1) 用 stub fetch 把期初种子分布（getSeedSlots，与沙盘 ?feed=all 全量回放同源）注入沙盘，验证期初加载成功；
 // 2) 跑仿真产生入库卸货任务，验证推荐结果：同垛不混规格、优先码入同规格垛（归堆率）。
 // 用法：node simulation/recommend-probe.mjs
 import { readFileSync } from 'node:fs';
+import { injectCoreSegs } from './sandbox-page-loader.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
 import { makeFeedFetch } from './feed-stub.mjs';
-import { openDb, getSlots } from '../server/database.js';
+import { getSeedSlots } from '../server/database.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, '调度仿真沙盘.html'), 'utf8');
-const code = html.match(/<script>([\s\S]*)<\/script>/)[1];
+const code = injectCoreSegs(html.match(/<script>([\s\S]*)<\/script>/)[1]);
 
 /* ---- DOM/Canvas 黑洞桩（与 self-test.mjs 同构） ---- */
 const absorber = new Proxy(function () {}, {
@@ -53,10 +54,9 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(`Math.random = (() => { let s = 20260824; return () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; }; })();`, sandbox);
 
-/* ---- stub fetch：把真实 warehouse.db 的库位/垛数据当作 /api/slots 返回 ---- */
-const db = openDb();
-const realSlots = getSlots(db);
-db.close();
+/* ---- stub fetch：把期初种子分布当作 /api/slots 返回 ----
+ * 不读正式库当前值：运行中的沙盘会产生跨区码放痕迹，探针断言只对期初专业分布成立 */
+const realSlots = getSeedSlots();
 let fetchHits = 0;
 const feedStub = makeFeedFetch(() => sandbox.__dbg.simTime);   // 车辆物流数据源桩（沙盘不再本地生成车辆）
 sandbox.fetch = async url => {

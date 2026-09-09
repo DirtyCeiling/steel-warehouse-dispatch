@@ -46,6 +46,9 @@ export const PARAM_SCHEMA = [
     defs: [
       { key: 'count',       label: '机器狗数量', min: 1,   max: 6,  step: 1,   unit: '台', def: 3 },
       { key: 'chargerCount', label: '充电桩数量', min: 1, max: 3, step: 1, unit: '个', def: 1 },
+      { key: 'chargerC1',   label: '充电桩#1 列位', min: 1, max: 37, step: 1, unit: '列', def: 3 },
+      { key: 'chargerC2',   label: '充电桩#2 列位', min: 1, max: 37, step: 1, unit: '列', def: 5 },
+      { key: 'chargerC3',   label: '充电桩#3 列位', min: 1, max: 37, step: 1, unit: '列', def: 7 },
       { key: 'speed',       label: '行进速度',     min: 1,   max: 10, step: 0.1, unit: 'm/s',  def: 5.0 },
       { key: 'scanTime',    label: '扫码核验时间', min: 0.5, max: 60, step: 0.1, unit: '秒',   def: 60 },
       { key: 'endurance',   label: '满电续航',     min: 0.5, max: 8,  step: 0.5, unit: '小时', def: 3 },
@@ -78,6 +81,33 @@ export const PARAM_SCHEMA = [
       { key: 'scanFailPct',        label: '扫码失败率', min: 0, max: 50, step: 1, unit: '%', def: 4 },
       { key: 'manifestMismatchPct', label: '运单差异率', min: 0, max: 50, step: 1, unit: '%', def: 5 },
       { key: 'verifyIssuePct',     label: '复验异常率', min: 0, max: 50, step: 1, unit: '%', def: 3 },
+    ],
+  },
+  {
+    sec: 'assess', secLabel: '效率评估阈值',
+    desc: '机器狗扫描能力评估的判定线（首页「扫描能力评估」卡与场次「效率评估」共用）：需求/能力利用率 = 每日需扫码捆数 ÷ 机队理论服务能力；利用率或忙碌占比超线判「紧张」，利用率或扫码延时 P95 严重超线判「不满足」',
+    defs: [
+      { key: 'tightRho',     label: '利用率「紧张」阈值',   min: 30, max: 100, step: 1,  unit: '%', def: 70 },
+      { key: 'failRho',      label: '利用率「不满足」阈值', min: 40, max: 100, step: 1,  unit: '%', def: 90 },
+      { key: 'tightBusyPct', label: '忙碌占比「紧张」阈值', min: 50, max: 100, step: 1,  unit: '%', def: 85 },
+      { key: 'failDelayP95', label: 'P95 延时「不满足」阈值', min: 60, max: 1800, step: 10, unit: '秒', def: 300 },
+    ],
+  },
+  {
+    sec: 'warehouse', secLabel: '库房参数',
+    desc: '库房尺寸/码放/垛容（「库房参数设计」页提供完整编辑与捆制规则）：料架限高与垛内铺宽实时改变垛容与落位；捆径口径 = 一捆合起来的外接圆直径上下限（细棒材自动增支成大捆、超上限自动单支吊运）；「每垛捆数上限」与「库容装载比例」变更后在「库房参数设计」页重建库区生效',
+    defs: [
+      { key: 'rackH',     label: '料架限高',     min: 2,    max: 6,    step: 0.1,  unit: 'm',  def: 3.0 },
+      { key: 'pileW',     label: '垛内铺宽',     min: 1.5,  max: 4,    step: 0.05, unit: 'm',  def: 2.7 },
+      { key: 'railTop',   label: '垫梁顶标高',   min: 0,    max: 1,    step: 0.01, unit: 'm',  def: 0.41 },
+      { key: 'packShim',  label: '层间垫木厚',   min: 5,    max: 50,   step: 1,    unit: 'mm', def: 15 },
+      { key: 'packGap',   label: '捆间通风缝',   min: 20,   max: 80,   step: 1,    unit: 'mm', def: 30 },
+      { key: 'diaKw',     label: '截面宽向系数', min: 1.0,  max: 1.2,  step: 0.01, unit: '×',  def: 1.08 },
+      { key: 'diaKh',     label: '截面高向系数', min: 1.0,  max: 1.2,  step: 0.01, unit: '×',  def: 1.06 },
+      { key: 'bundlesPerStack', label: '每垛捆数上限', min: 50, max: 400, step: 10, unit: '捆', def: 400 },
+      { key: 'minDiaCm',  label: '捆径下限',     min: 5,    max: 30,   step: 1,    unit: 'cm', def: 15 },
+      { key: 'maxDiaCm',  label: '捆径上限',     min: 30,   max: 80,   step: 1,    unit: 'cm', def: 50 },
+      { key: 'fillRatio', label: '库容装载比例', min: 10,   max: 95,   step: 1,    unit: '%',  def: 22 },
     ],
   },
 ];

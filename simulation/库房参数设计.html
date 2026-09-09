@@ -1,0 +1,1366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>库房参数设计 · 钢厂棒材库区调度系统</title>
+<link rel="stylesheet" href="./shared/tokens.css">
+<link rel="stylesheet" href="./shared/base.css">
+<style>
+  body { min-width: 960px; }
+  nav { flex-wrap: wrap; }
+  button.danger { border-color: rgba(251, 146, 60, .55); color: var(--orange); }
+  main { padding: 16px 16px 40px; }
+  .wrap { max-width: 1560px; margin: 0 auto; }
+  /* ---- 按主题配对：库房布局块（库房图 + 库房参数）/ 货架块（垛体预览 + 货架参数） ---- */
+  .grp { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 16px; padding: 12px 14px 14px; background: rgba(8, 18, 38, .4); }
+  .grp-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .grp-head .ico { font-size: 16px; }
+  .grp-head h2 { font-size: 14.5px; font-weight: 700; letter-spacing: .5px; }
+  .grp-head .gdesc { font-size: 11px; color: var(--dim); }
+  .grp-cols { display: flex; gap: 14px; align-items: flex-start; }
+  .grp-left { flex: 0 0 46%; min-width: 0; position: sticky; top: 8px; }
+  .grp-right { flex: 1; min-width: 0; }
+  .grp .cat { margin-bottom: 12px; }
+  .grp .cat:last-child { margin-bottom: 0; }
+  @media (max-width: 1180px) {
+    .grp-cols { flex-direction: column; }
+    .grp-left { position: static; flex: none; }
+  }
+  .desc { margin-bottom: 14px; max-width: none; }
+  .desc code { font-family: var(--mono); color: var(--cyan); }
+  .cat { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 16px; overflow: hidden; background: rgba(11, 23, 48, .55); }
+  .cat-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 18px 10px; border-left: 3px solid var(--cyan); }
+  .cat-head .ico { font-size: 17px; }
+  .cat-head h2 { font-size: 15px; font-weight: 700; letter-spacing: .5px; }
+  .cat-head .cdesc { font-size: 11px; color: var(--dim); }
+  .cat.c-steel .cat-head { border-color: var(--amber); }
+  .cat.c-dims  .cat-head { border-color: var(--cyan); }
+  .cat.c-stack .cat-head { border-color: var(--violet); }
+  .cat.c-chg   .cat-head { border-color: var(--teal); }
+  .cat.c-prev  .cat-head { border-color: var(--orange); }
+  .cat.c-prev3d .cat-head { border-color: #7dd3fc; }
+  .cat.c-ro    .cat-head { border-color: var(--line2); }
+  .sub { padding: 4px 18px 12px; border-top: 1px dashed rgba(22, 41, 79, .7); }
+  .sub h3 { font-size: 13px; font-weight: 700; margin-top: 10px; }
+  .sub .sdesc { font-size: 11px; color: var(--dim); margin: 3px 0 2px; line-height: 1.6; }
+  .row { display: flex; align-items: center; gap: 14px; padding: 7px 0; border-bottom: 1px solid rgba(22, 41, 79, .45); }
+  .sub .row:last-child { border-bottom: none; }
+  .row .lab { width: 150px; flex: none; font-size: 12.5px; color: var(--text); }
+  .row input[type=range] { flex: 1; accent-color: var(--cyan); }
+  .row .num { display: flex; align-items: center; gap: 5px; flex: none; }
+  .row input[type=number] {
+    width: 76px; background: rgba(5, 11, 26, .8); border: 1px solid var(--line2);
+    border-radius: 6px; color: var(--text); font-family: var(--mono); font-size: 12.5px;
+    padding: 3px 7px; text-align: right; outline: none;
+  }
+  .row input[type=number]:focus { border-color: var(--cyan); }
+  .row .unit { font-size: 11px; color: var(--dim); width: 38px; }
+  .note { font-size: 11px; color: var(--dim); background: rgba(14, 29, 58, .6); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; margin: 8px 0 4px; line-height: 1.7; }
+  .note b { color: var(--violet); font-weight: 600; }
+  .msg.warn { border-color: rgba(251, 191, 36, .45); background: rgba(251, 191, 36, .07); color: var(--amber); white-space: pre-line; }
+  .hint { text-align: center; color: var(--dim); font-size: 12.5px; padding: 60px 0; }
+  /* ---- 规格规则表 ---- */
+  .tbl { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+  .tbl th, .tbl td { border-bottom: 1px solid rgba(22, 41, 79, .5); padding: 6px 8px; text-align: left; white-space: nowrap; }
+  .tbl th { color: var(--dim); font-weight: 600; font-size: 11px; }
+  .tbl tr:last-child td { border-bottom: none; }
+  .tbl td.mono, .tbl .mono { font-family: var(--mono); }
+  .tbl input.rods {
+    width: 58px; background: rgba(5, 11, 26, .8); border: 1px solid var(--line2);
+    border-radius: 6px; color: var(--text); font-family: var(--mono); font-size: 12px;
+    padding: 2px 6px; text-align: right; outline: none;
+  }
+  .tbl input.rods:focus { border-color: var(--cyan); }
+  .badge { display: inline-block; border: 1px solid var(--line2); border-radius: 999px; padding: 0 8px; font-size: 10.5px; color: var(--dim); }
+  .badge.override { border-color: rgba(251, 191, 36, .55); color: var(--amber); }
+  .badge.auto { border-color: rgba(45, 212, 191, .55); color: var(--teal); }
+  .badge.preset { border-color: rgba(56, 189, 248, .45); color: var(--cyan); }
+  .dia-ok { color: var(--green); }
+  .dia-bad { color: var(--red); font-weight: 700; }
+  .rowbtn { padding: 1px 7px; font-size: 10.5px; border-radius: 5px; }
+  /* ---- 充电位示意条 ---- */
+  .strip { display: flex; gap: 2px; margin: 8px 0 2px; flex-wrap: nowrap; }
+  .strip .cell {
+    flex: 1; min-width: 0; height: 26px; border-radius: 4px; position: relative;
+    background: rgba(14, 29, 58, .7); border: 1px solid rgba(22, 41, 79, .7);
+    display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--dim);
+  }
+  .strip .cell.lane { background: rgba(56, 132, 246, .12); border-color: rgba(56, 132, 246, .4); }
+  .strip .cell.chg { background: rgba(45, 212, 191, .18); border-color: rgba(45, 212, 191, .7); color: var(--teal); font-weight: 700; }
+  .strip .cell.chg.off { opacity: .35; }
+  /* ---- 只读结构 ---- */
+  .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; margin-top: 8px; }
+  .fact { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: rgba(5, 11, 26, .5); }
+  .fact .k { font-size: 11px; color: var(--dim); }
+  .fact .v { font-size: 13.5px; font-family: var(--mono); margin-top: 2px; }
+  .kpi-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+  .kpi { flex: 1; min-width: 150px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: rgba(5, 11, 26, .5); }
+  .kpi .k { font-size: 11px; color: var(--dim); }
+  .kpi .v { font-size: 16px; font-family: var(--mono); color: var(--cyan); margin-top: 2px; }
+  /* ---- 垛体预览 ---- */
+  .prevbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 6px; }
+  .prevbar .lab { font-size: 12px; color: var(--text); }
+  .prevbar select {
+    background: rgba(5, 11, 26, .8); border: 1px solid var(--line2); border-radius: 6px;
+    color: var(--text); font-family: inherit; font-size: 12.5px; padding: 3px 8px; outline: none;
+  }
+  .prevbar select:focus { border-color: var(--cyan); }
+  .prevbar input[type=range] { flex: 1; min-width: 160px; accent-color: var(--cyan); }
+  .prevbar .cnt { font-family: var(--mono); font-size: 12px; color: var(--cyan); }
+  canvas.pile2d {
+    width: 100%; height: 380px; margin-top: 8px; border: 1px solid var(--line);
+    border-radius: 8px; background: #071022; display: block;
+  }
+  canvas.pile3d {
+    width: 100%; height: 400px; margin-top: 8px; border: 1px solid var(--line);
+    border-radius: 8px; background: #050b1a; display: block; cursor: grab;
+  }
+  .glerr {
+    display: none; margin-top: 8px; padding: 26px 14px; border: 1px dashed var(--line2);
+    border-radius: 8px; color: var(--dim); font-size: 12.5px; text-align: center; line-height: 1.8;
+  }
+  .glerr b { color: var(--red); }
+  canvas.yard2d {
+    width: 100%; height: 250px; margin-top: 8px; border: 1px solid var(--line);
+    border-radius: 8px; background: #071022; display: block;
+  }
+  .tbl tr.selrow td { background: rgba(56, 189, 248, .07); }
+  .tbl tr.selrow td:first-child { box-shadow: inset 3px 0 0 var(--cyan); }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo">🏗</div>
+    <div><h1>库房参数设计</h1></div>
+  </div>
+  <nav data-sim-nav="whcfg" title="新标签打开，不打断各页面状态"></nav>
+  <div class="actions">
+    <button id="btnReset">↺ 恢复默认</button>
+    <button id="btnSave" class="primary">✓ 保存修改</button>
+  </div>
+</header>
+<script src="./shared/nav.js"></script>
+<main><div class="wrap" id="app"><p class="hint"><span class="spin">◌</span> 正在从数据库加载库房参数…</p></div></main>
+
+<script src="./vendor/three.inline.js"></script>
+<script src="./shared/sim-common.js"></script>
+<script>
+'use strict';
+const { DB_API, SPEC_COLORS } = SIM;
+const app = document.getElementById('app');
+const btnSave = document.getElementById('btnSave');
+const btnReset = document.getElementById('btnReset');
+
+const SHAPE_NAMES = { rebar: '螺纹钢', round: '圆钢', square: '方钢', pipe: '管材' };
+const LANE_COLS = [7, 19, 31];          // 竖向车辆通道列（只读结构）
+/* 栅格列 -> 号区 / 号区 -> 分区（与 server/layout.js 同规则，库房总览用） */
+function areaOfCol(c) {
+  const bx = c - 2;
+  if (bx < 0) return null;
+  if (bx <= 4) return bx + 1;
+  if (bx <= 16) return bx;
+  if (bx <= 28) return bx >= 18 ? bx - 1 : null;
+  return bx >= 30 ? bx - 2 : null;
+}
+function zoneOfArea(a) {
+  if (a >= 17) return '中棒区域';
+  if (a >= 14) return '大棒单支和长钢';
+  if (a >= 3) return '大棒区域';
+  return '铁姆肯区';
+}
+let schema = [], values = {}, saved = {};   // 调度参数（warehouse + robot.charger*）
+let rules = [];                          // 捆制规则行（含编辑态 edit: null|数字|'auto'|'preset'）
+let rulesSaved = null;                   // 规则编辑态快照（脏判断）
+let inv = null;                          // /api/inventory 快照
+
+/* ---- 与 server/database.js 同口径的捆制几何（米制入参，cm 出参） ---- */
+const MANUAL_ROWS = { 1: [1], 4: [2, 2], 5: [3, 2] };
+const geo = () => values.warehouse || {};
+function rowsOf(rods) {
+  if (MANUAL_ROWS[rods]) return MANUAL_ROWS[rods];
+  const k = Math.floor((Math.sqrt(8 * rods + 1) - 1) / 2);
+  const rows = Array.from({ length: k }, (_, i) => k - i);
+  const rem = rods - k * (k + 1) / 2;
+  if (rem > 0) rows.unshift(rem);
+  return rows;
+}
+function bundleDiaCm(dia, rods) {
+  if (!rods) return null;
+  if (rods === 1) return dia / 10;
+  const rows = rowsOf(rods), d = dia / 1000;
+  const w = Math.max(...rows) * d * geo().diaKw;
+  const h = rows.length * d * geo().diaKh + geo().packShim / 1000;
+  return Math.sqrt(w * w + h * h) * 100;
+}
+function deriveRods(dia) {
+  let lastBelow = null;
+  for (let k = 1; k <= 40; k++) {
+    const n = k * (k + 1) / 2;
+    const d = bundleDiaCm(dia, n);
+    if (d > geo().maxDiaCm) return lastBelow ? lastBelow.n : 1;
+    if (d >= geo().minDiaCm) return n;
+    lastBelow = { n };
+  }
+  return lastBelow ? lastBelow.n : 1;
+}
+function pileDimsOf(dia, rods) {
+  const rows = rowsOf(rods), d = dia / 1000;
+  const across = Math.max(2, Math.floor(geo().pileW / (Math.max(...rows) * d * geo().diaKw + geo().packGap / 1000)));
+  const maxLayers = Math.floor(geo().rackH / (rows.length * d * geo().diaKh + geo().packShim / 1000));
+  return { across, maxLayers };
+}
+/* 规则行当前生效支数：edit 覆盖 > 库内规则 > 预置 */
+function effRods(r) {
+  if (r.edit === 'auto') return deriveRods(r.dia);
+  if (typeof r.edit === 'number') return Math.max(1, Math.round(r.edit));
+  if (r.edit === 'preset') return r.presetRods;
+  if (r.source === 'auto') return deriveRods(r.dia);
+  return r.rods;
+}
+const effSource = r => r.edit === 'auto' ? 'auto' : r.edit === 'preset' ? 'preset'
+  : typeof r.edit === 'number' ? 'override' : r.source;
+function effWeight(r, rods) {   // 棒材理论吨位预览（管材保持手工值）
+  if (r.shape === 'pipe') return r.weight;
+  const kgm = r.dia * r.dia * (r.shape === 'square' ? 0.00785 : 0.00617);
+  return +(kgm * 9 * rods / 1000).toFixed(2);
+}
+const rulesDirty = () => JSON.stringify(rules.map(r => r.edit)) !== JSON.stringify(rulesSaved);
+const paramsDirty = () => JSON.stringify(values) !== JSON.stringify(saved);
+function refreshButtons() {
+  const dirty = paramsDirty() || rulesDirty();
+  btnSave.disabled = !dirty;
+  btnSave.textContent = dirty ? '✓ 保存修改' : '已保存';
+}
+
+function renderMsg(ok, text, retry) {
+  const old = document.querySelector('.msg');
+  if (old) old.remove();
+  if (!text) return;
+  const div = document.createElement('div');
+  div.className = 'msg ' + (ok ? 'ok' : 'err');
+  div.textContent = text;
+  if (retry) {
+    const b = document.createElement('button');
+    b.textContent = '重试';
+    b.onclick = load;
+    div.appendChild(b);
+  }
+  app.prepend(div);
+}
+
+/* ---- 参数滑杆行（与调度参数页同款） ---- */
+function setVal(sec, key, v) {
+  const d = schema.find(s => s.sec === sec).defs.find(x => x.key === key);
+  v = Math.min(d.max, Math.max(d.min, Number.isFinite(v) ? v : d.min));
+  values[sec][key] = v;
+  document.querySelectorAll(`[data-sec="${sec}"][data-key="${key}"]`).forEach(el => { el.value = v; });
+  renderAll();   // 几何/捆径/库容/充电位联动刷新
+}
+function buildRow(sec, d) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const lab = document.createElement('span');
+  lab.className = 'lab';
+  lab.textContent = d.label;
+  row.appendChild(lab);
+  const range = document.createElement('input');
+  Object.assign(range, { type: 'range', min: d.min, max: d.max, step: d.step, value: values[sec][d.key] });
+  range.dataset.sec = sec; range.dataset.key = d.key;
+  range.oninput = e => setVal(sec, d.key, Number(e.target.value));
+  const num = document.createElement('div');
+  num.className = 'num';
+  const number = document.createElement('input');
+  Object.assign(number, { type: 'number', min: d.min, max: d.max, step: d.step, value: values[sec][d.key] });
+  number.dataset.sec = sec; number.dataset.key = d.key;
+  number.oninput = e => setVal(sec, d.key, Number(e.target.value));
+  const unit = document.createElement('span');
+  unit.className = 'unit';
+  unit.textContent = d.unit;
+  num.append(number, unit);
+  row.append(range, num);
+  return row;
+}
+function card(mount, cls, ico, name, cdesc) {
+  const card = document.createElement('section');
+  card.className = 'cat ' + cls;
+  card.innerHTML = `<div class="cat-head"><span class="ico">${ico}</span><h2>${name}</h2><span class="cdesc">${cdesc}</span></div>`;
+  mount.appendChild(card);
+  return card;
+}
+function subOf(cardEl, h3, sdesc) {
+  const sub = document.createElement('div');
+  sub.className = 'sub';
+  const h = document.createElement('h3');
+  h.textContent = h3;
+  const sd = document.createElement('p');
+  sd.className = 'sdesc';
+  sd.textContent = sdesc || '';
+  sub.append(h, sd);
+  cardEl.appendChild(sub);
+  return sub;
+}
+function renderSliders(sub, sec, keys) {
+  const s = schema.find(x => x.sec === sec);
+  for (const d of s.defs) if (!keys || keys.includes(d.key)) sub.appendChild(buildRow(sec, d));
+}
+
+/* ---- 卡片 1：钢材摆放规则（捆制） ---- */
+function cardSteel() {
+  const c = card(colPileParams, 'c-steel', '🔩', '钢材摆放规则（捆制）', '捆径 = 一捆合起来的外接圆直径；细棒材自动增支成大捆，粗管材超限自动单支吊运');
+  const s1 = subOf(c, '捆径口径', '上下限实时作用于规则引擎的自动推导与达标判定；保存后入库推荐/落位/三维码放全站同源生效');
+  renderSliders(s1, 'warehouse', ['minDiaCm', 'maxDiaCm']);
+  const s2 = subOf(c, '规格捆制规则', '支数留空 = 沿用库内规则（预置/自动）；输入数字 = 手工覆盖；「自动」= 规则引擎按捆径口径推导最小三角数支数');
+  const tbl = document.createElement('table');
+  tbl.className = 'tbl';
+  tbl.id = 'rulesTbl';
+  s2.appendChild(tbl);
+  const note = document.createElement('p');
+  note.className = 'note';
+  note.innerHTML = '提示：手工覆盖导致捆径超出口径时仍可保存，但会给出<b>越界警示</b>；棒材（螺纹钢/圆钢/方钢）的<b>单捆吨位基准按支数×理论米重自动重算</b>（9m 基准），管材吨位保持手工值。修改支数与口径会改变垛容，期初库存分布可按卡片三「重建库区」重新铺层。';
+  s2.appendChild(note);
+}
+
+function renderRulesTbl() {
+  const tbl = document.getElementById('rulesTbl');
+  if (!tbl) return;
+  tbl.innerHTML = '';
+  const theadEl = document.createElement('thead');
+  const thead = document.createElement('tr');
+  ['规格', '杆径', '形状', '支数/捆', '来源', '排布（自下而上）', '捆径', '垛容', '单捆吨位', ''].forEach(h => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    thead.appendChild(th);
+  });
+  theadEl.appendChild(thead);
+  tbl.appendChild(theadEl);
+  const tbody = document.createElement('tbody');
+  tbl.appendChild(tbody);
+  for (const r of rules) {
+    const tr = document.createElement('tr');
+    tr.title = '点击预览该规格垛体（二维/三维）';
+    tr.style.cursor = 'pointer';
+    if (r.spec === preview.spec) tr.classList.add('selrow');
+    tr.onclick = () => { preview.spec = r.spec; preview.count = -1; renderAll(); };
+    const rods = effRods(r), src = effSource(r);
+    const dia = bundleDiaCm(r.dia, rods);
+    const ok = rods === 1 ? dia >= geo().minDiaCm : dia >= geo().minDiaCm && dia <= geo().maxDiaCm;
+    const cap = Math.min(geo().bundlesPerStack, (() => {
+      const p = pileDimsOf(r.dia, rods); return p.across * p.maxLayers;
+    })());
+    const mk = (txt, cls) => { const td = document.createElement('td'); td.textContent = txt; if (cls) td.className = cls; tr.appendChild(td); return td; };
+    mk(r.spec);
+    mk(`Φ${r.dia}`, 'mono');
+    mk(SHAPE_NAMES[r.shape] || r.shape);
+    const tdIn = document.createElement('td');
+    const input = document.createElement('input');
+    input.className = 'rods';
+    input.type = 'number';
+    input.min = 1; input.max = 999; input.step = 1;
+    input.placeholder = String(r.edit === 'auto' ? deriveRods(r.dia) : (r.source === 'auto' ? deriveRods(r.dia) : r.rods));
+    if (typeof r.edit === 'number') input.value = r.edit;
+    input.title = '留空 = 沿用库内规则；填数字 = 手工覆盖';
+    input.oninput = () => {
+      r.edit = input.value === '' ? (r.edit === 'auto' ? 'auto' : null) : Math.max(1, Math.round(Number(input.value) || 1));
+      if (input.value === '' && r.edit == null && r.source === 'auto') r.edit = 'auto';
+      renderAll();
+    };
+    tdIn.appendChild(input);
+    tr.appendChild(tdIn);
+    const tdSrc = document.createElement('td');
+    const badge = document.createElement('span');
+    badge.className = 'badge ' + src;
+    badge.textContent = src === 'override' ? '覆盖' : src === 'auto' ? '自动' : '预置';
+    tdSrc.appendChild(badge);
+    tr.appendChild(tdSrc);
+    mk(rowsOf(rods).join('+'), 'mono');
+    mk(`${dia?.toFixed(1)} cm${ok ? '' : ' ⚠'}`, 'mono ' + (ok ? 'dia-ok' : 'dia-bad'));
+    mk(`${cap} 捆`, 'mono');
+    mk(`${effWeight(r, rods)} t`, 'mono');
+    const tdBtn = document.createElement('td');
+    const bAuto = document.createElement('button');
+    bAuto.className = 'rowbtn';
+    bAuto.textContent = '自动';
+    bAuto.title = '按捆径口径自动推导支数';
+    bAuto.onclick = () => { r.edit = 'auto'; renderAll(); };
+    const bPreset = document.createElement('button');
+    bPreset.className = 'rowbtn';
+    bPreset.textContent = '预置';
+    bPreset.title = '恢复系统预置支数';
+    bPreset.onclick = () => { r.edit = 'preset'; renderAll(); };
+    tdBtn.append(bAuto, bPreset);
+    tr.appendChild(tdBtn);
+    tbody.appendChild(tr);
+  }
+}
+
+/* ---- 卡片 2：库房尺寸与码放 ---- */
+function cardDims() {
+  const c = card(colPileParams, 'c-dims', '📐', '库房尺寸与码放', '料架限高/垛内铺宽/垫梁与层间垫木实时改变垛容、落位标高与三维码放；沙盘数秒内自动同步');
+  const s1 = subOf(c, '料架与垛', '垛容 = 每层并排数 × 限高可堆层数（受每垛通用上限收窄，见卡片三）');
+  renderSliders(s1, 'warehouse', ['rackH', 'pileW', 'railTop']);
+  const s2 = subOf(c, '码放细部', '层间垫木与捆间通风缝参与单捆高/并排数计算；截面系数为杆径的宽/高向富余系数');
+  renderSliders(s2, 'warehouse', ['packShim', 'packGap', 'diaKw', 'diaKh']);
+  const s3 = subOf(c, '垛容联动预览', '按当前尺寸/码放参数实时核算（保存前后一致）');
+  const tbl = document.createElement('table');
+  tbl.className = 'tbl';
+  tbl.id = 'dimsTbl';
+  s3.appendChild(tbl);
+}
+
+function renderDimsTbl() {
+  const tbl = document.getElementById('dimsTbl');
+  if (!tbl) return;
+  tbl.innerHTML = '';
+  const theadEl = document.createElement('thead');
+  const thead = document.createElement('tr');
+  ['规格', '支数/捆', '单捆宽', '单捆高', '每层并排', '限高可堆层数', '垛容'].forEach(h => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    thead.appendChild(th);
+  });
+  theadEl.appendChild(thead);
+  tbl.appendChild(theadEl);
+  const tbody = document.createElement('tbody');
+  tbl.appendChild(tbody);
+  for (const r of rules) {
+    const rods = effRods(r);
+    const rows = rowsOf(rods), d = r.dia / 1000;
+    const w = Math.max(...rows) * d * geo().diaKw;
+    const h = rows.length * d * geo().diaKh + geo().packShim / 1000;
+    const p = pileDimsOf(r.dia, rods);
+    const tr = document.createElement('tr');
+    [r.spec, `${rods} 支`, `${(w * 100).toFixed(1)}cm`, `${(h * 100).toFixed(1)}cm`,
+      `${p.across} 捆`, `${p.maxLayers} 层`, `${Math.min(geo().bundlesPerStack, p.across * p.maxLayers)} 捆`]
+      .forEach((t, i) => {
+        const td = document.createElement('td');
+        td.textContent = t;
+        if (i > 0) td.className = 'mono';
+        tr.appendChild(td);
+      });
+    tbody.appendChild(tr);
+  }
+}
+
+/* ---- 卡片 3：垛位与库容 ---- */
+let rebuilding = false;
+function cardStack() {
+  const c = card(colYardParams, 'c-stack', '📦', '垛位与库容', '每库位 8 垛（沿跨向纵深，机器狗导航栅格同构）；每垛捆数上限收窄通用垛容；库容装载比例决定期初库存铺层');
+  const s1 = subOf(c, '垛容量上限', '全局通用上限，实际垛容 = min(本上限, 并排数 × 限高层数)');
+  renderSliders(s1, 'warehouse', ['bundlesPerStack']);
+  const s2 = subOf(c, '当前库容', '库存汇总来自数据库实时值；「期初装载比例」为下方设定值，重建后生效');
+  const kpis = document.createElement('div');
+  kpis.className = 'kpi-row';
+  kpis.id = 'capKpis';
+  s2.appendChild(kpis);
+  const s3 = subOf(c, '重建库区（按新规则重生成垛位钢材数据库）', '设定期初库容装载比例后点按钮：先保存当前库房参数与捆制规则，再按新规则清空重灌期初库存（确定性随机流，结果可复现）');
+  renderSliders(s3, 'warehouse', ['fillRatio']);
+  const row = document.createElement('div');
+  row.className = 'row';
+  const lab = document.createElement('span');
+  lab.className = 'lab';
+  lab.textContent = '期初库存重灌';
+  const btn = document.createElement('button');
+  btn.className = 'danger';
+  btn.id = 'btnRebuild';
+  btn.textContent = '⚙ 按新规则重建钢材数据库';
+  btn.onclick = async () => {
+    if (rebuilding) return;
+    if (!confirm('将先保存当前「库房参数 + 捆制规则」（含库容装载比例），再清空库存并按新规则重新灌入期初分布（进厂车辆台账保留），确认？')) return;
+    rebuilding = true;
+    btn.textContent = '重建中…';
+    try {
+      const msgs = await saveAll();   // 参数与捆制规则编辑一并落库，保证按「新规则」生成
+      const res = await fetch(DB_API + '/api/reset', { method: 'POST' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      inv = await (await fetch(DB_API + '/api/inventory')).json();
+      const sr = await fetch(DB_API + '/api/slots');   // 库房总览占用着色同步为新期初
+      if (sr.ok) yardSlots = (await sr.json()).slots;
+      renderAll();
+      renderMsg(true, `库区已按当前参数重建：${inv.totalBundles} 捆 · 利用率 ${(inv.utilization * 100).toFixed(1)}%（运行中的沙盘刷新后按新期初加载）。` + (msgs.length ? ' ' + msgs.join('；') : ''));
+    } catch {
+      renderMsg(false, '重建失败：数据库服务不可达（请先执行 npm run db:serve 或 npm run sim）。');
+    }
+    rebuilding = false;
+    btn.textContent = '⚙ 按新规则重建钢材数据库';
+  };
+  row.append(lab, btn);
+  s3.appendChild(row);
+  const note = document.createElement('p');
+  note.className = 'note';
+  note.innerHTML = '提示：<b>库容装载比例</b> = 期初每垛按物理垛容铺层的比例（±4% 抖动、每垛至少 3 层；大口径单支管 Φ200/400/600 保持满垛），仅在「重建库区」时生效；仅修改<b>捆径口径 / 每垛上限 / 尺寸码放</b>时，入库推荐与沙盘运行时垛容即时生效，不必重建。';
+  s3.appendChild(note);
+}
+
+function renderCapKpis() {
+  const el = document.getElementById('capKpis');
+  if (!el) return;
+  const cap = 91 * 8 * geo().bundlesPerStack;
+  el.innerHTML = '';
+  [['总库容', `${cap.toLocaleString()} 捆`],
+   ['期初装载比例', `${geo().fillRatio ?? 22}%`],
+   ...(!inv ? [] : [
+     ['当前库存', `${inv.totalBundles.toLocaleString()} 捆`],
+     ['利用率', `${(inv.totalBundles / cap * 100).toFixed(1)}%`],
+     ['占用库位', `${inv.occupiedSlots} / ${inv.slotCount}`],
+   ])].forEach(([k, v]) => {
+    const d = document.createElement('div');
+    d.className = 'kpi';
+    d.innerHTML = `<div class="k">${k}</div><div class="v">${v}</div>`;
+    el.appendChild(d);
+  });
+}
+
+/* ---- 卡片 4：充电位置 ---- */
+function cardChg() {
+  const c = card(colYardParams, 'c-chg', '🔌', '充电位置', '充电桩沿厂房北侧横向通道一字排开（厂房外 C 跨一路）；数量与列位保存后沙盘自动重建充电桩与机队分配');
+  const s1 = subOf(c, '桩数与列位', '列位 = 库区栅格列号（1~37）；示意见下方通道条');
+  renderSliders(s1, 'robot', ['chargerCount', 'chargerC1', 'chargerC2', 'chargerC3']);
+  const s2 = subOf(c, '北端横向通道示意', '厂房外墙 · 38 列栅格；蓝格 = 竖向车辆通道列（7/19/31），青格 = 充电桩（暗青 = 未启用）');
+  const strip = document.createElement('div');
+  strip.className = 'strip';
+  strip.id = 'chgStrip';
+  s2.appendChild(strip);
+}
+
+function renderChgStrip() {
+  const strip = document.getElementById('chgStrip');
+  if (!strip) return;
+  const n = values.robot?.chargerCount || 1;
+  const cells = [values.robot?.chargerC1, values.robot?.chargerC2, values.robot?.chargerC3].map(v => Math.round(v));
+  strip.innerHTML = '';
+  for (let c = 1; c <= 37; c++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell' + (LANE_COLS.includes(c) ? ' lane' : '');
+    const idx = cells.indexOf(c);
+    if (idx >= 0) {
+      cell.classList.add('chg');
+      if (idx >= n) cell.classList.add('off');
+      cell.textContent = `⚡${idx + 1}`;
+      cell.title = `充电桩 #${idx + 1}（${idx < n ? '启用' : '未启用'}）`;
+    } else {
+      cell.title = `栅格列 ${c}`;
+    }
+    strip.appendChild(cell);
+  }
+}
+
+/* ---- 垛体预览（2D/3D 共用状态与同口径几何） ---- */
+let colYardPrev = null, colYardParams = null;   // 库房布局块：左图右参
+let colPilePrev = null, colPileParams = null;   // 货架块：左预览右参数
+window.__whcfgDbg = { yardDraws: 0, slotCount: 0 };   // 自测探针
+const SPEC_LENS = {   // 代表性长度（m，与沙盘 SPEC_META.lengths 首位一致；大口径管取 12m）
+  '螺纹钢 Φ20': 9, '螺纹钢 Φ25': 9, '圆钢 Φ50': 6, '圆钢 Φ60': 6, '方钢 40×40': 6,
+  '管材 Φ50': 6, '管材 Φ100': 6, '管材 Φ200': 9, '管材 Φ400': 9, '管材 Φ600': 9,
+};
+let preview = { spec: '螺纹钢 Φ20', count: -1 };   // count=-1：跟随当前垛容（满垛）
+const previewRule = () => rules.find(r => r.spec === preview.spec) || rules[0];
+const previewCap = () => {
+  const r = previewRule();
+  if (!r) return 1;
+  const p = pileDimsOf(r.dia, effRods(r));
+  return Math.min(geo().bundlesPerStack, p.across * p.maxLayers);
+};
+/* 层内座位顺序（居中先放、左右交替，与沙盘 seatOrder 同口径） */
+function seatOrder(n) {
+  const c = (n - 1) / 2;
+  return Array.from({ length: n }, (_, i) => i).sort((a, b) => Math.abs(a - c) - Math.abs(b - c) || a - b);
+}
+function pileLayout(dia, rods, count) {   // count 捆 -> { across, layers:[每层捆数自下而上], seats:[[layer,seatIdx],…] }
+  const p = pileDimsOf(dia, rods);
+  const across = p.across;
+  const order = seatOrder(across);
+  const seats = [];
+  for (let i = 0; i < count; i++) seats.push([Math.floor(i / across), order[i % across]]);
+  return { across, maxLayers: p.maxLayers, seats };
+}
+/* 料架几何：与三维沙盘 buildRack / stackCell3 完全同口径（普通库位垛格 8.333×3.75m）。
+ * 捆沿 X（库区长向）横放、座位沿 Z（垛格深向）在铺宽内居中展开；立柱在垛格四角，
+ * 垫梁沿 Z 两道、位于捆端下方（X=±rx），底层捆坐垫梁顶（railTop）。 */
+function rackDimsOf(len) {
+  const cw = 300 / 36, cd = 30 / 8;            // 垛格宽 = 库位列宽，垛格深 = 跨深/8
+  const px = cw / 2 - 0.45, pz = cd / 2 - 0.35;
+  return {
+    cw, cd, px, pz,
+    rx: Math.min(len / 2 + 0.12, px - 0.1),    // 垫梁 X 半距：捆端下方；长材超格宽时收进立柱内
+    beamH: geo().railTop - 0.21,
+    beamD: cd - 1.2,
+    beamY: (geo().railTop + 0.21) / 2,
+  };
+}
+window.__whcfgDbg.rackDimsOf = rackDimsOf;
+
+/* ---- 卡片六：垛体二维预览 ---- */
+function cardPrev2d() {
+  const c = card(colPilePrev, 'c-prev', '📊', '垛体二维预览（实时联动）', '俯视 = 底层并排落位；正视 = 杆件截面排布/层数/限高关系');
+  const s = subOf(c, '俯视 + 正视截面', '与上方三维预览共用规格/捆数控制；右侧任何参数修改即刻生效');
+  const cv = document.createElement('canvas');
+  cv.className = 'pile2d';
+  cv.id = 'pileCv';
+  s.appendChild(cv);
+}
+
+/* ---- 2D 绘制 ---- */
+function drawRodCross(ctx, x, y, r, shape, color) {   // 杆件截面：圆/方/圆环
+  ctx.beginPath();
+  if (shape === 'square') {
+    ctx.fillStyle = color;
+    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    return;
+  }
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  if (shape === 'pipe') { ctx.lineWidth = Math.max(1, r * 0.28); ctx.strokeStyle = color; ctx.stroke(); }
+  else { ctx.fillStyle = color; ctx.fill(); }
+}
+function drawBundleCross(ctx, bx, by, bw, bh, rows, d, shape, color) {   // 正视：一捆截面（bx,by=左下）
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(bx, by - bh, bw, bh);
+  const rr = d / 2 * 0.94;
+  let yy = by - d / 2;
+  for (let kk = 0; kk < rows.length; kk++) {
+    const n = rows[kk];
+    for (let j = 0; j < n; j++) {
+      const x = bx + bw / 2 + (j - (n - 1) / 2) * d;
+      drawRodCross(ctx, x, yy, rr, shape, color);
+    }
+    if (kk < rows.length - 1) yy -= d * (shape === 'square' ? 1 : 0.866);
+  }
+}
+function dimLine(ctx, x1, y1, x2, y2, text) {   // 尺寸标注线（两端短竖 + 文字）
+  ctx.strokeStyle = '#7288b3';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.fillStyle = '#93a8cc';
+  ctx.font = '11px Consolas,monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(text, (x1 + x2) / 2, y1 - 4);
+}
+function renderPreview2D() {
+  const cv = document.getElementById('pileCv');
+  if (!cv) return;
+  const W = cv.clientWidth || 900, H = 400;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const ctx = cv.getContext && cv.getContext('2d');
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  const r = previewRule();
+  if (!r) return;
+  const rods = effRods(r);
+  const rows = rowsOf(rods);
+  const d = r.dia / 1000;
+  const bwM = Math.max(...rows) * d * geo().diaKw;
+  const bhM = rows.length * d * geo().diaKh + geo().packShim / 1000;
+  const cap = previewCap();
+  const count = preview.count < 0 ? cap : Math.min(preview.count, cap);
+  const lay = pileLayout(r.dia, rods, count);
+  const usedLayers = lay.seats.length ? lay.seats[lay.seats.length - 1][0] + 1 : 0;
+  const color = SPEC_COLORS[r.spec] || '#38bdf8';
+  const shape = r.shape;
+  const len = SPEC_LENS[r.spec] || 9;
+
+  /* ===== 左：俯视（垛格 8.333×3.75m，长材悬出与沙盘一致） ===== */
+  const LW = W * 0.46;
+  const rd2 = rackDimsOf(len);
+  ctx.fillStyle = '#93a8cc';
+  ctx.font = '700 13px "Microsoft YaHei",sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('俯视（垛格 + 底层落位）', 16, 22);
+  const topScale = Math.min((LW - 50) / (Math.max(len, rd2.cw) + 1.2), (H - 120) / (rd2.cd + 1.0));
+  const tx0 = 16, ty0 = 60;
+  // 垛格外框（沙盘垛格：宽 CELL_L=8.333m × 深 3.75m），捆居中、长材超格悬出
+  const cellX = tx0 + (Math.max(len, rd2.cw) - rd2.cw) / 2 * topScale;
+  const pileX = tx0 + (Math.max(len, rd2.cw) - len) / 2 * topScale;
+  ctx.strokeStyle = '#1f3a6b';
+  ctx.setLineDash([6, 4]);
+  ctx.strokeRect(cellX, ty0, rd2.cw * topScale, rd2.cd * topScale);
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#7288b3';
+  ctx.font = '10px "Microsoft YaHei",sans-serif';
+  ctx.fillText('垛格 8.33×3.75m', cellX + 4, ty0 + 12);
+  // 垫梁位置（沙盘口径：沿 Z 两道，X=±rx 捆端下方）
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = 'rgba(138,98,56,.8)';
+  for (const sx of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(pileX + (len / 2 + sx * rd2.rx) * topScale, ty0 - 4);
+    ctx.lineTo(pileX + (len / 2 + sx * rd2.rx) * topScale, ty0 + rd2.cd * topScale + 4);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // 底层捆：铺满层按层数取已落位
+  const layerCounts = [];
+  for (const [L] of lay.seats) layerCounts[L] = (layerCounts[L] || 0) + 1;
+  const botN = layerCounts[0] || 0;
+  for (let i = 0; i < botN; i++) {
+    const z = (seatOrder(lay.across)[i] - (lay.across - 1) / 2) * (bwM + geo().packGap / 1000);
+    ctx.fillStyle = color + '33';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(pileX, ty0 + rd2.cd / 2 * topScale + z * topScale - bwM * topScale / 2,
+      len * topScale, bwM * topScale);
+    ctx.fillRect(pileX, ty0 + rd2.cd / 2 * topScale + z * topScale - bwM * topScale / 2,
+      len * topScale, bwM * topScale);
+  }
+  ctx.fillStyle = '#93a8cc';
+  ctx.font = '11px "Microsoft YaHei",sans-serif';
+  ctx.fillText(`底层 ${botN}/${lay.across} 捆 · 共 ${usedLayers}/${lay.maxLayers} 层 · ${count} 捆`, 16, ty0 + rd2.cd * topScale + 22);
+  dimLine(ctx, pileX, ty0 + rd2.cd * topScale + 34, pileX + len * topScale, ty0 + rd2.cd * topScale + 34, `捆长 ${len} m`);
+
+  /* ===== 右：正视截面（层数/限高关系） ===== */
+  const RX = LW + 20;
+  ctx.fillStyle = '#93a8cc';
+  ctx.font = '700 13px "Microsoft YaHei",sans-serif';
+  ctx.fillText('正视截面（料架限高）', RX, 22);
+  const frontW = W - RX - 20, frontH = H - 100;
+  const fs = Math.min(frontW / (geo().pileW + 0.9), frontH / (geo().rackH + 0.7));
+  const groundY = 60 + frontH - 30;
+  const cx = RX + frontW / 2;
+  // 地面
+  ctx.strokeStyle = '#33507f';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(RX + 6, groundY); ctx.lineTo(RX + frontW - 6, groundY); ctx.stroke();
+  // 料架立柱（沙盘口径：Z 向间距 = 垛格深 3.75 − 2×0.35 = 3.05m）
+  const postW = 0.14 * fs;
+  ctx.fillStyle = '#7a838d';
+  for (const sx of [-1, 1]) {
+    ctx.fillRect(cx + sx * rd2.pz * fs - postW / 2, groundY - geo().rackH * fs, postW, geo().rackH * fs);
+  }
+  // 限高虚线
+  ctx.setLineDash([6, 4]);
+  ctx.strokeStyle = '#f8717188';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx - (rd2.pz + 0.3) * fs, groundY - geo().rackH * fs);
+  ctx.lineTo(cx + (rd2.pz + 0.3) * fs, groundY - geo().rackH * fs);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#f87171';
+  ctx.font = '11px "Microsoft YaHei",sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(`限高 ${geo().rackH.toFixed(1)}m`, RX + frontW - 6, groundY - geo().rackH * fs - 6);
+  ctx.textAlign = 'left';
+  // 垫梁截面（正视看到的两侧垫梁重合：0.20m 高 × 2.55m 深，位于捆端下方 y 0.21~0.41）
+  ctx.fillStyle = '#8a6238';
+  ctx.fillRect(cx - rd2.beamD / 2 * fs, groundY - geo().railTop * fs, rd2.beamD * fs, Math.max(3, rd2.beamH * fs));
+  // 捆：逐层逐位（居中铺开）
+  const timberH = Math.max(2, geo().packShim / 1000 * fs * 0.6);
+  const seenPerLayer = [];
+  for (const [L, seatIdx] of lay.seats) {
+    const yBottom = groundY - geo().railTop * fs - L * bhM * fs;
+    const x = cx + (seatIdx - (lay.across - 1) / 2) * (bwM + geo().packGap / 1000) * fs;
+    drawBundleCross(ctx, x - bwM * fs / 2, yBottom, bwM * fs, (bhM - geo().packShim / 1000) * fs, rows, d * fs, shape, color);
+    seenPerLayer[L] = (seenPerLayer[L] || 0) + 1;
+  }
+  // 层间垫木
+  ctx.fillStyle = '#8a6238';
+  for (let L = 1; L < usedLayers; L++) {
+    const y = groundY - geo().railTop * fs - L * bhM * fs;
+    ctx.fillRect(cx - geo().pileW / 2 * fs * 0.98, y, geo().pileW * fs * 0.98, timberH);
+  }
+  // 标注
+  ctx.fillStyle = '#93a8cc';
+  ctx.font = '11px "Microsoft YaHei",sans-serif';
+  ctx.fillText(`${r.spec} · ${rods} 支/捆（${rows.join('+')}）· 单捆 ${(bwM * 100).toFixed(0)}×${(bhM * 100).toFixed(0)}cm`, RX, H - 34);
+  ctx.fillText(`每层 ≤ ${lay.across} 捆 · 限高可堆 ${lay.maxLayers} 层 · 垛容 ${cap} 捆`, RX, H - 18);
+  dimLine(ctx, cx - geo().pileW / 2 * fs, groundY + 16, cx + geo().pileW / 2 * fs, groundY + 16, `垛内铺宽 ${geo().pileW.toFixed(2)}m`);
+}
+
+/* ---- 卡片：库房二维总览（库房级调整预览：充电位置/库容利用率） ---- */
+let yardSlots = [];   // /api/slots 当前库位数据（占用着色）
+function cardYard() {
+  const c = card(colYardPrev, 'c-yard', '🗺', '库房二维总览', '俯视全库：分区库位着色（深浅=占用率）· 充电桩位置随「充电位置」参数实时移动 · 库容/利用率随「每垛捆数上限」联动');
+  const s = subOf(c, '库房平面图', '300m × 90m · 三跨 · 3 条竖向车辆通道 · 充电服务带（厂房外北端）');
+  const cv = document.createElement('canvas');
+  cv.className = 'yard2d';
+  cv.id = 'yardCv';
+  s.appendChild(cv);
+}
+const YARD_ZONES = {
+  '中棒区域': '56,132,246', '大棒单支和长钢': '74,222,128', '大棒区域': '251,146,60', '铁姆肯区': '250,204,21',
+};
+function renderYard() {
+  const cv = document.getElementById('yardCv');
+  if (!cv) return;
+  const W = cv.clientWidth || 700, H = 250;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const ctx = cv.getContext && cv.getContext('2d');
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  window.__whcfgDbg.yardDraws++;
+
+  /* 库房几何（与沙盘 buildMap / server/layout.js 同规则） */
+  const CELL_L = 300 / 36, ROW_H = [2, 30, 2, 30, 2, 30, 2, 3];   // 4 横通道 + 3 跨 + 服务带
+  const rowTop = r => ROW_H.slice(0, r).reduce((a, b) => a + b, 0);
+  const PAD = 14, SX = (W - PAD * 2) / 300, SY = (H - PAD * 2 - 26) / 101;
+  const X = m => PAD + m * SX, Y = m => PAD + 22 + m * SY;
+
+  // 横向通道/服务带底色
+  ctx.fillStyle = 'rgba(56,132,246,.07)';
+  for (const r of [0, 2, 4, 6]) ctx.fillRect(X(0), Y(rowTop(r)), 300 * SX, ROW_H[r] * SY);
+  ctx.fillStyle = 'rgba(45,212,191,.08)';
+  ctx.fillRect(X(0), Y(rowTop(7)), 300 * SX, ROW_H[7] * SY);
+  // 竖向车辆通道列
+  ctx.fillStyle = 'rgba(56,132,246,.13)';
+  for (const c of LANE_COLS) ctx.fillRect(X((c - 2) * CELL_L), Y(rowTop(0)), CELL_L * SX, 99 * SY);
+
+  // 库位（按分区分色，占用深浅）
+  const used = new Map();   // code -> Σcount
+  for (const s of yardSlots || []) {
+    used.set(s.code, (s.stacks || []).reduce((n, k) => n + (k.count || 0), 0));
+  }
+  const maxPerSlot = 8 * geo().bundlesPerStack;
+  const codeOf = (area, merged, i) => merged ? String(area) : `${area}-${area <= 2 ? (i === 0 ? 1 : 2) : i + 1}`;
+  for (let c = 2; c <= 37; c++) {
+    if (LANE_COLS.includes(c)) continue;
+    const area = areaOfCol(c);
+    if (area == null) continue;
+    const zone = zoneOfArea(area);
+    const tint = YARD_ZONES[zone] || '114,136,179';
+    const draw = (y0m, hm, code) => {
+      const ratio = Math.min(1, (used.get(code) || 0) / maxPerSlot);
+      ctx.fillStyle = `rgba(${tint},${(0.10 + 0.75 * ratio).toFixed(3)})`;
+      ctx.fillRect(X((c - 2) * CELL_L) + 0.5, Y(y0m) + 0.5, CELL_L * SX - 1, hm * SY - 1);
+    };
+    if (area >= 14 && area <= 16) { draw(rowTop(1), 64, codeOf(area, true)); continue; }   // 整跨合并位
+    for (let i = 0; i < 3; i++) {
+      if (area <= 2 && i === 1) continue;   // 1、2 号区 B 跨为车辆通道
+      draw(rowTop([1, 3, 5][i]), 30, codeOf(area, false, i));
+    }
+  }
+  // 分区名标注
+  ctx.fillStyle = '#93a8cc';
+  ctx.font = '10.5px "Microsoft YaHei",sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('北端（进厂 · 充电桩）', X(150), Y(-4));
+  ctx.fillText('充电服务带', X(150), Y(101) + 4);
+
+  // 充电桩（北端横向通道 r=0，列位可调）
+  const nChg = Math.round(values.robot?.chargerCount || 1);
+  const cols3 = [values.robot?.chargerC1, values.robot?.chargerC2, values.robot?.chargerC3].map(v => Math.round(v));
+  cols3.forEach((c, i) => {
+    const x = X((c - 2) * CELL_L + CELL_L / 2), y = Y(rowTop(0)) + ROW_H[0] * SY / 2;
+    const on = i < nChg;
+    ctx.beginPath();
+    ctx.arc(x, y, 7, 0, Math.PI * 2);
+    ctx.fillStyle = on ? 'rgba(45,212,191,.9)' : 'rgba(45,212,191,.22)';
+    ctx.fill();
+    ctx.fillStyle = on ? '#04121f' : '#2dd4bf';
+    ctx.font = '700 9px sans-serif';
+    ctx.fillText(`⚡${i + 1}`, x, y + 3);
+  });
+  // 库容 KPI（左下，联动每垛上限）+ 图例（右上一行，避免与 KPI 重叠）
+  const cap = 91 * 8 * geo().bundlesPerStack;
+  const util = inv ? inv.totalBundles / cap : 0;
+  ctx.textAlign = 'left';
+  ctx.font = '11px "Microsoft YaHei",sans-serif';
+  ctx.fillStyle = '#93a8cc';
+  ctx.fillText(`总库容 ${cap.toLocaleString()} 捆${inv ? ` · 当前库存 ${inv.totalBundles.toLocaleString()} 捆 · 利用率 ${(util * 100).toFixed(1)}%` : ''}`, PAD, H - 6);
+  let lx = W - PAD;
+  ctx.textAlign = 'right';
+  for (const [name, tint] of Object.entries(YARD_ZONES).reverse()) {
+    const wTxt = ctx.measureText(name).width;
+    lx -= wTxt;
+    ctx.fillStyle = `rgba(${tint},.85)`;
+    ctx.fillText(name, lx, H - 20);
+    lx -= 14;
+    ctx.fillStyle = `rgba(${tint},.55)`;
+    ctx.fillRect(lx, H - 28, 10, 8);
+    lx -= 8;
+  }
+}
+
+/* ---- 卡片七：垛体三维预览（左栏顶部：含规格/捆数共用控制条） ---- */
+let three3d = null;   // { renderer, scene, camera, group, cam, mats }
+function cardPrev3d() {
+  const c = card(colPilePrev, 'c-prev3d', '🧊', '垛体三维预览', '左键旋转、右键平移、滚轮缩放；与数据库捆级落位（座位网格）同口径摆放');
+  const s = subOf(c, '预览对象', '规格与垛内捆数（二维/三维预览共用；右侧任何参数修改即刻生效）');
+  const bar = document.createElement('div');
+  bar.className = 'prevbar';
+  const lab1 = document.createElement('span');
+  lab1.className = 'lab';
+  lab1.textContent = '规格';
+  const sel = document.createElement('select');
+  sel.id = 'specSel';
+  for (const r of rules) {
+    const o = document.createElement('option');
+    o.value = r.spec;
+    o.textContent = r.spec;
+    sel.appendChild(o);
+  }
+  sel.value = preview.spec;
+  sel.onchange = () => { preview.spec = sel.value; preview.count = -1; renderAll(); };
+  const lab2 = document.createElement('span');
+  lab2.className = 'lab';
+  lab2.textContent = '垛内捆数';
+  const rng = document.createElement('input');
+  rng.type = 'range';
+  rng.id = 'pileCount';
+  rng.min = 0;
+  rng.oninput = () => { preview.count = Number(rng.value); renderPreview(); refreshButtons(); };
+  const cnt = document.createElement('span');
+  cnt.className = 'cnt';
+  cnt.id = 'pileCountTxt';
+  const chk = document.createElement('input');
+  chk.type = 'checkbox';
+  chk.id = 'autoRot3d';
+  chk.checked = true;
+  const lab3 = document.createElement('span');
+  lab3.className = 'lab';
+  lab3.textContent = '自动旋转';
+  bar.append(lab1, sel, lab2, rng, cnt, chk, lab3);
+  s.appendChild(bar);
+  const cv = document.createElement('canvas');
+  cv.className = 'pile3d';
+  cv.id = 'pile3dCv';
+  s.appendChild(cv);
+  const err = document.createElement('div');
+  err.className = 'glerr';
+  err.id = 'glErr';
+  s.appendChild(err);
+}
+function glFail3d(msg) {
+  const g = document.getElementById('glErr');
+  const cv = document.getElementById('pile3dCv');
+  if (cv) cv.style.display = 'none';
+  if (g) { g.style.display = 'block'; g.innerHTML = `<b>三维预览不可用</b><br>${msg}`; }
+}
+function ensure3D() {
+  if (three3d) return true;
+  if (!window.THREE) { glFail3d('three.js 未加载（缺少 ./vendor/three.inline.js）'); return false; }
+  const cv = document.getElementById('pile3dCv');
+  if (!cv || !cv.clientWidth) return false;
+  try {
+    const THREE = window.THREE;
+    const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x050b1a);
+    const camera = new THREE.PerspectiveCamera(45, 2, 0.1, 500);
+    scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x0a1220, 1.15));
+    const dl = new THREE.DirectionalLight(0xffffff, 1.6);
+    dl.position.set(6, 10, 5);
+    dl.castShadow = true;
+    scene.add(dl);
+    const dl2 = new THREE.DirectionalLight(0x8ab4ff, 0.5);
+    dl2.position.set(-8, 6, -6);
+    scene.add(dl2);
+    three3d = { renderer, scene, camera, group: null, cam: { r: 16, theta: -0.7, phi: 0.95 }, drag: null };
+    bindPointer3d(cv);
+    resize3d();
+    if (typeof requestAnimationFrame === 'function') {
+      const loop = () => {
+        requestAnimationFrame(loop);
+        const a = document.getElementById('autoRot3d');
+        if (a && a.checked && three3d && !three3d.drag) { three3d.cam.theta += 0.004; applyCam3d(); }
+        three3d.renderer.render(three3d.scene, three3d.camera);
+      };
+      loop();
+    }
+    return true;
+  } catch (e) { glFail3d(e && e.message || String(e)); return false; }
+}
+function applyCam3d() {
+  if (!three3d) return;
+  const { camera, cam } = three3d;
+  const t = new window.THREE.Vector3(0, geo().rackH * 0.4, 0);
+  camera.position.set(
+    t.x + cam.r * Math.sin(cam.phi) * Math.cos(cam.theta),
+    t.y + cam.r * Math.cos(cam.phi),
+    t.z + cam.r * Math.sin(cam.phi) * Math.sin(cam.theta),
+  );
+  camera.lookAt(t);
+}
+function resize3d() {
+  if (!three3d) return;
+  const cv = document.getElementById('pile3dCv');
+  const w = cv.clientWidth || 900, h = 420;
+  three3d.renderer.setSize(w, h, false);
+  three3d.camera.aspect = w / h;
+  three3d.camera.updateProjectionMatrix();
+}
+function bindPointer3d(cv) {
+  cv.addEventListener('pointerdown', e => {
+    three3d.drag = { x: e.clientX, y: e.clientY, btn: e.button, t: { ...three3d.cam } };
+    cv.setPointerCapture && cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+  cv.addEventListener('pointermove', e => {
+    if (!three3d || !three3d.drag) return;
+    const dx = e.clientX - three3d.drag.x, dy = e.clientY - three3d.drag.y;
+    if (three3d.drag.btn === 2) {   // 右键平移（绕目标点微调半径方向）
+      three3d.cam.theta = three3d.drag.t.theta - dx * 0.003;
+    } else {
+      three3d.cam.theta = three3d.drag.t.theta - dx * 0.006;
+      three3d.cam.phi = Math.min(1.45, Math.max(0.15, three3d.drag.t.phi - dy * 0.005));
+    }
+    applyCam3d();
+  });
+  const up = () => { if (three3d) three3d.drag = null; };
+  cv.addEventListener('pointerup', up);
+  cv.addEventListener('pointercancel', up);
+  cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    if (!three3d) return;
+    three3d.cam.r = Math.min(80, Math.max(3, three3d.cam.r * (1 + Math.sign(e.deltaY) * 0.1)));
+    applyCam3d();
+  }, { passive: false });
+}
+let geoCache3d = null;
+function rebuildStack3D() {
+  if (!three3d) return;
+  const THREE = window.THREE;
+  const r = previewRule();
+  if (!r) return;
+  const rods = effRods(r);
+  const rows = rowsOf(rods);
+  const d = r.dia / 1000;
+  const bw = Math.max(...rows) * d * geo().diaKw;
+  const bh = rows.length * d * geo().diaKh + geo().packShim / 1000;
+  const cap = previewCap();
+  const count = preview.count < 0 ? cap : Math.min(preview.count, cap);
+  const lay = pileLayout(r.dia, rods, count);
+  const len = SPEC_LENS[r.spec] || 9;
+  const color = SPEC_COLORS[r.spec] || '#38bdf8';
+  const shape = r.shape;
+
+  // 清旧（dispose 场景内新建的几何/实例矩阵；缓存材质保留）
+  if (three3d.group) {
+    three3d.group.traverse(o => {
+      if (o.isInstancedMesh) o.dispose();
+      if (o.geometry) o.geometry.dispose();
+    });
+    three3d.scene.remove(three3d.group);
+  }
+  const g = new THREE.Group();
+  three3d.group = g;
+  three3d.scene.add(g);
+  const mats = three3d.mats || (three3d.mats = new Map());
+  const matOf = (key, make) => { if (!mats.has(key)) mats.set(key, make()); return mats.get(key); };
+  const rodMat = matOf('rod' + r.spec, () => new THREE.MeshStandardMaterial({
+    color, metalness: shape === 'pipe' ? 0.3 : 0.45, roughness: 0.42,
+    side: shape === 'pipe' ? THREE.DoubleSide : THREE.FrontSide,
+  }));
+  const steelMat = matOf('steel', () => new THREE.MeshStandardMaterial({ color: 0x7a838d, metalness: 0.6, roughness: 0.5 }));
+  const woodMat = matOf('wood', () => new THREE.MeshStandardMaterial({ color: 0x8a6238, roughness: 0.85 }));
+  const strapMat = matOf('strap', () => new THREE.MeshStandardMaterial({ color: 0xc9a24e, metalness: 0.8, roughness: 0.3 }));
+
+  // 地面（装饰）+ 垛位底座（沙盘口径：7.43×0.12×3.35，顶面 ≈ 垫梁顶）
+  const rd = rackDimsOf(len);
+  const ground = new THREE.Mesh(
+    new THREE.BoxGeometry(rd.cw + 0.6, 0.14, rd.cd + 1.6),
+    matOf('ground', () => new THREE.MeshStandardMaterial({ color: 0x0d1a30, roughness: 0.95 })));
+  ground.position.y = -0.07;
+  g.add(ground);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(rd.cw - 0.9, 0.12, rd.cd - 0.4), steelMat);
+  base.position.y = 0.36;
+  g.add(base);
+
+  // 料架：与三维沙盘 buildRack 同口径——四角立柱（限高，顶帽琥珀）+ 垫梁沿 Z 两道位于捆端下方
+  const postGeo = new THREE.BoxGeometry(0.14, geo().rackH, 0.14);
+  const capGeo = new THREE.BoxGeometry(0.2, 0.1, 0.2);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const post = new THREE.Mesh(postGeo, steelMat);
+    post.position.set(sx * rd.px, geo().rackH / 2, sz * rd.pz);
+    g.add(post);
+    const capTop = new THREE.Mesh(capGeo, strapMat);
+    capTop.position.set(sx * rd.px, geo().rackH + 0.05, sz * rd.pz);
+    g.add(capTop);
+  }
+  const railGeo = new THREE.BoxGeometry(0.16, Math.max(0.05, rd.beamH), rd.beamD);
+  for (const sx of [-1, 1]) {
+    const rail = new THREE.Mesh(railGeo, steelMat);
+    rail.position.set(sx * rd.rx, rd.beamY, 0);
+    g.add(rail);
+  }
+  // 限高参考面（垛格范围，半透明）
+  const refGeo = new THREE.PlaneGeometry(rd.cw, rd.cd);
+  const ref = new THREE.Mesh(refGeo, matOf('refplane', () => new THREE.MeshStandardMaterial({
+    color: 0xf87171, transparent: true, opacity: 0.08, side: THREE.DoubleSide,
+  })));
+  ref.rotation.x = -Math.PI / 2;
+  ref.position.y = geo().rackH;
+  g.add(ref);
+
+  // ---- 捆实例化 ----
+  const diaM = d, rr = diaM / 2;
+  const usedLayers = lay.seats.length ? lay.seats[lay.seats.length - 1][0] + 1 : 0;
+  const dummy = new THREE.Object3D();
+  const forEachRod = cb => {   // 逐杆世界矩阵（座位网格 + 金字塔排布，层间六方密排嵌槽）
+    for (const [L, seatIdx] of lay.seats) {
+      const by = geo().railTop + L * bh;
+      const bz = (seatIdx - (lay.across - 1) / 2) * (bw + geo().packGap / 1000);
+      let yBase = 0;
+      for (let kk = 0; kk < rows.length; kk++) {
+        if (kk) yBase += diaM * (shape === 'square' ? 1 : (Math.abs(rows[kk] - rows[kk - 1]) === 1 ? 0.866 : 1));
+        const n = rows[kk];
+        for (let j = 0; j < n; j++) {
+          dummy.position.set(0, by + yBase + rr, bz + (j - (n - 1) / 2) * diaM);
+          dummy.updateMatrix();
+          cb(dummy.matrix);
+        }
+      }
+    }
+  };
+  if (shape === 'pipe') {
+    const wallGeo = new THREE.CylinderGeometry(rr, rr, len, 16, 1, true);
+    wallGeo.rotateZ(Math.PI / 2);
+    const wall = new THREE.InstancedMesh(wallGeo, rodMat, count * rods);
+    let wi = 0;
+    forEachRod(m => wall.setMatrixAt(wi++, m));
+    wall.instanceMatrix.needsUpdate = true;
+    g.add(wall);
+    const capGeo2 = new THREE.RingGeometry(rr * 0.78, rr, 16);
+    const caps = new THREE.InstancedMesh(capGeo2, rodMat, count * rods * 2);
+    const capL = new THREE.Matrix4().makeTranslation(-len / 2, 0, 0);
+    const capR = new THREE.Matrix4().makeTranslation(len / 2, 0, 0);
+    const rotY = new THREE.Matrix4().makeRotationY(Math.PI / 2);
+    let ci = 0;
+    forEachRod(m => {
+      const mm = m.clone().multiply(rotY);
+      caps.setMatrixAt(ci++, mm.clone().multiply(capL));
+      caps.setMatrixAt(ci++, mm.clone().multiply(capR));
+    });
+    caps.instanceMatrix.needsUpdate = true;
+    g.add(caps);
+  } else {
+    const rodGeo = shape === 'square'
+      ? new THREE.BoxGeometry(len, diaM * 0.98, diaM * 0.98)
+      : (() => { const gg = new THREE.CylinderGeometry(rr, rr, len, 12); gg.rotateZ(Math.PI / 2); return gg; })();
+    const im = new THREE.InstancedMesh(rodGeo, rodMat, count * rods);
+    let i = 0;
+    forEachRod(m => im.setMatrixAt(i++, m));
+    im.instanceMatrix.needsUpdate = true;
+    g.add(im);
+  }
+  // 打捆带（仅成捆件）
+  if (rods > 1) {
+    const strapGeo = new THREE.BoxGeometry(0.16, bh + 0.02, bw + 0.02);
+    const straps = new THREE.InstancedMesh(strapGeo, strapMat, count * 2);
+    let si = 0;
+    for (const [L, seatIdx] of lay.seats) {
+      const bz = (seatIdx - (lay.across - 1) / 2) * (bw + geo().packGap / 1000);
+      const by = geo().railTop + L * bh + bh / 2;
+      for (const sx of [-1, 1]) {
+        dummy.position.set(sx * len * 0.28, by, bz);
+        dummy.updateMatrix();
+        straps.setMatrixAt(si++, dummy.matrix);
+      }
+    }
+    straps.instanceMatrix.needsUpdate = true;
+    g.add(straps);
+  }
+  // 层间垫木（沙盘口径：0.16×0.05×实际并排宽，位于捆长 28% 处、上层捆底下方 7mm）
+  if (usedLayers > 1) {
+    const timberGeo = new THREE.BoxGeometry(0.16, 0.05, lay.across * (bw + geo().packGap / 1000) + 0.12);
+    const timbers = new THREE.InstancedMesh(timberGeo, woodMat, (usedLayers - 1) * 2);
+    let ti = 0;
+    for (let L = 1; L < usedLayers; L++) {
+      for (const sx of [-1, 1]) {
+        dummy.position.set(sx * len * 0.28, geo().railTop + L * bh - 0.007, 0);
+        dummy.updateMatrix();
+        timbers.setMatrixAt(ti++, dummy.matrix);
+      }
+    }
+    timbers.instanceMatrix.needsUpdate = true;
+    g.add(timbers);
+  }
+  // 相机按垛格/捆长尺度适配
+  const fitR = Math.max(len, rd.cw, geo().rackH) * 1.35 + 2;
+  three3d.cam.r = Math.min(80, Math.max(4, fitR));
+  applyCam3d();
+}
+function renderPreview3D() {
+  if (!document.getElementById('pile3dCv')) return;
+  if (!ensure3D()) return;
+  rebuildStack3D();
+}
+function renderPreview() {
+  // 控制条联动（滑杆范围 = 当前垛容）
+  const cap = previewCap();
+  const rng = document.getElementById('pileCount');
+  const txt = document.getElementById('pileCountTxt');
+  const sel = document.getElementById('specSel');
+  if (sel && sel.value !== preview.spec) sel.value = preview.spec;
+  if (rng) {
+    rng.max = cap;
+    if (preview.count < 0 || preview.count > cap) preview.count = cap;
+    rng.value = preview.count;
+  }
+  if (txt) txt.textContent = `${preview.count} / ${cap} 捆`;
+  renderPreview2D();
+  renderPreview3D();
+}
+
+/* ---- 卡片五：库房结构（只读） ---- */
+function cardRo() {
+  const c = card(colYardParams, 'c-ro', '🏭', '库房结构（只读）', '宏观土建结构为库区基准布局，由 server/layout.js 生成；如需调整需修改布局定义后重建库区与页面地图');
+  const sub = subOf(c, '当前结构', '与仿真沙盘地图、机器狗导航栅格、数据库 91 库位完全同源');
+  const facts = document.createElement('div');
+  facts.className = 'facts';
+  const FACTS = [
+    ['库房长 × 宽', '300m × 90m'],
+    ['跨数（A/B/C）', '3 跨 × 30m 宽'],
+    ['栅格列', '38 列（36 库位列 + 边列）'],
+    ['竖向车辆通道', '3 条（列 7 / 19 / 31）'],
+    ['横向通道', '4 条 × 2m（不含充电服务带）'],
+    ['充电服务带', '3m（厂房外 C 跨一路）'],
+    ['库位', '91 个（含 14~16 整跨合并位 3 个）'],
+    ['每库位垛数', '8 垛（沿跨向纵深）'],
+    ['库区分区', '铁姆肯区(1-2) · 大棒区域(3-13) · 大棒单支和长钢(14-16) · 中棒区域(17-33)'],
+    ['天车', '6 台（每跨 2 台，TC-A1~TC-C2）'],
+  ];
+  for (const [k, v] of FACTS) {
+    const f = document.createElement('div');
+    f.className = 'fact';
+    f.innerHTML = `<div class="k">${k}</div><div class="v">${v}</div>`;
+    facts.appendChild(f);
+  }
+  sub.appendChild(facts);
+}
+
+function renderAll() {
+  renderYard();
+  renderRulesTbl();
+  renderDimsTbl();
+  renderCapKpis();
+  renderChgStrip();
+  renderPreview();
+  refreshButtons();
+}
+
+async function load() {
+  app.innerHTML = '<p class="hint"><span class="spin">◌</span> 正在从数据库加载库房参数…</p>';
+  try {
+    const [pr, rr, ir, sr] = await Promise.all([
+      fetch(DB_API + '/api/params'),
+      fetch(DB_API + '/api/bundle-rules'),
+      fetch(DB_API + '/api/inventory'),
+      fetch(DB_API + '/api/slots'),
+    ]);
+    if (!pr.ok || !rr.ok) throw new Error('HTTP ' + pr.status);
+    const p = await pr.json();
+    schema = p.schema;
+    values = p.values;
+    saved = JSON.parse(JSON.stringify(p.values));
+    const rb = await rr.json();
+    rules = rb.rules.map(r => ({ ...r, edit: null }));
+    rulesSaved = JSON.stringify(rules.map(r => r.edit));
+    inv = ir.ok ? await ir.json() : null;
+    yardSlots = sr.ok ? (await sr.json()).slots : [];
+    window.__whcfgDbg.slotCount = yardSlots.length;
+    app.innerHTML = '';
+    /* 按主题配对：每个块 左=预览图（sticky）/ 右=该主题的参数卡 */
+    const mkGrp = (id, ico, title, gdesc) => {
+      const grp = document.createElement('section');
+      grp.className = 'grp';
+      grp.innerHTML = `<div class="grp-head"><span class="ico">${ico}</span><h2>${title}</h2><span class="gdesc">${gdesc}</span></div>`;
+      const colsEl = document.createElement('div');
+      colsEl.className = 'grp-cols';
+      const left = document.createElement('div');
+      left.className = 'grp-left';
+      left.id = id + 'Prev';
+      const right = document.createElement('div');
+      right.className = 'grp-right';
+      right.id = id + 'Params';
+      colsEl.append(left, right);
+      grp.appendChild(colsEl);
+      app.appendChild(grp);
+      return { left, right };
+    };
+    // 库房布局块：库房二维总览 + 库房结构/充电位置/垛位库容
+    const g1 = mkGrp('yard', '🗺', '库房布局', '库房结构/充电位置/垛容 —— 修改即刻在左侧库房图上联动');
+    colYardPrev = g1.left; colYardParams = g1.right;
+    cardYard();
+    cardRo();
+    cardChg();
+    cardStack();
+    // 货架块：3D/2D 垛体预览 + 捆制规则/尺寸码放
+    const g2 = mkGrp('pile', '📦', '货架与码放', '捆制规则/料架尺寸/码放细部 —— 修改即刻在左侧垛体预览上联动');
+    colPilePrev = g2.left; colPileParams = g2.right;
+    cardPrev3d();
+    cardPrev2d();
+    cardSteel();
+    cardDims();
+    const desc = document.createElement('p');
+    desc.className = 'desc';
+    desc.innerHTML = '库房参数与钢材捆制规则，持久化在本地库存数据库（' + DB_API + '），全站同源：' +
+      '入库推荐（<code>stackCap</code> 物理垛容）、沙盘三维码放、捆级落位坐标共用同一套几何口径；' +
+      '保存后运行中的沙盘数秒内自动同步，期初库存分布按需「重建库区」（自动先保存全部修改，按「库容装载比例」铺层重生成）。';
+    app.prepend(desc);
+    renderAll();
+  } catch {
+    app.innerHTML = '';
+    renderMsg(false, '库房参数加载失败：数据库服务未启动（请先执行 npm run db:serve 或 npm run sim）。', true);
+  }
+}
+
+btnReset.onclick = () => {
+  const defs = Object.fromEntries(schema.map(s => [s.sec, Object.fromEntries(s.defs.map(d => [d.key, d.def]))]));
+  values = JSON.parse(JSON.stringify(defs));
+  for (const r of rules) r.edit = 'preset';   // 规则一并恢复预置
+  renderAll();
+};
+/* 保存全部（库房参数 + 捆制规则编辑），返回附加提示消息数组；失败抛错。
+ * 「保存修改」按钮与「重建库区」按钮共用——重建前必须先落库，保证按新规则生成期初库存 */
+async function saveAll() {
+  const msgs = [];
+  const pr = await fetch(DB_API + '/api/params', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values }),
+  });
+  if (!pr.ok) throw new Error('HTTP ' + pr.status);
+  const pv = await pr.json();
+  values = pv.values;
+  saved = JSON.parse(JSON.stringify(pv.values));
+  if (rulesDirty()) {
+    const payload = rules.filter(r => r.edit != null)
+      .map(r => ({ spec: r.spec, rods: r.edit === 'auto' ? 0 : r.edit === 'preset' ? null : effRods(r) }));
+    if (payload.length) {
+      const rr = await fetch(DB_API + '/api/bundle-rules', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rules: payload }),
+      });
+      if (!rr.ok) throw new Error('HTTP ' + rr.status);
+      const rrj = await rr.json();   // PUT 响应携带越界警示与吨位重算
+      const rb = await (await fetch(DB_API + '/api/bundle-rules')).json();
+      rules = rb.rules.map(r => ({ ...r, edit: null }));
+      if (rrj.warnings?.length) msgs.push('⚠ 捆径越界警示：\n' + rrj.warnings.join('\n'));
+      if (rrj.weights?.length) msgs.push('单捆吨位基准已重算：' + rrj.weights.map(w => `${w.spec} ${w.from}→${w.to}t`).join(' · '));
+    }
+    rulesSaved = JSON.stringify(rules.map(r => r.edit));
+  }
+  return msgs;
+}
+btnSave.onclick = async () => {
+  btnSave.disabled = true;
+  btnSave.textContent = '保存中…';
+  try {
+    const msgs = await saveAll();
+    renderAll();
+    renderMsg(true, '已保存到数据库。运行中的沙盘数秒内自动同步生效' + (msgs.length ? '。' + msgs.join('；') : '。'));
+  } catch {
+    renderMsg(false, '保存失败：数据库服务不可达（请先执行 npm run db:serve 或 npm run sim）。');
+    refreshButtons();
+  }
+};
+
+/* 窗口尺寸变化：预览随栏宽自适应重绘 */
+let _rzT = 0;
+if (window.addEventListener) window.addEventListener('resize', () => {
+  clearTimeout(_rzT);
+  _rzT = setTimeout(() => { renderYard(); renderPreview2D(); resize3d(); }, 120);
+});
+
+load();
+</script>
+</body>
+</html>
