@@ -1,4 +1,4 @@
-// 无头逻辑自检：验证「出库订单履约 + 异常分支 + 出场复验 + 时序 KPI/台账 + 倒垛等待机制」。
+// 无头逻辑自检：验证「出库订单履约 + 随机选捆/垛顶直取对照 + 座位列压货判定（同层旁捆不倒、正上方才倒）+ 倒垛兜底与超时换捆 + 异常分支 + 出场复验 + 时序 KPI/台账」。
 // 桩掉 DOM/Canvas，在 Node VM 中运行"调度仿真沙盘.html"完整脚本，手动泵 rAF 帧驱动仿真。
 // 用法：node simulation/order-fulfill-self-test.mjs
 import { readFileSync } from 'node:fs';
@@ -9,8 +9,8 @@ import vm from 'node:vm';
 import { makeFeedFetch } from './feed-stub.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const html = readFileSync(join(here, '调度仿真沙盘.html'), 'utf8');
-const code = injectCoreSegs(html.match(/<script>([\s\S]*)<\/script>/)[1]);
+const html = injectCoreSegs(readFileSync(join(here, '调度仿真沙盘.html'), 'utf8'));
+const code = html.match(/<script>([\s\S]*)<\/script>/)[1];
 
 const absorber = new Proxy(function () {}, {
   get(t, p) { if (p === Symbol.toPrimitive) return () => 0; return absorber; },
@@ -142,26 +142,42 @@ check('车辆吊装按车认领（认领唯一；代吊仅限结构不可达兜�
   tc2.served > 0 && tc2.multiCrane * 4 <= tc2.served,
   `单天车 ${tc2.served - tc2.multiCrane}/${tc2.served} 车 · 跨天车 ${tc2.multiCrane} · 代吊 ${tc2.assists}`);
 
-console.log('== 出库免倒垛：垛顶直取（能取就行，不清空整垛） ==');
+console.log('== 出库选捆：随机选捆（默认策略 · 全库该规格已扫码捆均匀随机，被压才倒同列压货） ==');
 sandbox.setSpeed(1);
+// 压货口径与内核一致：同座位更高层有捆才算被压（同层旁捆不算）
+const isPressed = (k, b) => k.bundles.some(o => o !== b && o.pos && b.pos && o.pos.seat === b.pos.seat && o.pos.layer > b.pos.layer);
+const fifoTask = sandbox.createTask('out');
+check('探针出库任务可创建', !!fifoTask, fifoTask && fifoTask.id);
+const kFifo = fifoTask.slot.stacks[fifoTask.stackIdx];
+const fifoTarget = kFifo.bundles.find(b => b.id === fifoTask.bundleId);
+check('随机选捆：目标捆 ∈ 该垛已扫码可出捆（未被压直取，被压倒同列压货）',
+  !!fifoTarget && !fifoTarget.pending,
+  `${fifoTask.bundleId}（全垛 ${kFifo.bundles.length} 捆 · 该捆${fifoTarget && isPressed(kFifo, fifoTarget) ? '被压·需倒垛' : '未被压·直取'}）`);
+
+console.log('== 垛顶直取模式（关闭随机选捆）：目标捆 = 最高层未被压捆，免倒垛 ==');
+sandbox.setDeviceParam('task', 'fifoPick', 0);
 const topTask = sandbox.createTask('out');
 check('探针出库任务可创建', !!topTask, topTask && topTask.id);
 const kTop = topTask.slot.stacks[topTask.stackIdx];
-check('目标捆 = 所选垛的垛顶捆（非垛底 FIFO 捆）',
-  topTask.bundleId === kTop.bundles[kTop.bundles.length - 1].id,
-  `${topTask.bundleId} = 垛顶（全垛 ${kTop.bundles.length} 捆只出 1 捆）`);
+const kTopExp = kTop.bundles.filter(b => !b.pending && !isPressed(kTop, b))
+  .sort((a, b) => (b.pos.layer - a.pos.layer) || (b.inTime - a.inTime))[0];
+check('垛顶直取：目标捆 = 所选垛最高层未被压捆（层同取最新落料）',
+  kTopExp && topTask.bundleId === kTopExp.id,
+  `${topTask.bundleId} = 层 ${kTopExp && kTopExp.pos.layer + 1}（全垛 ${kTop.bundles.length} 捆只出 1 捆）`);
 topTask.state = 'pending';
-topTask.batch = { truck: { state: 'WORKING', x: 0, targetY: 0 } }; topTask.truck = topTask.batch.truck;
+topTask.batch = { tasks: [], truck: { state: 'WORKING', x: 0, targetY: 0 } }; topTask.truck = topTask.batch.truck;
 const qLen0 = sandbox.__dbg.craneJobsDebug.length;
 sandbox.maybePushCraneJob(topTask);
 const qTop = sandbox.__dbg.craneJobsDebug;
 check('垛顶直取：无倒垛吊，仅 1 吊装车吊入队（不倒空整垛）',
   qTop.length === qLen0 + 1 && qTop[qTop.length - 1].kind === 'out' && topTask.cranePushed && !topTask.restackWaiting,
   JSON.stringify(qTop.slice(qLen0)));
+sandbox.setDeviceParam('task', 'fifoPick', 1);   // 恢复默认：随机选捆
 
-console.log('== 倒垛兜底：指定捆被压 + 全库无落点 -> restackWaiting ==');
-// 构造场景：把某出库任务的目标捆指定为垛底捆（被全垛压货），且全库各垛塞满（count 顶到通用上限 400，
-// 任何规格 stackCap = min(400, 物理垛容) 均无剩余落点）-> maybePushCraneJob 必须拒绝入队（不再误核销）
+console.log('== 倒垛兜底：指定捆被压（座位列正上方有货）+ 全库无落点 -> restackWaiting ==');
+// 构造场景：把某出库任务的目标捆指定为垛底捆（无 pos 测试桩按规范座位兜底：底层居中座，上方同座位列压货），
+// 且全库各垛塞满（count 顶到通用上限 400，任何规格 stackCap = min(400, 物理垛容) 均无剩余落点）
+// -> maybePushCraneJob 必须拒绝入队（不再误核销）
 const outTask = sandbox.createTask('out');
 check('探针出库任务可创建', !!outTask, outTask && outTask.id);
 for (const s of sandbox.__dbg.storages) {
@@ -176,12 +192,31 @@ for (const s of sandbox.__dbg.storages) {
 const kBur = outTask.slot.stacks[outTask.stackIdx];
 outTask.bundleId = kBur.bundles[0].id;   // 指定垛底捆出库：上方压货须全部倒垛，而全库无落点
 outTask.state = 'pending';   // 新流程：出库天车先行吊运装车，任务吊走前保持 pending（装车后机器狗才扫码确认）
-outTask.batch = { truck: { state: 'WORKING', x: 0, targetY: 0 } }; outTask.truck = outTask.batch.truck;
+outTask.batch = { tasks: [], truck: { state: 'WORKING', x: 0, targetY: 0 } }; outTask.truck = outTask.batch.truck;
 const before = sandbox.__dbg.bundleSyncOK;   // 填充后仍同步
 sandbox.maybePushCraneJob(outTask);
 check('全库无倒垛落点时：任务不入队（restackWaiting=true）', outTask.restackWaiting === true && !outTask.cranePushed, '');
 check('此时不核销库存（目标捆仍在垛中）', sandbox.__dbg.bundleSyncOK === before, '');
 check('等待文案已提示', logText().includes('装车排队等待'), '');
+check('等待计时起点已埋（超时换捆依据）', outTask.restackWaitSince > 0, `restackWaitSince=${outTask.restackWaitSince}`);
+
+console.log('== 换捆兜底：倒垛等待超时 -> 作废任务释放库位，目标捆入冷却，订单改配次老捆 ==');
+sandbox.setDeviceParam('task', 'restackWaitMax', 60);   // 缩短到 60 仿真秒触发超时
+sandbox.setSpeed(4);
+let deferred = false;
+for (let i = 0; i < 120 && !deferred; i++) { await pump(1); deferred = !sandbox.__dbg.tasks.includes(outTask); }
+check('等待超时后任务被作废（从任务流移除）', deferred, `simTime=${sandbox.__dbg.simTime}`);
+check('目标捆已入冷却名单（冷却期内不再被点名，防换捆死循环）',
+  sandbox.__dbg.restackDeferralsDebug.some(([id]) => id === kBur.bundles[0].id),
+  JSON.stringify(sandbox.__dbg.restackDeferralsDebug.slice(0, 4)));
+check('库位锁已释放或被同订单替补任务合法持有（无孤儿锁，防「无落点 ↔ 库位长锁」互等死锁）',
+  outTask.slot.state !== 'locked' || sandbox.__dbg.tasks.some(t => t.slot === outTask.slot && t !== outTask && t.state !== 'done'),
+  `${outTask.slot.state}${outTask.slot.state === 'locked' ? ' · 锁由替补任务持有' : ''}`);
+check('订单配捆名额已释放（assigned <= required，由周期检查改配次老捆）',
+  outTask.order.assigned <= outTask.order.required && outTask.order.tasks.every(x => x !== outTask),
+  `assigned=${outTask.order.assigned}/${outTask.order.required}`);
+check('换捆文案已提示', logText().includes('换捆重配'), '');
+sandbox.setDeviceParam('task', 'restackWaitMax', 1800);   // 恢复默认
 
 console.log('== 倒垛确认扫码：机器狗先后扫描源垛 + 目标垛 ==');
 // 构造一吊倒垛作业：源垛顶捆 -> 同库位另一空垛（天车限本跨，同库位倒垛天然合法）
@@ -191,6 +226,47 @@ for (const s of sandbox.__dbg.storages) {
     if (k.bundles.length > 2) { k.bundles.length = 2; k.count = 2; }
   }
 }
+
+console.log('== 压货判定按座位列：同层旁捆不倒、只有正上方同座位的捆才倒 ==');
+// 手工三捆垛：底层两座并排（目标捆 PT-T 座位0 + 旁捆 PT-N 座位1），PT-T 正上方一捆 PT-A（层1 座位0）。
+// 物理直觉：PT-A 压着 PT-T 须倒走；PT-N 在目标捆旁边（留通风缝）不挡吊，不能动。
+const sProbe = outTask.slot, kP0 = sProbe.stacks[0], kP1 = sProbe.stacks[1];
+const spP = kP0.spec || outTask.spec;
+const fakeB = (id, layer, seat, inTime) => ({
+  id, slotId: sProbe.id, stackIdx: 0, specIdx: 0, grade: 'Q', len: 9, heat: 'HT0',
+  rods: 1, wt: 1, inTime, pending: false, pos: { layer, seat, dx: 0, y: 0, dz: 0, yaw: 0 },
+});
+kP0.spec = spP; kP0.inTime = -100; kP0.pending = 0; kP0.reserved = 0;
+kP0.bundles = [fakeB('PT-T', 0, 0, -90), fakeB('PT-N', 0, 1, -80), fakeB('PT-A', 1, 0, -70)];
+kP0.count = 3;
+kP1.bundles = []; kP1.count = 0; kP1.pending = 0; kP1.reserved = 0; kP1.spec = null;   // 本位空垛作倒垛落点
+sProbe.state = 'occupied'; sProbe.lockSpec = null; sProbe.lockStack = null;
+const tkP = { state: 'WORKING', x: 0, targetY: 0 };
+const mkProbeTask = bid => ({
+  id: 'TP-' + bid, type: 'out', spec: spP, slot: sProbe, stackIdx: 0,
+  state: 'pending', stage: 0, created: sandbox.__dbg.simTime, robot: null,
+  cranePushed: false, restackWaiting: false, restackLeft: 0, restackTotal: 0, restackWaitSince: 0,
+  truck: tkP, batch: { tasks: [], truck: tkP }, order: null, scanRetries: 0, anomaly: false,
+  bundleId: bid, liftedAt: 0, loadedDone: false,
+});
+const qP0 = sandbox.__dbg.craneJobsDebug.length;
+const tProbe = mkProbeTask('PT-T');
+sandbox.maybePushCraneJob(tProbe);
+const jProbe = sandbox.__dbg.craneJobsDebug.slice(qP0);
+check('被压目标捆出库：只倒正上方同座位压货 1 吊（旁捆 PT-N 不动），随后 1 吊装车吊',
+  jProbe.filter(j => j.kind === 'restack').length === 1 && jProbe[jProbe.length - 1].kind === 'out' && !tProbe.restackWaiting,
+  JSON.stringify(jProbe.map(j => `${j.kind}:${j.bundleId || '-'}`)));
+check('倒垛吊搬走的正是压货 PT-A（不是旁捆、不是整垛）',
+  jProbe[0] && jProbe[0].kind === 'restack' && jProbe[0].bundleId === 'PT-A',
+  JSON.stringify(jProbe[0] || null));
+const qP1 = sandbox.__dbg.craneJobsDebug.length;
+const tProbe2 = mkProbeTask('PT-N');
+sandbox.maybePushCraneJob(tProbe2);
+const jProbe2 = sandbox.__dbg.craneJobsDebug.slice(qP1);
+check('底层边座位捆座位列上方空着：未被压直取（0 倒垛吊）',
+  jProbe2.length === 1 && jProbe2[0].kind === 'out' && tProbe2.cranePushed && !tProbe2.restackWaiting,
+  JSON.stringify(jProbe2.map(j => j.kind)));
+check('座位列压货判定下垛位账物一致（座位唯一、上层有托）', sandbox.__dbg.bundleSeatSyncOK, '');
 const rsTask = sandbox.createTask('out');
 check('探针出库任务可创建', !!rsTask, rsTask && rsTask.id);
 const rsSrc = rsTask.slot, rsIdx = rsTask.stackIdx;

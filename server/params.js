@@ -25,6 +25,15 @@ export const PARAM_SCHEMA = [
     ],
   },
   {
+    sec: 'task', secLabel: '出库选捆',
+    desc: '严格先进先出选捆 = 目标捆取全库最早已扫码捆（先进先出的真实代价：老捆垫底被压，装车前先倒垛移走上方压货）；关闭 = 垛顶直取免倒垛（理想化，永远不倒库）。倒垛等不到落点时最长等待，超时释放库位换捆重配（防止库位锁死）',
+    defs: [
+      { key: 'fifoPick',       label: '严格先进先出选捆', min: 0, max: 1,    step: 1,  unit: '开/关', def: 1, toggle: true,
+        onText: '✓ 捆级先进先出（被压即倒垛）', offText: '✕ 垛顶直取（免倒垛）' },
+      { key: 'restackWaitMax', label: '倒垛等待上限',     min: 60, max: 7200, step: 60, unit: '秒', def: 1800 },
+    ],
+  },
+  {
     sec: 'placement', secLabel: '归堆策略权重',
     desc: '卸货推荐评分权重：同车同规格始终归并同一垛（垛满才另荐）；其余入库按下述权重综合评分，权重越大越优先',
     defs: [
@@ -85,12 +94,13 @@ export const PARAM_SCHEMA = [
   },
   {
     sec: 'assess', secLabel: '效率评估阈值',
-    desc: '机器狗扫描能力评估的判定线（首页「扫描能力评估」卡与场次「效率评估」共用）：需求/能力利用率 = 每日需扫码捆数 ÷ 机队理论服务能力；利用率或忙碌占比超线判「紧张」，利用率或扫码延时 P95 严重超线判「不满足」',
+    desc: '机器狗扫描能力评估的判定线（首页「扫描能力评估」卡与场次「效率评估」共用）：主判据为实测扫码延时 —— 吊运任务完成（入库落料/出库吊走/倒垛落位）到机器狗扫码完成的时长，超过「扫码延时上限」的捆占比超「允许超时比例」判「不满足」，有超时但未超比例判「紧张」；冷启动样本不足时回落到需求/能力利用率判据',
     defs: [
-      { key: 'tightRho',     label: '利用率「紧张」阈值',   min: 30, max: 100, step: 1,  unit: '%', def: 70 },
-      { key: 'failRho',      label: '利用率「不满足」阈值', min: 40, max: 100, step: 1,  unit: '%', def: 90 },
-      { key: 'tightBusyPct', label: '忙碌占比「紧张」阈值', min: 50, max: 100, step: 1,  unit: '%', def: 85 },
-      { key: 'failDelayP95', label: 'P95 延时「不满足」阈值', min: 60, max: 1800, step: 10, unit: '秒', def: 300 },
+      { key: 'delayLimitSec', label: '扫码延时上限',       min: 30, max: 1800, step: 10, unit: '秒', def: 300 },
+      { key: 'maxExceedPct',  label: '允许超时比例',       min: 0,  max: 50,   step: 1,  unit: '%',  def: 5   },
+      { key: 'tightRho',      label: '利用率「紧张」阈值', min: 30, max: 100,  step: 1,  unit: '%',  def: 70  },
+      { key: 'failRho',       label: '利用率「不满足」阈值', min: 40, max: 100, step: 1,  unit: '%',  def: 90  },
+      { key: 'tightBusyPct',  label: '忙碌占比「紧张」阈值', min: 50, max: 100, step: 1,  unit: '%',  def: 85  },
     ],
   },
   {

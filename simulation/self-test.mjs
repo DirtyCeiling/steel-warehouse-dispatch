@@ -10,10 +10,10 @@ import { dirname, join } from 'node:path';
 import vm from 'node:vm';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const html = readFileSync(join(here, '调度仿真沙盘.html'), 'utf8');
+const html = injectCoreSegs(readFileSync(join(here, '调度仿真沙盘.html'), 'utf8'));
 const m = html.match(/<script>([\s\S]*)<\/script>/);
 if (!m) throw new Error('未找到 <script> 内容');
-const code = injectCoreSegs(m[1]);
+const code = m[1];
 
 /* ---- 通用"黑洞"对象：吞掉任意方法调用与属性读写（充当 Canvas 2D 上下文） ---- */
 const absorber = new Proxy(function () {}, {
@@ -283,18 +283,41 @@ check('单捆周期分解成立（固定 + 路程 + 扫码 = 周期）',
   assess1 && Math.abs(assess1.fixedSec + assess1.travelSec + assess1.scanSec - assess1.cycleSec) < 0.05,
   assess1 && `${assess1.fixedSec}+${assess1.travelSec}+${assess1.scanSec}=${assess1.cycleSec}s`);
 check('评估阈值可调并夹取', sandbox.setDeviceParam('assess', 'tightRho', 999) === 100
-  && sandbox.setDeviceParam('assess', 'failDelayP95', 0) === 60, '');
+  && sandbox.setDeviceParam('assess', 'delayLimitSec', 0) === 30
+  && sandbox.setDeviceParam('assess', 'maxExceedPct', 99) === 50, '');
 sandbox.setDeviceParam('assess', 'tightRho', 70);
-sandbox.setDeviceParam('assess', 'failDelayP95', 300);
+sandbox.setDeviceParam('assess', 'delayLimitSec', 300);
+sandbox.setDeviceParam('assess', 'maxExceedPct', 5);
 check('首页「今日进厂车辆」KPI 渲染', /^\d+$/.test(String(el('kpiTodayIn').textContent).trim()),
   `${el('kpiTodayIn').textContent} · ${el('kpiTodayInSub').textContent}`);
 check('首页「进厂等待」KPI 渲染', String(el('kpiWait').textContent).trim().length > 0,
   `${el('kpiWait').textContent} · ${el('kpiWaitSub').textContent}`);
-check('首页「扫描能力评估」KPI 渲染（结论 + 利用率副行）',
-  /满足|紧张|不满足/.test(String(el('kpiAssess').textContent)) && /ρ \d+%/.test(String(el('kpiAssessSub').textContent)),
+check('首页「扫描能力评估」KPI 渲染（结论 + 延时副行）',
+  /满足|紧张|不满足/.test(String(el('kpiAssess').textContent))
+  && (/均 \d+s · 最长 \d+s · 达标 \d+%/.test(String(el('kpiAssessSub').textContent))
+    || /暂无扫描/.test(String(el('kpiAssessSub').textContent))),
   `${el('kpiAssess').textContent} · ${el('kpiAssessSub').textContent}`);
 check('待扫码积压探针可用（非负整数）', Number.isInteger(sandbox.__dbg.scanBacklog) && sandbox.__dbg.scanBacklog >= 0,
   '积压 ' + sandbox.__dbg.scanBacklog);
+check('首页「待扫描任务」KPI 渲染（非负整数 + 副行）',
+  /^\d+$/.test(String(el('kpiScanq').textContent).trim()) && String(el('kpiScanqSub').textContent).length > 0,
+  `${el('kpiScanq').textContent} · ${el('kpiScanqSub').textContent}`);
+check('待扫描队列探针与积压口径一致（类型合法 · 等待时长降序 · 非负）', (() => {
+  const q = sandbox.__dbg.scanQueue;
+  return q.length === sandbox.__dbg.scanBacklog
+    && q.every(x => ['in', 'out', 'restack'].includes(x.type) && Number.isFinite(x.wait) && x.wait >= 0)
+    && q.every((x, i) => i === 0 || q[i - 1].wait >= x.wait);
+})(), '队列 ' + JSON.stringify(sandbox.__dbg.scanQueue.slice(0, 5)));
+check('待扫描任务面板渲染（列表行含类型徽标与等待时长，或空态文案）', (() => {
+  const html = el('scanqList').innerHTML;
+  const n = sandbox.__dbg.scanBacklog;
+  return n === 0 ? html.includes('暂无待扫描') : (html.includes('ttype') && html.includes('等待'));
+})(), el('scanqList').innerHTML.replace(/<[^>]+>/g, ' ').trim().slice(0, 140));
+check('待扫描面板计数与 KPI 一致', (() => {
+  const n = +String(el('kpiScanq').textContent).trim();
+  const head = String(el('scanqCount').textContent);
+  return n === 0 ? head === '' : head.includes(`${n} 个待扫描`);
+})(), `${el('kpiScanq').textContent} / ${el('scanqCount').textContent}`);
 check('评估阶段零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.slice(0, 3).join('|'));
 
 console.log('== 阶段三点五：机器狗续航（满电 3 小时）与充电循环 ==');
@@ -499,9 +522,10 @@ check('归档含车辆时效三段拆解（vehStats：进/出厂 + 组车/排队
   && lrVS.inCount + lrVS.outCount >= sandbox.__lastRun.vehicles.length,
   lrVS && `进 ${lrVS.inCount}（离场 ${lrVS.inLeft}）· 出 ${lrVS.outCount} · 组车 ${lrVS.batchWait && lrVS.batchWait.avg}s · 排队 ${lrVS.queueWait && lrVS.queueWait.avg}s`);
 const lrA = sandbox.__lastRun && sandbox.__lastRun.assess;
-check('归档含扫描能力评估（结论/利用率/积压峰值）',
-  lrA && ['ok', 'tight', 'fail'].includes(lrA.verdict) && lrA.rhoPct != null && lrA.backlogMax != null,
-  lrA && `${lrA.verdict} · ρ ${lrA.rhoPct}% · 需求 ${lrA.demandPerHour}/能力 ${lrA.capPerHour} 捆时 · 积压峰 ${lrA.backlogMax}`);
+check('归档含扫描能力评估（结论/利用率/延时三项）',
+  lrA && ['ok', 'tight', 'fail'].includes(lrA.verdict) && lrA.rhoPct != null && lrA.backlogMax != null
+  && 'delayAvg' in lrA && 'delayMax' in lrA && 'withinPct' in lrA && 'delayLimitSec' in lrA,
+  lrA && `${lrA.verdict} · ρ ${lrA.rhoPct}% · 均 ${lrA.delayAvg}s · 最长 ${lrA.delayMax}s · 达标 ${lrA.withinPct}%`);
 const lrV0 = sandbox.__lastRun && sandbox.__lastRun.vehicles[0];
 check('归档车辆含进场/组建时刻（等待分段基础）',
   lrV0 && (lrV0.enterAt != null || lrV0.leftAt != null) && lrV0.created >= 0,
@@ -579,6 +603,24 @@ check('任务队列为空时有空态文案或队列行',
 sandbox.__invDbg.switchView('sim');
 await pump(1);
 check('机器狗视图往返后仿真零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.join('|').slice(0, 120));
+
+console.log('== 阶段八b：待扫描任务面板积压渲染（机器狗耗尽电量强制排队） ==');
+const rbSave = sandbox.__dbg.robots.map(r => ({ r, battery: r.battery }));
+for (const r of sandbox.__dbg.robots) r.battery = 0;   // 电量不足即不可派单，任务具备扫码条件后原地排队
+for (let i = 0; i < 60 && sandbox.__dbg.scanBacklog === 0; i++) await pump(3);   // 最多 180 仿真秒：等天车落料/吊走使任务具备扫码条件
+const sqQ = sandbox.__dbg.scanQueue;
+check('机器狗耗尽后待扫描队列形成（>0）', sqQ.length > 0, '积压 ' + sqQ.length);
+check('面板行渲染：类型徽标（入库/出库/倒垛）+ 等待时长', sqQ.length > 0
+  && /ttype (in|out|restack)/.test(el('scanqList').innerHTML)
+  && el('scanqList').innerHTML.includes('等待'),
+  el('scanqList').innerHTML.replace(/<[^>]+>/g, ' ').trim().slice(0, 160));
+check('面板计数与行数一致（KPI = 探针 = 任务卡行数）', (() => {
+  const rows = (el('scanqList').innerHTML.match(/class="tcard/g) || []).length;
+  return rows === sqQ.length && +String(el('kpiScanq').textContent).trim() === sqQ.length;
+})(), `kpi=${el('kpiScanq').textContent} rows=${(el('scanqList').innerHTML.match(/class="tcard/g) || []).length} probe=${sqQ.length}`);
+for (const { r, battery } of rbSave) r.battery = battery;   // 恢复电量，收尾不污染后续场次
+await pump(1);
+check('积压测试后仿真零错误', sandbox.__dbg.errs.length === 0, sandbox.__dbg.errs.slice(0, 3).join('|'));
 
 console.log(failed === 0 ? '\n全部自检通过 ✓' : `\n${failed} 项断言失败 ✗`);
 process.exit(failed === 0 ? 0 : 1);

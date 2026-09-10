@@ -11,10 +11,10 @@ import vm from 'node:vm';
 import { makeFeedFetch } from './feed-stub.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const html = readFileSync(join(here, '调度仿真沙盘.html'), 'utf8');
+const html = injectCoreSegs(readFileSync(join(here, '调度仿真沙盘.html'), 'utf8'));
 const m = html.match(/<script>([\s\S]*)<\/script>/);
 if (!m) throw new Error('未找到 <script> 内容');
-const code = injectCoreSegs(m[1]);
+const code = m[1];
 
 const absorber = new Proxy(function () {}, {
   get(t, p) { if (p === Symbol.toPrimitive) return () => 0; return absorber; },
@@ -101,6 +101,10 @@ async function runWall(seconds, chunk = 5) {
 console.log('== 阶段零：外部模式下排产节奏由物流数据源接管 ==');
 check('外部模式（?feed=all）本地排产不驱动（__spawnLog 仅由源事件写入）',
   sandbox.__dbg.feed.mode === 'all', `mode=${sandbox.__dbg.feed.mode}`);
+// 本自检只验证「生产节奏参数即时生效」，与出库选捆策略无关——固定垛顶直取免倒垛（阶段三的
+// 消费阈值按该模式校准；随机选捆下倒垛占用天车、库容释放变慢，进厂消费会显著偏离此阈值，
+// 选捆/倒垛行为由 order-fulfill-self-test 专项覆盖）。
+sandbox.setDeviceParam('task', 'fifoPick', 0);
 
 console.log('== 阶段一：跑 3 个仿真小时（1×），验证按源节奏消费 ==');
 sandbox.init();

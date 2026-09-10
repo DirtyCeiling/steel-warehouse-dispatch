@@ -93,7 +93,7 @@ const CATEGORIES = [
   { id: 'abnormal', cls: 'c-abnormal', ico: '⚡', name: '异常注入', desc: '异常事件概率演练' },
 ];
 const SEC_CAT = {
-  production: 'ops', truck: 'ops',
+  production: 'ops', truck: 'ops', task: 'ops',
   robot: 'device', crane: 'device', assess: 'device',
   placement: 'algo',
   abnormal: 'abnormal',
@@ -225,6 +225,12 @@ function renderGroups() {
         const note = document.createElement('p');
         note.className = 'note';
         note.innerHTML = '提示：<b>监测跨开关决定作业范围（跨级）</b>——仅开启部分监测跨时，所有货车只派往监测跨装卸，物资也只在监测跨内入库/出库，且覆盖监测跨的<b>全部号区</b>（天车/货车整跨作业；如仅开「监测 A 跨」：<b>所有运输车辆均前往一跨 A</b>，入库卸货与出库装车都在 A 跨全列；监测跨库位满或暂无该规格可出库存时相应任务暂缓，待库存回补，不会转到未监测跨）。<b>「X 跨监测起始/截止号区」只决定机器狗扫描范围（列级）</b>（1~33 号区，起始大于截止时自动交换）——如 A 跨 17~33 = 右侧中棒区域、18~25 = 中棒区域的局部区段；机器狗只扫该号区范围，同跨扫描列之外的库位物资照常入/出库，扫码环节转<b>人工核对</b>（沙盘上青框=扫描区、琥珀虚框=人工核对区）；未监测跨不作业、免检直通。三跨全开整跨（默认 1~33）或全关时不限范围。保存后运行中的沙盘数秒内自动生效。';
+        sub.appendChild(note);
+      }
+      if (s.sec === 'task') {
+        const note = document.createElement('p');
+        note.className = 'note';
+        note.innerHTML = '提示：<b>严格先进先出选捆</b> = 出库目标捆取全库最早已扫码捆——老捆垫在垛底被压时，天车先把上方压货逐吊倒往其他垛位再装车（只倒压货，倒货捆数 = 压货捆数），这是真实库房执行先进先出的倒库代价；关闭后目标捆恒为垛顶捆（直取免倒垛，理想化对照）。目标捆上方压货等不到倒垛落点时装车排队，超过「倒垛等待上限」自动作废该吊并换配次老捆（该捆冷却同时长，防止反复选中），库位随即释放，不会锁死。出库台账逐捆记录「倒垛吊数」，主页 KPI 透出倒库率（倒库吊数 ÷ 出库吊数）。';
         sub.appendChild(note);
       }
       if (s.sec === 'placement') {

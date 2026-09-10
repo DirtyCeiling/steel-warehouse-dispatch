@@ -53,16 +53,19 @@ const PAGES = {
  * 免去每次请求的磁盘读取与重复压缩；开发中改文件即时生效。 */
 const fileCache = new Map();
 /* 沙盘去重注入：页面内 / *@@core-seg-N@@* / 占位由 shared/sandbox-core.mjs 对应片段原位替换
- * （tool-split-sandbox.mjs 生成产物后自动生效；未含占位符的页面零开销走原路径）。 */
+ * （tool-split-sandbox.mjs 生成产物后自动生效；未含占位符的页面零开销走原路径）。
+ * 注意：core 文件本身含段分隔标记，必须跳过注入，否则 loadFile(corePath) 无限递归。 */
 const corePath = join(ROOT, 'shared', 'sandbox-core.mjs');
-async function injectCoreSegs(raw) {
-  if (!raw.includes('/*@@core-seg-')) return raw;
+async function injectCoreSegs(raw, file) {
+  if (file === corePath) return raw;
+  const src = typeof raw === 'string' ? raw : raw.toString('utf8');
+  if (!src.includes('/*@@core-seg-')) return raw;
   const core = await loadFile(corePath);
   const text = core.raw.toString('utf8');
   const parts = text.split(/\/\*@@core-seg-(\d+)@@\*\//);
   const map = new Map();
   for (let i = 1; i < parts.length; i += 2) map.set(+parts[i], parts[i + 1]);
-  return raw.replace(/\/\*@@core-seg-(\d+)@@\*\//g, (m, n) => map.get(+n) ?? '');
+  return Buffer.from(src.replace(/\/\*@@core-seg-(\d+)@@\*\//g, (m, n) => map.get(+n) ?? ''), 'utf8');
 }
 async function loadFile(file) {
   const st = await stat(file);
@@ -70,7 +73,7 @@ async function loadFile(file) {
   // core 依赖：页面缓存命中须同时核对 core 的 mtime（core 修改后页面注入产物即时失效）
   const coreMt = (await stat(corePath).catch(() => null))?.mtimeMs ?? 0;
   if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size && hit.coreMt === coreMt) return hit;
-  const raw = await injectCoreSegs(await readFile(file));
+  const raw = await injectCoreSegs(await readFile(file), file);
   const compressible = COMPRESSIBLE.has(extname(file)) && raw.length > 1024;
   const entry = {
     mtimeMs: st.mtimeMs,

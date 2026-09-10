@@ -12,10 +12,10 @@ import vm from 'node:vm';
 import { makeFeedFetch } from './feed-stub.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const html = readFileSync(join(here, '调度仿真沙盘.html'), 'utf8');
+const html = injectCoreSegs(readFileSync(join(here, '调度仿真沙盘.html'), 'utf8'));
 const m = html.match(/<script>([\s\S]*)<\/script>/);
 if (!m) throw new Error('未找到 <script> 内容');
-const code = injectCoreSegs(m[1]);
+const code = m[1];
 
 const absorber = new Proxy(function () {}, {
   get(t, p) { if (p === Symbol.toPrimitive) return () => 0; return absorber; },

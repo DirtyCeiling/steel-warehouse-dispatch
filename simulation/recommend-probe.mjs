@@ -11,8 +11,8 @@ import { makeFeedFetch } from './feed-stub.mjs';
 import { getSeedSlots } from '../server/database.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const html = readFileSync(join(here, '调度仿真沙盘.html'), 'utf8');
-const code = injectCoreSegs(html.match(/<script>([\s\S]*)<\/script>/)[1]);
+const html = injectCoreSegs(readFileSync(join(here, '调度仿真沙盘.html'), 'utf8'));
+const code = html.match(/<script>([\s\S]*)<\/script>/)[1];
 
 /* ---- DOM/Canvas 黑洞桩（与 self-test.mjs 同构） ---- */
 const absorber = new Proxy(function () {}, {

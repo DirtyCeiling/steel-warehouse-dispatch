@@ -330,7 +330,11 @@ function renderRun(r, idx) {
       ['待扫码积压（归档时）', a.backlog != null ? a.backlog + ' 捆' : '-'],
       ['待扫码积压（本场峰值）', a.backlogMax != null ? a.backlogMax + ' 捆' : '-'],
       ['积压趋势', a.backlogRising ? '<span class="d-bad">增长中</span>' : '<span class="d-ok">平稳</span>'],
-      ['扫码延时 P95（本场）', a.delayP95 != null ? a.delayP95 + ' s' : '-'],
+      ['扫码样本（本场）', a.sampleN != null ? a.sampleN + ' 捆' : '-'],
+      ['平均扫描延时', a.delayAvg != null ? a.delayAvg + ' s' : '-'],
+      ['最长扫描延时', a.delayMax != null ? a.delayMax + ' s' : '-'],
+      ['达标率（≤ ' + (a.delayLimitSec ?? '?') + 's）', a.withinPct != null ? a.withinPct + '%' : '-'],
+      ['允许超时比例', a.maxExceedPct != null ? a.maxExceedPct + '%' : '-'],
     ];
     for (const [label, v] of akv) html += `<div class="kv"><div class="k">${label}</div><div class="v">${v}</div></div>`;
     html += `</div>`;

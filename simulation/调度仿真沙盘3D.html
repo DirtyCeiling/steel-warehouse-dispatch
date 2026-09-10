@@ -639,7 +639,7 @@ window.__resetBundleIMs = resetBundleIMs;   // 供主作用域 LOD 按钮调用�
 let lastInvVer = -1, lastInvT = 0;
 const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _e = new THREE.Euler();
 const _c = new THREE.Color(), _cw = new THREE.Color(0xffffff);
-/* 出库目标捆高亮：要出库的钢材 = 活动出库任务指定的目标捆（task.bundleId，默认为所选垛的垛顶捆）。
+/* 出库目标捆高亮：要出库的钢材 = 活动出库任务指定的目标捆（task.bundleId，捆级先进先出下可为垛内任意层）。
  * syncOutHL 每帧按捆号在垛内定位维护该捆 id 集：捆外套红色脉冲线框 + 壳罩，捆实例染红（syncBundles 查 outHlSet）；
  * 集合变化时重置 lastInvVer/-T 强制捆实例下帧重染（任务下发不改动库存版本号，不重置则染色不生效）。 */
 const OUT_HL_COL = new THREE.Color(0xff4d4f);          // 高亮红：与四种规格色及待扫码发白均区分
@@ -1289,7 +1289,7 @@ dynGroup.add(hlBox);
 
 /* ---------------- 出库目标捆高亮（捆级）：线框 + 壳罩套住“要出库的那一捆” ----------------
  * syncTargets 只脉冲到库位级；这里对每条活动出库任务再下钻到捆级——目标捆 = 任务下发时留档的
- * bundleId（默认为所选垛的垛顶捆，吊走前按捆号在垛内逐帧定位，吊走后捆号离垛即熄灭），
+ * bundleId（捆级先进先出选捆，吊走前按捆号在垛内逐帧定位，吊走后捆号离垛即熄灭），
  * 天车吊走（liftedAt）/任务闭环后自动熄灭。单车聚焦时与 syncTargets 同口径：只标聚焦车次的吊。 */
 const outHlPool = [];
 const outHlShellGeo = new THREE.BoxGeometry(1, 1, 1);
@@ -1316,7 +1316,7 @@ function syncOutHL() {
     if (t.type !== 'out' || t.state === 'done' || t.liftedAt) continue;   // 已吊走 / 已闭环 -> 目标捆已不在垛内
     if (ids && !ids.has(t.id)) continue;                                  // 单车聚焦：只标该车次
     const k = t.slot && t.slot.stacks[t.stackIdx];
-    const bIdx = k ? k.bundles.findIndex(x => x.id === t.bundleId) : -1;   // 按留档捆号定位目标捆（默认垛顶捆）
+    const bIdx = k ? k.bundles.findIndex(x => x.id === t.bundleId) : -1;   // 按留档捆号定位目标捆（垛内任意层）
     if (bIdx < 0) continue;                                               // 捆已离垛即熄灭：防错标垛内邻捆
     const b = k.bundles[bIdx];
     const sp = k.spec, cell = stackCell3(t.slot, t.stackIdx);
