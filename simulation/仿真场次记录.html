@@ -59,6 +59,7 @@
   .t-dim { color: var(--dim); }
   .t-in { color: var(--teal); }
   .t-out { color: var(--orange); }
+  .t-rs { color: var(--violet); }
   .d-ok { color: var(--green); font-family: var(--mono); }
   .d-mid { color: var(--amber); font-family: var(--mono); }
   .d-bad { color: var(--red); font-family: var(--mono); font-weight: 700; }
@@ -69,6 +70,8 @@
   .mark.v-ok { background: rgba(52, 211, 153, .12); border-color: rgba(52, 211, 153, .45); color: var(--green); font-weight: 700; }
   .mark.v-tight { background: rgba(251, 191, 36, .12); border-color: rgba(251, 191, 36, .45); color: var(--amber); font-weight: 700; }
   .mark.v-fail { background: rgba(248, 113, 113, .12); border-color: rgba(248, 113, 113, .5); color: var(--red); font-weight: 700; }
+  .mark.rs { background: rgba(167, 139, 250, .12); border-color: rgba(167, 139, 250, .45); color: var(--violet); margin-left: 0; margin-right: 4px; }
+  .td-marks { white-space: normal; min-width: 220px; line-height: 1.9; }   /* 标记列允许多行：多条标记（倒垛/机器狗/异常）不顶宽表格 */
   .diff { color: var(--amber); font-weight: 700; }
   .hint-more { text-align: center; color: var(--dim); font-size: 11.5px; padding: 10px 0 0; }
 </style>
@@ -96,7 +99,8 @@
       <b>车辆进厂时效</b>（组车等待 / 通道排队 / 在场全程的均值 / P95 / 最大）、
       <b>扫描时效</b>（扫码延时均值 / P95 / 最大，按场次号过滤任务台账）、
       <b>机器狗效率评估</b>（需求 vs 能力、利用率、待扫码积压、结论与整改建议）、
-      <b>捆级明细</b>（每一捆的捆号、放好时刻、机器狗开始扫码 / 扫码入库时刻、入账完成时刻）与 KPI。
+      <b>捆级明细</b>（每一捆的捆号、放好时刻、机器狗开始扫码 / 扫码入库时刻、入账完成时刻；出库目标捆被压时的<b>倒垛作业</b>逐吊单列：
+      源垛→目标垛、被倒捆号、让位目标捆、双点确认时刻，与所属出库车同车牌 / 车次 / 合同；标记列注明扫码机器狗编号、直通方式与异常明细）与 KPI。
       每场卡片支持 <b>⤓ 导出本场</b>（完整数据记录 CSV）与 <b>🗑 删除单场留档</b>。
       数据存于本浏览器 localStorage（最近 50 场），多窗口共享。
     </p>
@@ -121,10 +125,12 @@ const { esc, delayCls } = SIM;
 /* ---------------- 数据源：沙盘场次留档（localStorage，同源共享） ----------------
  * 每场记录：id/reason/wallStart/wallEnd/simSeconds/feedMode/kpi{...}
  *   + paramsStart/paramsEnd（六段调度参数快照）
- *   + vehicles[{plate,kind,loads,batch,spec,summonAt,leftAt}]
+ *   + vehicles[{plate,kind,loads,batch,spec,lane,summonAt,leftAt}]（lane = 进场通道号 1/2/3）
  *   + scan{inCount,delayAvg,delayP95,delayMax,postAvg,perRobot[...]}
- *   + bundles[{bundle,io,spec,slot,stack,putAt,scanStartAt,scanDoneAt,doneAt,scanDelay,plate,batch,order,anomaly,skip}]
- *     （捆级明细：每捆放好 -> 机器狗扫码 -> 入账/装车时刻；旧版归档无此字段时显示提示） */
+ *   + bundles[{bundle,io,spec,slot,stack,putAt,scanStartAt,scanDoneAt,doneAt,scanDelay,restack,forBundle,robot,retries,manualFix,mismatch,plate,batch,order,anomaly,skip,manual}]
+ *     （捆级明细：每捆放好 -> 机器狗扫码 -> 入账/装车时刻；io=restack 为倒垛确认行 —— 库位/垛显示「源→目标」，
+ *       forBundle = 本吊让位的出库目标捆号；出库行 restack = 装车前倒垛吊数；robot = 扫码机器狗编号（直通为空）；
+ *       retries/manualFix/mismatch = 异常明细（重试次数 / 人工介入 / 运单差异）。旧版归档无此字段时显示提示） */
 const LS_KEY = 'steelSimRunsV1';
 const $ = id => document.getElementById(id);
 const fmtWall = iso => iso ? new Date(iso).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-';
@@ -136,6 +142,23 @@ const fmtSimClock = s => {   // 仿真世界时钟（与沙盘 fmtClock 同源�
   return `${p(Math.floor(t / 3600) % 24)}:${p(Math.floor(t / 60) % 60)}:${p(t % 60)}`;
 };
 const num = (v, digits = 1) => v == null ? '-' : (+v).toFixed(digits).replace(/\.0$/, '');
+
+/* 捆级明细标记（页面渲染与 CSV 导出同源）：倒垛联动（让位 / 被压倒垛吊数）+ 扫码方式
+ * （机器狗编号 / 人工核对·范围外 / 免检直通·未监测跨）+ 异常明细（重试 / 人工介入 / 运单差异） */
+function bundleMarks(b) {
+  const m = [];
+  if (b.io === 'restack' && b.forBundle) m.push({ t: `为出库捆 ${esc(b.forBundle)} 让位`, c: 'mark rs', title: '目标捆被压：先倒走其座位列正上方压货再装车' });
+  if (b.io === 'out' && b.restack > 0) m.push({ t: `被压·先倒垛 ${b.restack} 吊`, c: 'mark rs', title: '该捆上方有压货：装车前倒垛移走（见同场倒垛行）' });
+  if (b.robot) m.push({ t: `机器狗 ${esc(b.robot)} 扫码`, c: 't-dim', title: '' });
+  if (b.skip) m.push(b.manual
+    ? { t: '人工核对（扫描范围外）', c: 't-dim', title: '监测跨内、扫描号区外：机器狗不进入，转人工核对' }
+    : { t: '免检直通（未监测跨）', c: 't-dim', title: '该跨未纳入机器狗监测范围，免检直通' });
+  if (b.manualFix) m.push({ t: '重扫失败·人工介入', c: 'd-bad', title: '连续重扫仍失败，人工介入核验放行' });
+  else if (b.retries > 0) m.push({ t: `扫码重试 ×${b.retries}`, c: 'd-mid', title: '码面污损/反光，原地重扫后成功' });
+  if (b.mismatch) m.push({ t: '运单差异已修正', c: 'd-mid', title: '运单与实货不符，以现场扫码数据为准修正' });
+  if (b.anomaly && !b.manualFix && !b.retries && !b.mismatch) m.push({ t: '异常', c: 'd-bad', title: '' });   // 旧版归档兜底（无异常明细字段）
+  return m;
+}
 
 /* 调度参数中文标签（与沙盘 PARAM_DEFS 同源维护） */
 const SEC_NAMES = { robot: '机器狗', crane: '天车', truck: '货车', production: '生产节奏', placement: '归堆策略', abnormal: '异常注入', assess: '效率评估' };
@@ -213,7 +236,7 @@ function renderRun(r, idx) {
     (vd ? `<span class="mark ${vd.cls}" title="机器狗扫描能力评估结论">${vd.label}</span>` : '') +
     `<span class="rk">${fmtWall(r.wallStart)} → ${fmtWall(r.wallEnd)}</span>` +
     `<span class="rk">仿真 <b>${fmtSim(r.simSeconds)}</b></span>` +
-    `<span class="rk">完成 <b>${k.tasksDone ?? '-'}</b>（入${k.ledgerIn ?? 0}/出${k.ledgerOut ?? 0}）</span>` +
+    `<span class="rk">完成 <b>${k.tasksDone ?? '-'}</b>（入${k.ledgerIn ?? 0}/出${k.ledgerOut ?? 0}/倒${k.ledgerRestack ?? 0}）</span>` +
     `<span class="rk">车辆 <b>${r.vehicles?.length ?? 0}</b> 辆</span>` +
     `<span class="rk">扫码延时 <b class="${delayCls(sc.delayAvg)}">${sc.delayAvg != null ? sc.delayAvg + 's' : '-'}</b></span>` +
     `<span class="rk">数据源 <b>${r.feedMode === 'local' ? '本地' : r.feedMode}</b></span>` +
@@ -243,6 +266,7 @@ function renderRun(r, idx) {
   let html = `<div class="sec-title">📊 KPI</div><div class="kv-grid">`;
   const kv = [
     ['完成任务', k.tasksDone], ['车次完成', k.trucksDone], ['订单闭环', k.ordersDone],
+    ['倒垛确认(吊)', k.ledgerRestack ?? 0],
     ['吞吐量(捆/时)', k.throughputPerHour], ['平均任务时长(秒)', k.avgTaskDur],
     ['异常任务', k.anomalies], ['免检直通', k.skips], ['台账留痕(条)', r.ledgerCount],
   ];
@@ -263,12 +287,13 @@ function renderRun(r, idx) {
   const vs = r.vehicles || [];
   html += `<div class="sec-title">🚚 车辆记录（${vs.length} 辆${r.vehiclesTruncated ? ' · 仅保留最后 400 辆' : ''}）</div>`;
   if (vs.length) {
-    html += `<table><tr><th>车牌</th><th>方向</th><th>吊数</th><th>规格</th><th>车次</th><th>进场(仿真)</th><th>离场(仿真)</th><th>在场时长</th></tr>`;
+    html += `<table><tr><th>车牌</th><th>方向</th><th>吊数</th><th>规格</th><th>车次</th><th>通道</th><th>进场(仿真)</th><th>离场(仿真)</th><th>在场时长</th></tr>`;
     for (const v of vs) {
       const stay = v.leftAt != null && v.summonAt != null ? v.leftAt - v.summonAt : null;
       html += `<tr><td class="mono">${esc(v.plate || '-')}</td>` +
         `<td class="${v.kind === 'in' ? 't-in' : 't-out'}">${v.kind === 'in' ? '入库' : '出库'}</td>` +
         `<td class="mono">${v.loads}</td><td>${esc(v.spec || '-')}</td><td class="mono">${esc(v.batch || '-')}</td>` +
+        `<td class="mono">${v.lane != null ? v.lane + ' 号' : '-'}</td>` +
         `<td class="mono">${fmtSim(v.summonAt)}</td>` +
         `<td class="mono">${v.leftAt != null ? fmtSim(v.leftAt) : '<span class="t-dim">未离场</span>'}</td>` +
         `<td class="mono">${stay != null ? fmtSim(stay) : '-'}</td></tr>`;
@@ -342,18 +367,24 @@ function renderRun(r, idx) {
     if ((a.tips || []).length) html += `<div class="t-dim" style="margin-top:3px;font-size:12px">整改建议：${a.tips.map(esc).join('；')}</div>`;
   }
 
-  /* 捆级明细（每一捆：放好 -> 机器狗扫码 -> 入账/装车，时刻为仿真世界时钟） */
+  /* 捆级明细（每一捆：放好 -> 机器狗扫码 -> 入账/装车；出库被压捆的倒垛逐吊单列，时刻为仿真世界时钟） */
   const bs = r.bundles || [];
-  html += `<div class="sec-title">📦 捆级明细（${bs.length} 捆${r.bundlesTruncated ? ' · 仅保留最后 600 条，完整明细见沙盘任务台账' : ''}）` +
-    (bs.length ? `<button data-expbundles="${esc(r.id)}" title="导出本场逐捆明细 CSV（捆号 / 放好 / 开始扫码 / 扫码完成 / 入账时刻）">导出捆级 CSV</button>` : '') + `</div>`;
+  const inN = bs.filter(b => b.io === 'in').length, outN = bs.filter(b => b.io === 'out').length, rsN = bs.length - inN - outN;
+  html += `<div class="sec-title">📦 捆级明细（${bs.length} 条 · 入 ${inN} / 出 ${outN}${rsN ? ` / 倒垛 ${rsN}` : ''}${r.bundlesTruncated ? ' · 仅保留最后 600 条，完整明细见沙盘任务台账' : ''}）` +
+    (bs.length ? `<button data-expbundles="${esc(r.id)}" title="导出本场逐捆明细 CSV（捆号 / 放好 / 开始扫码 / 扫码完成 / 入账时刻；含倒垛确认行）">导出捆级 CSV</button>` : '') + `</div>`;
   if (bs.length) {
     html += `<table><tr><th>捆号</th><th>类型</th><th>规格</th><th>库位</th><th>垛</th>` +
-      `<th>放好(时钟)</th><th>开始扫码</th><th>扫码完成</th><th>入账/装车</th><th>扫码延时(s)</th>` +
+      `<th title="入库=本场落料；倒垛=目标垛落位；出库=该捆原入账">放好/落位</th><th>开始扫码</th><th>扫码完成</th>` +
+      `<th title="入库=入账；出库=装车；倒垛=双点核验一致">入账/装车/确认</th><th>扫码延时(s)</th>` +
       `<th>车牌</th><th>车次</th><th>合同</th><th>标记</th></tr>`;
     for (const b of bs) {
-      const marks = (b.anomaly ? '<span class="d-bad">异常</span>' : '') + (b.skip ? `<span class="t-dim">${b.manual ? '人工核对' : '免检'}</span>` : '');
+      const isRs = b.io === 'restack';
+      const typeCell = isRs
+        ? `<td class="t-rs" title="倒垛确认：压货自源垛移往目标垛（库位/垛为 源→目标），机器狗双点核验两端">倒垛</td>`
+        : `<td class="${b.io === 'in' ? 't-in' : 't-out'}">${b.io === 'in' ? '入库' : '出库'}</td>`;
+      const marks = bundleMarks(b).map(x => `<span class="${x.c}"${x.title ? ` title="${esc(x.title)}"` : ''}>${x.t}</span>`).join(' ');
       html += `<tr><td class="mono">${esc(b.bundle || '-')}</td>` +
-        `<td class="${b.io === 'in' ? 't-in' : 't-out'}">${b.io === 'in' ? '入库' : '出库'}</td>` +
+        typeCell +
         `<td>${esc(b.spec)}</td><td class="mono">${esc(b.slot)}</td><td class="mono">${b.stack}</td>` +
         `<td class="mono">${fmtSimClock(b.putAt)}</td>` +
         `<td class="mono">${fmtSimClock(b.scanStartAt)}</td>` +
@@ -361,7 +392,7 @@ function renderRun(r, idx) {
         `<td class="mono">${fmtSimClock(b.doneAt)}</td>` +
         `<td class="${delayCls(b.scanDelay)}">${b.scanDelay != null ? b.scanDelay : '-'}</td>` +
         `<td class="mono">${esc(b.plate || '-')}</td><td class="mono">${esc(b.batch || '-')}</td><td class="mono">${esc(b.order || '-')}</td>` +
-        `<td>${marks}</td></tr>`;
+        `<td class="td-marks">${marks}</td></tr>`;
     }
     html += `</table>`;
   } else if (r.ledgerCount) {
@@ -378,11 +409,11 @@ function renderRun(r, idx) {
 /* ---------------- 导出 CSV（场次汇总） ---------------- */
 function exportCsv() {
   if (!runs.length) { flash('暂无场次可导出'); return; }
-  const head = ['场次号', '归档原因', '开始(真实)', '结束(真实)', '仿真时长(秒)', '数据源', '完成任务', '车次', '订单闭环', '入台账', '出台账', '吞吐量(捆/时)', '平均任务时长(秒)', '异常', '免检', '车辆数', '扫码延时均值(秒)', 'P95(秒)', '最大(秒)', '入账延时均值(秒)', '效率结论', '需求(捆/时)', '能力(捆/时)', '利用率(%)'];
+  const head = ['场次号', '归档原因', '开始(真实)', '结束(真实)', '仿真时长(秒)', '数据源', '完成任务', '车次', '订单闭环', '入台账', '出台账', '倒垛确认(吊)', '吞吐量(捆/时)', '平均任务时长(秒)', '异常', '免检', '车辆数', '扫码延时均值(秒)', 'P95(秒)', '最大(秒)', '入账延时均值(秒)', '效率结论', '需求(捆/时)', '能力(捆/时)', '利用率(%)'];
   const rows = runs.map(r => {
     const k = r.kpi || {}, sc = r.scan || {}, a = r.assess || {};
     return [r.id, ({ reset: '重置归档', end: '手动结束' })[r.reason] || '关页归档', r.wallStart || '', r.wallEnd || '', r.simSeconds ?? '',
-      r.feedMode || '', k.tasksDone ?? '', k.trucksDone ?? '', k.ordersDone ?? '', k.ledgerIn ?? '', k.ledgerOut ?? '',
+      r.feedMode || '', k.tasksDone ?? '', k.trucksDone ?? '', k.ordersDone ?? '', k.ledgerIn ?? '', k.ledgerOut ?? '', k.ledgerRestack ?? '',
       k.throughputPerHour ?? '', k.avgTaskDur ?? '', k.anomalies ?? '', k.skips ?? '',
       (r.vehicles || []).length, sc.delayAvg ?? '', sc.delayP95 ?? '', sc.delayMax ?? '', sc.postAvg ?? '',
       a.verdict ? ({ ok: '满足', tight: '紧张', fail: '不满足' })[a.verdict] : '',
@@ -402,18 +433,20 @@ function exportRunBundles(runId) {
   const r = runs.find(x => x.id === runId);
   const bs = (r && r.bundles) || [];
   if (!bs.length) { flash('该场次无捆级明细', false); return; }
-  const head = ['场次号', '捆号', '类型', '规格', '库位', '垛', '放好(时钟)', '开始扫码(时钟)', '扫码完成(时钟)', '入账/装车完成(时钟)', '扫码延时(秒)', '车牌', '车次', '合同号', '异常', '直通'];
+  const head = ['场次号', '捆号', '类型', '规格', '库位', '垛', '放好/落位(时钟)', '开始扫码(时钟)', '扫码完成(时钟)', '入账/装车/确认(时钟)', '扫码延时(秒)', '车牌', '车次', '合同号', '异常', '直通', '倒垛吊数', '倒垛让位捆', '明细标记'];
   const rows = bs.map(b => [
-    r.id, b.bundle || '', b.io === 'in' ? '入库' : '出库', b.spec, b.slot, b.stack,
+    r.id, b.bundle || '', b.io === 'in' ? '入库' : b.io === 'restack' ? '倒垛确认' : '出库', b.spec, b.slot, b.stack,
     fmtSimClock(b.putAt), fmtSimClock(b.scanStartAt), fmtSimClock(b.scanDoneAt), fmtSimClock(b.doneAt),
     b.scanDelay != null ? b.scanDelay : '', b.plate || '', b.batch || '', b.order || '',
     b.anomaly ? '是' : '', b.skip ? (b.manual ? '人工核对' : '免检') : '',
+    b.io === 'out' && b.restack ? b.restack : '', b.io === 'restack' ? (b.forBundle || '') : '',
+    bundleMarks(b).map(x => x.t).join('；'),
   ].join(','));
   const csv = '﻿' + head.join(',') + '\n' + rows.join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `场次捆级明细-${runId}-${bs.length}捆.csv`;
+  a.download = `场次捆级明细-${runId}-${bs.length}条.csv`;
   a.click();
   flash(`已导出 ${runId} 捆级明细 ${bs.length} 条`);
 }
@@ -448,7 +481,7 @@ function exportRunFull(runId) {   // 单场完整数据记录：概览/KPI + 参
     ['开始(真实)', r.wallStart || ''], ['结束(真实)', r.wallEnd || ''],
     ['仿真时长(秒)', r.simSeconds ?? ''], ['数据源', r.feedMode || ''],
     ['完成任务', k.tasksDone ?? ''], ['车次完成', k.trucksDone ?? ''], ['订单闭环', k.ordersDone ?? ''],
-    ['入台账', k.ledgerIn ?? ''], ['出台账', k.ledgerOut ?? ''], ['吞吐量(捆/时)', k.throughputPerHour ?? ''],
+    ['入台账', k.ledgerIn ?? ''], ['出台账', k.ledgerOut ?? ''], ['倒垛确认(吊)', k.ledgerRestack ?? ''], ['吞吐量(捆/时)', k.throughputPerHour ?? ''],
     ['平均任务时长(秒)', k.avgTaskDur ?? ''], ['异常任务', k.anomalies ?? ''], ['免检直通', k.skips ?? ''],
     ['台账留痕(条)', r.ledgerCount ?? ''],
     ['扫码延时均值(秒)', sc.delayAvg ?? ''], ['P95(秒)', sc.delayP95 ?? ''], ['最大(秒)', sc.delayMax ?? ''],
@@ -492,8 +525,8 @@ function exportRunFull(runId) {   // 单场完整数据记录：概览/KPI + 参
   L.push('');
   const vs = r.vehicles || [];
   L.push(`【车辆记录（${vs.length} 辆）】`);
-  pushTable(['车牌', '方向', '吊数', '规格', '车次', '进场(仿真秒)', '离场(仿真秒)', '在场时长(秒)'],
-    vs.map(v => [v.plate || '', v.kind === 'in' ? '入库' : '出库', v.loads, v.spec || '', v.batch || '',
+  pushTable(['车牌', '方向', '吊数', '规格', '车次', '通道', '进场(仿真秒)', '离场(仿真秒)', '在场时长(秒)'],
+    vs.map(v => [v.plate || '', v.kind === 'in' ? '入库' : '出库', v.loads, v.spec || '', v.batch || '', v.lane != null ? v.lane + ' 号' : '',
       v.summonAt ?? '', v.leftAt ?? '', v.leftAt != null && v.summonAt != null ? v.leftAt - v.summonAt : '']));
   L.push('');
   const pr = sc.perRobot || [];
@@ -504,12 +537,15 @@ function exportRunFull(runId) {   // 单场完整数据记录：概览/KPI + 参
     L.push('');
   }
   const bs = r.bundles || [];
-  L.push(`【捆级明细（${bs.length} 捆）】`);
-  pushTable(['捆号', '类型', '规格', '库位', '垛', '放好(时钟)', '开始扫码(时钟)', '扫码完成(时钟)', '入账/装车完成(时钟)', '扫码延时(秒)', '车牌', '车次', '合同号', '异常', '直通'],
-    bs.map(b => [b.bundle || '', b.io === 'in' ? '入库' : '出库', b.spec, b.slot, b.stack,
+  const rsN = bs.filter(b => b.io === 'restack').length;
+  L.push(`【捆级明细（${bs.length} 条${rsN ? ` · 含倒垛确认 ${rsN} 吊` : ''}）】`);
+  pushTable(['捆号', '类型', '规格', '库位', '垛', '放好/落位(时钟)', '开始扫码(时钟)', '扫码完成(时钟)', '入账/装车/确认(时钟)', '扫码延时(秒)', '车牌', '车次', '合同号', '异常', '直通', '倒垛吊数', '倒垛让位捆', '明细标记'],
+    bs.map(b => [b.bundle || '', b.io === 'in' ? '入库' : b.io === 'restack' ? '倒垛确认' : '出库', b.spec, b.slot, b.stack,
       fmtSimClock(b.putAt), fmtSimClock(b.scanStartAt), fmtSimClock(b.scanDoneAt), fmtSimClock(b.doneAt),
       b.scanDelay != null ? b.scanDelay : '', b.plate || '', b.batch || '', b.order || '',
-      b.anomaly ? '是' : '', b.skip ? (b.manual ? '人工核对' : '免检') : '']));
+      b.anomaly ? '是' : '', b.skip ? (b.manual ? '人工核对' : '免检') : '',
+      b.io === 'out' && b.restack ? b.restack : '', b.io === 'restack' ? (b.forBundle || '') : '',
+      bundleMarks(b).map(x => x.t).join('；')]));
   const csv = '\ufeff' + L.join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const link = document.createElement('a');

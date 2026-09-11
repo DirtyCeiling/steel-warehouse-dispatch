@@ -452,7 +452,7 @@
     <div class="logo">🤖</div>
     <div>
 /*@@core-seg-6@@*/
-      <p title="长 300m × 宽 90m · 三跨（A/B/C，每跨 30m）· 3 条竖向车辆进出通道 · 91 库位（每库位 8 垛 × 400 捆）· 3 台机器狗（扫码核验）+ 6 台天车（每跨 2 台）· 一车 6-10 吊（单跨装卸 · 一车一天车：一辆车的装卸全程由一台天车完成）· 流程：货车进场停靠 -> 跨上立柱摄像头识别车牌 -> 物流系统吊取运单 -> 天车认领吊运装卸 -> 机器狗扫码确认 -> 库存更新">长 300m × 宽 90m · 三跨（A/B/C，每跨 30m）· 3 条竖向车辆进出通道 · 91 库位（每库位 8 垛 × 400 捆）· 3 台机器狗（扫码核验）+ 6 台天车（每跨 2 台）· 一车 6-10 吊（单跨装卸 · 一车一天车）· 流程：货车进场停靠 -> 跨上立柱摄像头识别车牌 -> 物流系统吊取运单 -> 天车认领吊运装卸 -> 机器狗扫码确认 -> 库存更新</p>
+      <p id="hdrDesc" title="长 300m × 宽 90m · 三跨（A/B/C，每跨 30m）· 3 条竖向车辆进出通道 · 91 库位（每库位 8 垛 × 400 捆）· 3 台机器狗（扫码核验）+ 6 台天车（每跨 2 台）· 一车 6-10 吊（单跨装卸 · 一车一天车：一辆车的装卸全程由一台天车完成）· 流程：货车进场停靠 -> 跨上立柱摄像头识别车牌 -> 物流系统吊取运单 -> 天车认领吊运装卸 -> 机器狗扫码确认 -> 库存更新">长 300m × 宽 90m · 三跨（A/B/C，每跨 30m）· 3 条竖向车辆进出通道 · 91 库位（每库位 8 垛 × 400 捆）· <span id="hdrDogN">3 台机器狗</span>（扫码核验）+ 6 台天车（每跨 2 台）· 一车 6-10 吊（单跨装卸 · 一车一天车）· 流程：货车进场停靠 -> 跨上立柱摄像头识别车牌 -> 物流系统吊取运单 -> 天车认领吊运装卸 -> 机器狗扫码确认 -> 库存更新</p>
     </div>
   </div>
   <div class="seg" id="viewTabs" title="切换视图：仿真沙盘 / 库存三维 / 机器狗视角">
@@ -526,11 +526,11 @@
       <div class="kpi"><div class="kl">完成任务</div><div class="kv c1" id="kpiDone">0</div><div class="ks" id="kpiDoneSub">入 0 · 出 0</div></div>
       <div class="kpi"><div class="kl">吞吐量 (捆/仿真时)</div><div class="kv c2" id="kpiThru">–</div><div class="ks">累计完成 ÷ 仿真时长</div></div>
       <div class="kpi"><div class="kl">平均任务时长</div><div class="kv c3" id="kpiAvg">–</div><div class="ks">下发 -> 完成回传</div></div>
-      <div class="kpi"><div class="kl">集群利用率</div><div class="kv c4" id="kpiUtil">–</div><div class="ks">3 台机器狗作业占比</div></div>
+      <div class="kpi"><div class="kl">集群利用率</div><div class="kv c4" id="kpiUtil">–</div><div class="ks" id="kpiUtilSub">机器狗作业占比</div></div>
       <div class="kpi"><div class="kl">当前库存</div><div class="kv c5" id="kpiInv">0/291200</div><div class="ks" id="kpiInvSub">库容利用率 0%</div></div>
       <div class="kpi"><div class="kl">待处理任务</div><div class="kv c6" id="kpiQueue">0</div><div class="ks" id="kpiQueueSub">执行中 0</div></div>
       <div class="kpi"><div class="kl">待扫描任务</div><div class="kv" id="kpiScanq" style="color:var(--green)">0</div><div class="ks" id="kpiScanqSub">队列为空</div></div>
-      <div class="kpi"><div class="kl">今日进厂车辆</div><div class="kv c1" id="kpiTodayIn">0</div><div class="ks" id="kpiTodayInSub">离场 0 · 在场 0</div></div>
+      <div class="kpi"><div class="kl">今日进厂车辆</div><div class="kv c1" id="kpiTodayIn">0</div><div class="ks" id="kpiTodayInSub">入库 0 · 出库 0 · 离场 0 · 在场 0</div></div>
       <div class="kpi"><div class="kl">进厂等待（在场均值）</div><div class="kv c2" id="kpiWait">–</div><div class="ks" id="kpiWaitSub">暂无在场进厂车</div></div>
       <div class="kpi"><div class="kl">扫描能力评估</div><div class="kv" id="kpiAssess" style="color:var(--green)">–</div><div class="ks" id="kpiAssessSub">启动后评估</div></div>
     </div>
@@ -1232,6 +1232,7 @@ const isChannelCol = c => LANE_COLS.includes(c);
 
 /* ---------------- 运行时状态 ---------------- */
 let tiles = [], storages = [], robots = [], tasks = [], trucks = [];
+let __hdrDogN = 0;   // 页头说明里已渲染的机器狗台数（去重用）
 let craneJobs = [], cranes = [], columns = [];
 let truckCraneStat = { doubleService: 0, served: 0, multiCrane: 0, assists: 0 };   // 一车一天车统计（自检/调试探针）
 let batches = [], batchSeq = 0, trucksDone = 0;   // 车次（一车 6-10 吊）分组层
@@ -1551,26 +1552,52 @@ function stackOutBundle(k) { // 垛内选目标捆：随机 = 垛内候选捆均
   });
   return topNew || fallback;
 }
-function pickOutBundleSpec(spec, spanHint = null) { // 订单配捆：全库（监测范围内）该规格已扫码捆中按策略选目标捆
-  const cand = [];                                  // 随机模式候选池（均匀随机，不偏向未被压捆）
-  let topPick = null;                               // 垛顶直取模式：各垛最高层未被压捆中挑入账最早者
+function craneZoneLocked(zoneCols) { // 订单已配捆库位列 -> 锁定的天车可达半区（'W' 西 / 'E' 东 / null 不限）
+  // 西天车独占区 <81m（列 ≤11）、东天车独占区 >219m（列 ≥28）；已配捆横跨两独占区 = 无法收窄，不再限制
+  if (!zoneCols || !zoneCols.length) return null;
+  let w = false, e = false;
+  for (const c of zoneCols) {
+    if (cellCX(c) < CRANE_HOME_X[0] + CRANE_GAP) w = true;
+    else if (cellCX(c) > CRANE_HOME_X[1] - CRANE_GAP) e = true;
+  }
+  return w && e ? null : (w ? 'W' : e ? 'E' : null);
+}
+function pickOutBundleSpec(spec, spanHint = null, zoneCols = null) { // 订单配捆：全库（监测范围内）该规格已扫码捆中按策略选目标捆
+  // 半区聚簇（zoneCols = 本订单已配捆的库位列）：一车一天车要求整批吊点连同停靠通道同处一台天车的
+  // 可达半区——首捆随机点名后，后续配捆只在同半区内点，车次吊点不横跨东西两侧（两侧库存各自聚簇
+  // 装车，1/3 号通道按吊点就近可停，不被「吊点散布全跨、唯有中通道可选」饿死）；同半区无候选时
+  // 放宽回全范围（车次退化为仅 2 号通道可停，仍不违反天车可达性）。
+  const zone = craneZoneLocked(zoneCols);
+  const zoneOK = s => !zone
+    || (zone === 'W' ? cellCX(s.goalC) <= CRANE_HOME_X[1] - CRANE_GAP : cellCX(s.goalC) >= CRANE_HOME_X[0] + CRANE_GAP);
+  const cand = [], candZone = [];                   // 随机模式候选池：全域 / 聚簇半区（均匀随机，不偏向未被压捆）
+  let topPick = null, topZone = null;               // 垛顶直取模式：各垛最高层未被压捆中挑入账最早者（全域 / 半区）
   for (const s of storages) {                       // 返回 { st, stackIdx, bundle }；无可用捆返回 null
     if (s.state === 'locked') continue;             // 一吊锁一库位：被锁库位不参与选捆
     if (regionRestricted() && !slotInOpScope(s)) continue;   // 未监测跨库存不参与出库
     if (spanHint != null && spanOfSlot(s) !== spanHint) continue;
+    const z = zoneOK(s);
     s.stacks.forEach((k, i) => {
       if (k.count <= 0 || k.pending > 0) return;    // 垛级门槛与 pickOutStack 同口径：有待扫码落料的垛不出库
       if (spec && k.spec !== spec) return;
       if (CFG.task.fifoPick) {
-        for (const b of k.bundles) if (bundleOutEligible(b)) cand.push({ st: s, stackIdx: i, bundle: b });
+        for (const b of k.bundles) if (bundleOutEligible(b)) {
+          const c = { st: s, stackIdx: i, bundle: b };
+          cand.push(c);
+          if (z) candZone.push(c);
+        }
       } else {
         const b = stackOutBundle(k);
-        if (b && (!topPick || b.inTime < topPick.bundle.inTime)) topPick = { st: s, stackIdx: i, bundle: b };
+        if (b) {
+          if (!topPick || b.inTime < topPick.bundle.inTime) topPick = { st: s, stackIdx: i, bundle: b };
+          if (z && (!topZone || b.inTime < topZone.bundle.inTime)) topZone = { st: s, stackIdx: i, bundle: b };
+        }
       }
     });
   }
-  if (!CFG.task.fifoPick) return topPick;
-  return cand.length ? cand[Math.floor(Math.random() * cand.length)] : null;
+  if (!CFG.task.fifoPick) return topZone || topPick;
+  const pool = candZone.length ? candZone : cand;   // 半区优先，半区枯竭回退全域
+  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
 }
 
 /* ---------------- 倒垛（压货翻移） ----------------
@@ -2057,6 +2084,7 @@ class Robot {
   finishScan() { // 扫码核验 + 状态回传完成
     const t = this.task;
     this.tasksDone++;
+    t.scanRobot = this.name;   // 场次留档：本捆（或倒垛双点）扫码机器狗；免检/人工核对直通无此字段
     if (t.type === 'in') { // 入库：落料正式入账，任务闭环
       const k = t.slot.stacks[t.stackIdx];
       if (k) k.pending = Math.max(0, k.pending - 1);   // 计数制：同车多吊集中同垛时，每扫码一捆减一
@@ -2109,7 +2137,11 @@ function nearestLane(col) {
  * 吊点与车道分处两端（区间 min<81 且 max>219，即横跨双车停靠位 75/225 两侧），
  * 两台天车都不可服务，货车将永久卡在装卸中并堵死通道。故要求「本车次每一吊都至少
  * 能被本跨一台天车服务」（≤219 西天车可达 / ≥81 东天车可达；中间 19 号通道恒满足），
- * 在满足条件的通道中取距中位库位列最近者。 */
+ * 在满足条件的通道中取距中位库位列最近者。
+ * 注：通道选择只看吊点位置与天车可达性，与机器狗监测号区无关——号区范围只限定扫码列，
+ * 不挡车辆通道（东侧吊点的车次照常派 3 号通道）。
+ * 均衡停靠：每条通道同一时刻只容一辆在场车，首选通道被占时改派空闲的可选通道，
+ * 避免车流全挤一条通道（其余通道入口闲置、装卸串行排队）。 */
 function laneAllJobsServable(lane, slotCols) {
   const tx = cellCX(lane);
   return slotCols.every(c => {
@@ -2120,7 +2152,14 @@ function laneAllJobsServable(lane, slotCols) {
 function pickLaneForBatch(cols) {
   const medCol = cols[cols.length >> 1];
   const ok = LANE_COLS.filter(l => laneAllJobsServable(l, cols));
-  return (ok.length ? ok : LANE_COLS).reduce((a, b) => Math.abs(b - medCol) < Math.abs(a - medCol) ? b : a);
+  const pool = ok.length ? ok : LANE_COLS;
+  const nearest = arr => arr.reduce((a, b) => Math.abs(b - medCol) < Math.abs(a - medCol) ? b : a);
+  const laneOccupied = l => trucks.some(o => o.lane === l && o.state !== 'QUEUE');   // 在场占道车（排队车不算）
+  if (pool.length > 1 && laneOccupied(nearest(pool))) {
+    const idle = pool.filter(l => !laneOccupied(l));
+    if (idle.length) return nearest(idle);
+  }
+  return nearest(pool);
 }
 function laneNo(lane) { return LANE_COLS.indexOf(lane) + 1; }
 /* 派车：出库必须等物流订单全部配捆齐才发车（一单一车；订单跨库存分批成多个车次时配满后一并放行），
@@ -2137,7 +2176,8 @@ function dispatchBatches(force = false) {
 /* 调试/自检钩子：立即为所有未派车车次生成货车（force 会在订单未配满时强制放行，留档 forced 标记） */
 window.forceDispatchBatches = () => { dispatchBatches(true); };
 function summonTruck(batch, force = false) {
-  // 车道优先选「本车次全部吊可由本跨同一台天车独揽」的通道（防超宽吊卡死），其次中位库位列最近；货车停靠目标跨行中心，单跨装卸
+  // 车道优先选「本车次全部吊可由本跨同一台天车独揽」的通道（防超宽吊卡死），其次中位库位列最近，
+  // 首选通道被占时改派空闲可选通道；货车停靠目标跨行中心，单跨装卸
   const cols = batch.tasks.map(t => t.slot.goalC).sort((a, b) => a - b);
   const lane = pickLaneForBatch(cols);
   batch.plateScanned = false;                            // 车牌识别 / 运单吊取标志（车次级）
@@ -2324,6 +2364,7 @@ function spawnRestackScanTask(j) { // 倒垛落位即下发确认任务（继承
     state: 'pending', stage: 0, created: simTime, robot: null,
     scanRetries: 0, anomaly: false, scanSkipped: false, scanManual: false,
     bundleId: j.bundleId || '',                   // 被倒捆号（场次捆级明细追溯）
+    forBundle: p.bundleId || '',                  // 本吊倒垛让位的出库目标捆（生成时刻定格；场次捆级明细双向追溯）
     materialReadyAt: simTime, scanStartAt: 0, scanDoneAt: 0,   // 延时起点 = 倒垛落位时刻
   };
   tasks.push(task);
@@ -2891,7 +2932,7 @@ function createTask(type, opts = {}) {
       } else {
         // 订单配捆不做跨钉住（一单可拆多车）：全库（监测范围内）该规格捆级先进先出最老捆；
         // 监测范围受限时不放宽全库：范围内无可出库存 -> 本捆不下任务，订单余捆待范围库存回补
-        const pick = pickOutBundleSpec(order.spec);
+        const pick = pickOutBundleSpec(order.spec, null, order.tasks.map(t => t.slot.goalC));   // 半区聚簇：沿本订单已配捆的吊点半区续配
         if (!pick) {
           warn(regionRestricted()
             ? `⚠ ${order.id} 规格 ${order.spec.name} 在监测跨（${monitoredRegionText()}）内暂无可出库存，余捆待回补（未监测跨库存不出库）`
@@ -4189,8 +4230,13 @@ function ledgerPush(t) { // 任务闭环留痕：追加一条台账记录（上�
     order: t.order ? t.order.id : '', created: Math.round(t.created), ended: Math.round(simTime),
     dur: Math.round(simTime - t.created),
     anomaly: !!(t.anomaly || (t.batch && t.batch.manifestMismatch) || t.scanRetries > 0),
+    manualFix: !!t.anomaly,                                        // 异常明细：连续重扫仍失败，人工介入核验放行
+    retries: t.scanRetries || 0,                                   // 异常明细：扫码失败原地重试次数（码面污损/反光）
+    mismatch: !!(t.batch && t.batch.manifestMismatch),             // 异常明细：运单与实货差异（以现场扫码数据为准修正）
+    robot: t.scanRobot || '',                                      // 扫码机器狗编号（免检/人工核对直通为空）
     plate: t.truck ? t.truck.plate : '', batch: t.batch ? t.batch.id : '',     // 车牌 / 车次号（时效页按车分组统计）
     restack: t.type === 'out' ? (t.restackTotal || 0) : 0,   // 出库倒垛吊数（装车前移走的上方压货，0 = 垛顶直取；倒库率统计口径）
+    forBundle: t.type === 'restack' ? (t.forBundle || '') : '',   // 倒垛确认：所让位的出库目标捆号（场次捆级明细联动追溯）
     placedAt, scanStartAt: Math.round(t.scanStartAt || 0), scanDoneAt,         // 天车放好 / 开始扫码 / 扫码完成（仿真秒）
     putAt: t.type === 'out' ? (t.bundleInTime != null ? Math.round(t.bundleInTime) : null) : placedAt,   // 放好时刻：入库/倒垛=本场落料·落位；出库=该捆原入账时刻（期初捆为负值；扫码延时另按吊走时刻计）
     delay: placedAt && scanDoneAt ? scanDoneAt - placedAt : null,   // 每捆扫码延时：入库=放好→扫码完成；出库=吊走→扫码确认完成；倒垛=落位→双点确认完成
@@ -4405,6 +4451,7 @@ function archiveSession(reason) {   // reason: 'end'（手动结束）| 'reset'�
       plate: tk.plate, kind: tk.kind,
       loads: tk.batch ? tk.batch.tasks.length : 0, batch: tk.taskId,
       spec: tk.spec ? tk.spec.name : '',
+      lane: tk.lane != null ? laneNo(tk.lane) : null,         // 进场通道（1/2/3 号，派车时按天车可服务性选定）
       summonAt: Math.round(tk.summonAt || 0),                       // 派车（进场）仿真秒
       enterAt: tk.enterAt != null ? Math.round(tk.enterAt) : null,  // 进场仿真秒（null = 归档时仍在通道排队）
       leftAt: tk.leftAt != null ? Math.round(tk.leftAt) : null,     // 离场仿真秒（null = 归档时仍在场）
@@ -4435,14 +4482,18 @@ function archiveSession(reason) {   // reason: 'end'（手动结束）| 'reset'�
         };
       }),
     },
-    bundles: sess.slice(-600).map(t => ({                          // 本场逐捆明细（每捆一条：捆号 + 放好/扫码/入账时刻）
+    bundles: sess.slice(-600).map(t => ({                          // 本场逐捆明细（每捆一条：捆号 + 放好/扫码/入账时刻；含倒垛确认行）
       bundle: t.bundle || '', io: t.type, spec: t.spec, slot: t.slot, stack: t.stack,
-      putAt: t.putAt ?? null,                                      // 放好时刻（仿真秒：入库=本场落料；出库=该捆原入账；期初捆为负值）
+      putAt: t.putAt ?? null,                                      // 放好时刻（仿真秒：入库=本场落料；倒垛=落位；出库=该捆原入账；期初捆为负值）
       scanStartAt: t.scanStartAt || null, scanDoneAt: t.scanDoneAt || null,   // 机器狗开始扫码 / 扫码完成（仿真秒）
-      doneAt: t.ended ?? null,                                     // 入账/装车完成（仿真秒）
-      scanDelay: t.delay,                                          // 扫码延时：入库=放好→扫码完成；出库=吊走→扫码确认
+      doneAt: t.ended ?? null,                                     // 入账/装车/倒垛双点确认完成（仿真秒）
+      scanDelay: t.delay,                                          // 扫码延时：入库=放好→扫码完成；出库=吊走→扫码确认；倒垛=落位→双点确认
+      restack: t.restack || 0,                                     // 出库行：本捆装车前倒垛吊数（0 = 垛顶直取免倒垛）
+      forBundle: t.forBundle || '',                                // 倒垛行：本吊让位的出库目标捆号
+      robot: t.robot || '',                                        // 扫码机器狗编号（直通为空）
+      retries: t.retries || 0, manualFix: !!t.manualFix, mismatch: !!t.mismatch,   // 异常明细：重试次数 / 人工介入 / 运单差异
       plate: t.plate || '', batch: t.batch || '', order: t.order || '',
-      anomaly: !!t.anomaly, skip: !!t.skip,
+      anomaly: !!t.anomaly, skip: !!t.skip, manual: !!t.manual,
     })),
     bundlesTruncated: sess.length > 600,                           // 超过 600 条只留尾段（完整明细见任务台账）
     ledgerCount: sess.length,
@@ -4655,6 +4706,14 @@ function refreshPanels() {
   const util = simTime > 5
     ? (robots.reduce((s, r) => s + r.busyTime, 0) / (robots.length * simTime) * 100).toFixed(1) + '%' : '–';
   $('kpiUtil').textContent = util;
+  $('kpiUtilSub').textContent = `${robots.length} 台机器狗作业占比`;
+  // 页头场区说明与悬停提示里的机器狗台数跟随当前配置（仅数量变化时改写，避免每帧重排）
+  if (__hdrDogN !== robots.length) {
+    __hdrDogN = robots.length;
+    const hdrDesc = $('hdrDesc');
+    if (hdrDesc) hdrDesc.title = (hdrDesc.title || '').replace(/\d+ 台机器狗/, `${__hdrDogN} 台机器狗`);
+    $('hdrDogN').textContent = `${__hdrDogN} 台机器狗`;
+  }
   $('kpiInv').textContent = `${occupiedCount}/${TOTAL_BUNDLE_CAP}`;
   $('kpiInvSub').textContent = `库容利用率 ${(occupiedCount / TOTAL_BUNDLE_CAP * 100).toFixed(2)}%`;
   $('kpiQueue').textContent = pending;
@@ -4670,24 +4729,25 @@ function refreshPanels() {
   const sqOut = scanQ.filter(t => t.type === 'out').length;
   sqSub.textContent = scanQ.length ? `最长等待 ${fmtDur(sqMax)} · 入 ${sqIn} · 出 ${sqOut} · 倒 ${scanQ.length - sqIn - sqOut}` : '队列为空';
   sqSub.title = '已具备扫码条件（入库已落料 / 出库已吊走 / 倒垛已落位）但尚未排上机器狗的任务';
-  // 今日进厂车辆：按仿真日切片（时钟 08:00 起算，一天 = dayHours 仿真小时），本地排产/外部物流源同源
+  // 今日进厂车辆：入库（载料送货）与出库（空车装货）货车均须进厂作业，一并计入；按仿真日切片（时钟 08:00 起算，一天 = dayHours 仿真小时），本地排产/外部物流源同源
   const dayLen = Math.max(3600, CFG.production.dayHours * 3600);
   const simDay = Math.floor(simTime / dayLen);
   const dayOf = tk => Math.floor((tk.summonAt || 0) / dayLen);
-  const todayIn = truckHistory.filter(tk => tk.kind === 'in' && dayOf(tk) === simDay);
-  const todayOutN = truckHistory.filter(tk => tk.kind !== 'in' && dayOf(tk) === simDay).length;
-  const todayInLeft = todayIn.filter(tk => tk.leftAt != null).length;
-  $('kpiTodayIn').textContent = todayIn.length;
-  $('kpiTodayInSub').textContent = `离场 ${todayInLeft} · 在场 ${todayIn.length - todayInLeft} · 今日出厂 ${todayOutN}`;
-  // 进厂等待：在场进厂车「派车至今」均值/最久；无在场车时回退今日已离场进厂车的全程均值
-  const onSiteIn = trucks.filter(tk => tk.kind === 'in');
+  const todayAll = truckHistory.filter(tk => dayOf(tk) === simDay);
+  const todayIn = todayAll.filter(tk => tk.kind === 'in');
+  const todayOutN = todayAll.length - todayIn.length;
+  const todayLeft = todayAll.filter(tk => tk.leftAt != null).length;
+  $('kpiTodayIn').textContent = todayAll.length;
+  $('kpiTodayInSub').textContent = `入库 ${todayIn.length} · 出库 ${todayOutN} · 离场 ${todayLeft} · 在场 ${todayAll.length - todayLeft}`;
+  // 进厂等待：在场进厂车（入库 + 出库）「派车至今」均值/最久；无在场车时回退今日已离场进厂车的全程均值
+  const onSiteTrucks = trucks;                           // trucks 仅含未离场车辆（离场即 splice）
   let waitMain = '–', waitSub = '暂无在场进厂车';
-  if (onSiteIn.length) {
-    const waits = onSiteIn.map(tk => Math.max(0, simTime - (tk.summonAt || simTime)));
+  if (onSiteTrucks.length) {
+    const waits = onSiteTrucks.map(tk => Math.max(0, simTime - (tk.summonAt || simTime)));
     waitMain = fmtDur(waits.reduce((s, v) => s + v, 0) / waits.length);
-    waitSub = `最久 ${fmtDur(Math.max(...waits))} · ${onSiteIn.length} 辆在场`;
+    waitSub = `最久 ${fmtDur(Math.max(...waits))} · ${onSiteTrucks.length} 辆在场`;
   } else {
-    const leftToday = todayIn.filter(tk => tk.leftAt != null);
+    const leftToday = todayAll.filter(tk => tk.leftAt != null);
     if (leftToday.length) {
       const stays = leftToday.map(tk => tk.leftAt - tk.summonAt);
       waitMain = fmtDur(stays.reduce((s, v) => s + v, 0) / stays.length);
@@ -4695,13 +4755,13 @@ function refreshPanels() {
     }
   }
   $('kpiWait').textContent = waitMain;
-  $('kpiWait').title = '在场进厂车：派车至今的平均等待（含组车后通道排队与卸货时间）；无在场车时显示今日已离场进厂车的派车→离场全程均值';
+  $('kpiWait').title = '在场进厂车（入库 + 出库）：派车至今的平均等待（含组车后通道排队与装卸时间）；无在场车时显示今日已离场进厂车的派车→离场全程均值';
   $('kpiWaitSub').textContent = waitSub;
-  // 扫描能力评估：实测扫码延时为主判据（结论图标着色，悬浮看明细）
+  // 扫描能力评估：主值 = 实测达标率（符合比率），右侧小字 = 满足情况（颜色随结论），悬浮看明细
   const a = assessScanCapacity();
-  const vDef = { ok: ['✅ 满足', '#34d399'], tight: ['⚠️ 紧张', '#fbbf24'], fail: ['❌ 不满足', '#f87171'] }[a.verdict] || ['–', ''];
+  const vDef = { ok: ['满足', '#34d399'], tight: ['紧张', '#fbbf24'], fail: ['不满足', '#f87171'] }[a.verdict] || ['', 'var(--dim)'];
   const av = $('kpiAssess');
-  av.textContent = vDef[0];
+  av.innerHTML = `${a.sampleN ? Math.round(a.withinPct) + '%' : '–'} <span style="font-size:10.5px">${vDef[0]}</span>`;
   av.style.color = vDef[1];
   av.title = `扫码延时上限 ${a.delayLimitSec}s · 允许超时 ${a.maxExceedPct}%\n`
     + (a.sampleN ? `实测 ${a.sampleN} 捆：平均 ${a.delayAvg}s · 最长 ${a.delayMax}s · 达标 ${a.withinPct}%（超时 ${a.exceedPct}%）\n` : '暂无扫描数据\n')
@@ -4711,7 +4771,7 @@ function refreshPanels() {
     + (a.reasons.length ? `\n依据：${a.reasons.join('；')}` : '')
     + (a.tips.length ? `\n建议：${a.tips.join('；')}` : '');
   $('kpiAssessSub').textContent = a.sampleN
-    ? `均 ${Math.round(a.delayAvg)}s · 最长 ${a.delayMax}s · 达标 ${Math.round(a.withinPct)}%`
+    ? `均 ${Math.round(a.delayAvg)}s · 最长 ${a.delayMax}s · ρ ${a.rhoPct}%`
     : `暂无扫描 · ρ ${a.rhoPct}%`;
   // 机器狗 + 天车卡片
   const dogBusy = robots.filter(r => BUSY_STATES.includes(r.state)).length;

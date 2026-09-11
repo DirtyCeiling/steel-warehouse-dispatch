@@ -292,11 +292,13 @@ check('首页「今日进厂车辆」KPI 渲染', /^\d+$/.test(String(el('kpiTod
   `${el('kpiTodayIn').textContent} · ${el('kpiTodayInSub').textContent}`);
 check('首页「进厂等待」KPI 渲染', String(el('kpiWait').textContent).trim().length > 0,
   `${el('kpiWait').textContent} · ${el('kpiWaitSub').textContent}`);
-check('首页「扫描能力评估」KPI 渲染（结论 + 延时副行）',
-  /满足|紧张|不满足/.test(String(el('kpiAssess').textContent))
-  && (/均 \d+s · 最长 \d+s · 达标 \d+%/.test(String(el('kpiAssessSub').textContent))
+check('首页「扫描能力评估」KPI 渲染（达标率主值 + 满足情况小字 + 延时副行）',
+  /^(\d+%|–)\s*(满足|紧张|不满足)$/.test(String(
+    el('kpiAssess').textContent || el('kpiAssess').innerHTML   // DOM 桩不回填 textContent，回退 innerHTML 剥标签
+  ).replace(/<[^>]+>/g, '').trim())
+  && (/均 \d+s · 最长 \d+s · ρ \d+%/.test(String(el('kpiAssessSub').textContent))
     || /暂无扫描/.test(String(el('kpiAssessSub').textContent))),
-  `${el('kpiAssess').textContent} · ${el('kpiAssessSub').textContent}`);
+  `${el('kpiAssess').innerHTML} · ${el('kpiAssessSub').textContent}`);
 check('待扫码积压探针可用（非负整数）', Number.isInteger(sandbox.__dbg.scanBacklog) && sandbox.__dbg.scanBacklog >= 0,
   '积压 ' + sandbox.__dbg.scanBacklog);
 check('首页「待扫描任务」KPI 渲染（非负整数 + 副行）',
