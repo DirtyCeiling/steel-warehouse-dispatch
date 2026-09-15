@@ -75,12 +75,13 @@ export const PARAM_SCHEMA = [
   },
   {
     sec: 'crane', secLabel: '天车（吊运装卸）',
-    desc: '6 台（每跨 2 台，TC-A1~TC-C2）：行进速度（大车）/ 小车运行速度 / 吊取 / 放下耗时',
+    desc: '6 台（每跨 2 台，TC-A1~TC-C2）：行进速度（大车）/ 小车运行速度 / 吊取 / 放下耗时；出库装车落车后需取回吊绳（仅出库吊，取绳期间天车被占用，货车待末吊吊绳取出后复验离场；0 = 关闭该环节）',
     defs: [
       { key: 'speed',     label: '行进速度', min: 0.5, max: 10, step: 0.1, unit: 'm/s', def: 4.0 },
       { key: 'trolleySpeed', label: '小车运行速度', min: 0.2, max: 4, step: 0.1, unit: 'm/s', def: 1.0 },
       { key: 'hoistTime', label: '吊取时间', min: 0.5, max: 180, step: 0.1, unit: '秒', def: 2.0 },
       { key: 'lowerTime', label: '放下时间', min: 0.5, max: 180, step: 0.1, unit: '秒', def: 1.8 },
+      { key: 'unhookTime', label: '取吊绳时间', min: 0, max: 300, step: 1, unit: '秒', def: 74 },
     ],
   },
   {
@@ -105,8 +106,9 @@ export const PARAM_SCHEMA = [
   },
   {
     sec: 'warehouse', secLabel: '库房参数',
-    desc: '库房尺寸/码放/垛容（「库房参数设计」页提供完整编辑与捆制规则）：料架限高与垛内铺宽实时改变垛容与落位；捆径口径 = 一捆合起来的外接圆直径上下限（细棒材自动增支成大捆、超上限自动单支吊运）；「每垛捆数上限」与「库容装载比例」变更后在「库房参数设计」页重建库区生效',
+    desc: '库房尺寸/码放/垛容（「库房参数设计」页提供完整编辑与捆制规则）：料架限高与垛内铺宽实时改变垛容与落位；捆径口径 = 一捆合起来的外接圆直径上下限（细棒材自动增支成大捆、超上限自动单支吊运）；「每库位垛数」为全局统一值（可在该页按库位单独覆盖），与「每垛捆数上限」「库容装载比例」一样变更后在「库房参数设计」页重建库区生效',
     defs: [
+      { key: 'stacksPerSlot', label: '每库位垛数',   min: 1,    max: 8,    step: 1,    unit: '垛',  def: 8 },
       { key: 'rackH',     label: '料架限高',     min: 2,    max: 6,    step: 0.1,  unit: 'm',  def: 3.0 },
       { key: 'pileW',     label: '垛内铺宽',     min: 1.5,  max: 4,    step: 0.05, unit: 'm',  def: 2.7 },
       { key: 'railTop',   label: '垫梁顶标高',   min: 0,    max: 1,    step: 0.01, unit: 'm',  def: 0.41 },

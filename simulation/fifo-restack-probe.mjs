@@ -99,7 +99,7 @@ for (let n = 0; n < 6; n++) {
   const bIdx = k.bundles.findIndex(b => b.id === t.bundleId);
   const tb = k.bundles[bIdx];
   const above = tb && tb.pos
-    ? k.bundles.filter(o => o !== tb && o.pos && o.pos.seat === tb.pos.seat && o.pos.layer > tb.pos.layer).length   // 座位列正上方压货（真压货）
+    ? k.bundles.filter(o => o !== tb && o.pos && o.pos.layer > tb.pos.layer).length   // 目标捆上方各层压货（整层倒运口径）
     : Math.max(0, stkN - 1 - bIdx);
   const qLen0 = sandbox.__dbg.craneJobsDebug.length;
   t.state = 'pending';
@@ -109,7 +109,7 @@ for (let n = 0; n < 6; n++) {
   const newJobs = sandbox.__dbg.craneJobsDebug.slice(qLen0);
   const rsJobs = newJobs.filter(j => j.kind === 'restack');
   console.log(`#${n + 1} 任务 ${t.id} · 库位 ${t.slot.code} 第${t.stackIdx + 1}垛 · 全垛 ${stkN} 捆`
-    + ` · 目标捆 ${tb && tb.pos ? `第${tb.pos.layer + 1}层第${tb.pos.seat + 1}位` : `序号${bIdx}`} · 座位列压货 ${above} 捆`
+    + ` · 目标捆 ${tb && tb.pos ? `第${tb.pos.layer + 1}层第${tb.pos.seat + 1}位` : `序号${bIdx}`} · 上方整层压货 ${above} 捆`
     + ` · 实际入队倒垛吊 ${rsJobs.length} · 装车吊 ${newJobs.filter(j => j.kind === 'out').length}`);
   if (above > 0) buriedCnt++; else topCnt++;
   rsTotal += rsJobs.length;
@@ -123,5 +123,5 @@ for (let n = 0; n < 6; n++) {
   const st = t.slot;
   if (st.state === 'locked') { st.state = 'occupied'; st.lockSpec = null; st.lockStack = null; }
 }
-console.log(`\n结论：${buriedCnt} 次目标捆被压（倒垛 ${rsTotal} 吊 = 只倒同列压货）· ${topCnt} 次未被压直取（免倒垛）`);
+console.log(`\n结论：${buriedCnt} 次目标捆被压（倒垛 ${rsTotal} 吊 = 上方整层压货全倒）· ${topCnt} 次未被压直取（免倒垛）`);
 process.exit(0);

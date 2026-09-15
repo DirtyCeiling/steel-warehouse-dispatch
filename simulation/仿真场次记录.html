@@ -99,6 +99,7 @@
       <b>车辆进厂时效</b>（组车等待 / 通道排队 / 在场全程的均值 / P95 / 最大）、
       <b>扫描时效</b>（扫码延时均值 / P95 / 最大，按场次号过滤任务台账）、
       <b>机器狗效率评估</b>（需求 vs 能力、利用率、待扫码积压、结论与整改建议）、
+      <b>天车作业明细</b>（按天车汇总吊数/作业时长 + 逐吊执行五时刻：排队 → 认领开始 → 吊取 → 落位/落车 → 取绳，含时长拆解、倒垛让位联动）、
       <b>捆级明细</b>（每一捆的捆号、放好时刻、机器狗开始扫码 / 扫码入库时刻、入账完成时刻；出库目标捆被压时的<b>倒垛作业</b>逐吊单列：
       源垛→目标垛、被倒捆号、让位目标捆、双点确认时刻，与所属出库车同车牌 / 车次 / 合同；标记列注明扫码机器狗编号、直通方式与异常明细）与 KPI。
       每场卡片支持 <b>⤓ 导出本场</b>（完整数据记录 CSV）与 <b>🗑 删除单场留档</b>。
@@ -127,6 +128,10 @@ const { esc, delayCls } = SIM;
  *   + paramsStart/paramsEnd（六段调度参数快照）
  *   + vehicles[{plate,kind,loads,batch,spec,lane,summonAt,leftAt}]（lane = 进场通道号 1/2/3）
  *   + scan{inCount,delayAvg,delayP95,delayMax,postAvg,perRobot[...]}
+ *   + perCrane[{name,in,out,restack,busy,busyPct}]（按天车汇总：吊数分型 / 吊运作业时长 / 作业占比）
+ *   + cranes[{crane,kind,spec,slot,stack,bundle,plate,batch,order,forBundle,queueAt,startAt,hoistAt,dropAt,unhookAt}]
+ *     （天车逐吊执行明细：排队/认领开始/吊取/落位落车/取绳 五时刻（仿真秒）；倒垛吊 slot/stack 为「源→目标」，
+ *       forBundle = 所让位的出库目标捆号；unhookAt 仅出库装车吊有。旧版归档无此字段时显示提示）
  *   + bundles[{bundle,io,spec,slot,stack,putAt,scanStartAt,scanDoneAt,doneAt,scanDelay,restack,forBundle,robot,retries,manualFix,mismatch,plate,batch,order,anomaly,skip,manual}]
  *     （捆级明细：每捆放好 -> 机器狗扫码 -> 入账/装车时刻；io=restack 为倒垛确认行 —— 库位/垛显示「源→目标」，
  *       forBundle = 本吊让位的出库目标捆号；出库行 restack = 装车前倒垛吊数；robot = 扫码机器狗编号（直通为空）；
@@ -147,7 +152,7 @@ const num = (v, digits = 1) => v == null ? '-' : (+v).toFixed(digits).replace(/\
  * （机器狗编号 / 人工核对·范围外 / 免检直通·未监测跨）+ 异常明细（重试 / 人工介入 / 运单差异） */
 function bundleMarks(b) {
   const m = [];
-  if (b.io === 'restack' && b.forBundle) m.push({ t: `为出库捆 ${esc(b.forBundle)} 让位`, c: 'mark rs', title: '目标捆被压：先倒走其座位列正上方压货再装车' });
+  if (b.io === 'restack' && b.forBundle) m.push({ t: `为出库捆 ${esc(b.forBundle)} 让位`, c: 'mark rs', title: '目标捆被压：先整层倒走其上方压货再装车（钢材捆堆叠不稳，只抽一列会同层塌陷）' });
   if (b.io === 'out' && b.restack > 0) m.push({ t: `被压·先倒垛 ${b.restack} 吊`, c: 'mark rs', title: '该捆上方有压货：装车前倒垛移走（见同场倒垛行）' });
   if (b.robot) m.push({ t: `机器狗 ${esc(b.robot)} 扫码`, c: 't-dim', title: '' });
   if (b.skip) m.push(b.manual
@@ -164,7 +169,7 @@ function bundleMarks(b) {
 const SEC_NAMES = { robot: '机器狗', crane: '天车', truck: '货车', production: '生产节奏', placement: '归堆策略', abnormal: '异常注入', assess: '效率评估' };
 const PARAM_LABELS = {
   robot: { count: '机器狗数量(台)', chargerCount: '充电桩数量(个)', speed: '行进速度(m/s)', scanTime: '扫码核验时间(秒)', chargeHours: '充满电时间(小时)', endurance: '满电续航(小时)', spanA: '监测A跨', spanB: '监测B跨', spanC: '监测C跨', lowBattery: '返航充电阈值(%)', fullBattery: '满电阈值(%)', interruptCharge: '充电打断阈值(%)' },
-  crane: { speed: '行进速度(m/s)', hoistTime: '吊取时间(秒)', lowerTime: '放下时间(秒)' },
+  crane: { speed: '行进速度(m/s)', hoistTime: '吊取时间(秒)', lowerTime: '放下时间(秒)', unhookTime: '取吊绳时间(秒)' },
   truck: { speed: '行进速度(m/s)', minLoads: '每车最少吊数', maxLoads: '每车最多吊数', mixedSpecPct: '混装车比例(%)', plateScanTime: '车牌识别时间(秒)', manifestTime: '运单吊取时间(秒)', verifyTime: '出场复验时间(秒)' },
   production: { inPerDay: '每日进厂车辆(辆/日)', outPerDay: '每日出厂车辆(辆/日)', dayHours: '日时长(小时)' },
   placement: {},   // 归堆权重项多，仅展示原始键
@@ -241,7 +246,7 @@ function renderRun(r, idx) {
     `<span class="rk">扫码延时 <b class="${delayCls(sc.delayAvg)}">${sc.delayAvg != null ? sc.delayAvg + 's' : '-'}</b></span>` +
     `<span class="rk">数据源 <b>${r.feedMode === 'local' ? '本地' : r.feedMode}</b></span>` +
     `<span class="head-acts">` +
-    `<button data-exp="${esc(r.id)}" title="导出本场完整数据记录 CSV（概览/KPI + 参数快照 + 车辆 + 机器狗时效 + 捆级明细）">⤓ 导出本场</button>` +
+    `<button data-exp="${esc(r.id)}" title="导出本场完整数据记录 CSV（概览/KPI + 参数快照 + 车辆 + 机器狗时效 + 天车作业明细 + 捆级明细）">⤓ 导出本场</button>` +
     `<button data-del="${esc(r.id)}" title="删除本场留档（不影响其他场次与任务台账，不可恢复）">🗑</button>` +
     `</span>` +
     `<span class="arrow">▶</span>`;
@@ -367,6 +372,49 @@ function renderRun(r, idx) {
     if ((a.tips || []).length) html += `<div class="t-dim" style="margin-top:3px;font-size:12px">整改建议：${a.tips.map(esc).join('；')}</div>`;
   }
 
+  /* 天车作业明细（逐吊执行五时刻：排队 → 认领开始 → 吊取 → 落位/落车 → 取绳；旧版归档无此字段时提示） */
+  const cs = r.cranes || [];
+  if (cs.length || (r.perCrane || []).length || r.ledgerCount != null) {
+    const cin = cs.filter(c => c.kind === 'in').length, cout = cs.filter(c => c.kind === 'out').length, crsN = cs.length - cin - cout;
+    html += `<div class="sec-title">🚜 天车作业明细（${cs.length} 吊 · 入 ${cin} / 出 ${cout}${crsN ? ` / 倒垛 ${crsN}` : ''}${r.cranesTruncated ? ' · 仅保留最后 800 吊' : ''}）` +
+      (cs.length ? `<button data-expcranes="${esc(r.id)}" title="导出本场逐吊执行明细 CSV（五时刻 + 时长拆解 + 天车/车牌/车次/合同）">导出天车 CSV</button>` : '') + `</div>`;
+    const pc = r.perCrane || [];
+    if (pc.length) {
+      html += `<div class="kv-grid" style="margin-top:6px">`;
+      for (const p of pc) html += `<div class="kv"><div class="k">${esc(p.name)}（入 ${p.in} · 出 ${p.out} · 倒 ${p.restack}）</div>` +
+        `<div class="v">吊运 ${fmtSim(p.busy)}${p.busyPct != null ? ` · ${p.busyPct}%` : ''}</div></div>`;
+      html += `</div>`;
+    }
+    if (cs.length) {
+      html += `<table><tr><th>天车</th><th>类型</th><th>规格</th><th title="倒垛吊显示 源垛→目标垛">库位·垛</th><th>捆号</th>` +
+        `<th>车牌</th><th>车次</th><th>合同</th>` +
+        `<th title="排队入列（作业条件未就绪的等待起点）">排队</th><th title="天车认领、开始前往吊点">开始</th>` +
+        `<th title="吊起完成（离垛/离车）">吊取</th><th title="落位完成（入库落料 / 倒垛落位 / 出库落车）">落位</th>` +
+        `<th title="出库装车吊落车后取回吊绳完成">取绳</th>` +
+        `<th title="排队等待 / 吊运作业（认领→落位）/ 取绳（秒）">时长拆解(秒)</th><th>标记</th></tr>`;
+      for (const c of cs) {
+        const wait = Math.max(0, c.startAt - c.queueAt), work = Math.max(0, c.dropAt - c.startAt);
+        const hook = c.unhookAt != null ? Math.max(0, c.unhookAt - c.dropAt) : null;
+        const marks = [];
+        if (c.kind === 'restack' && c.forBundle) marks.push(`为出库捆 ${esc(c.forBundle)} 让位`);
+        if (c.unhookAt != null) marks.push('含取吊绳');
+        html += `<tr><td class="mono">${esc(c.crane)}</td>` +
+          `<td class="${c.kind === 'in' ? 't-in' : c.kind === 'out' ? 't-out' : 't-rs'}">${c.kind === 'in' ? '入库' : c.kind === 'out' ? '出库' : '倒垛'}</td>` +
+          `<td>${esc(c.spec || '-')}</td><td class="mono">${esc(c.slot || '-')} ${esc(String(c.stack ?? ''))}</td>` +
+          `<td class="mono">${esc(c.bundle || '-')}</td><td class="mono">${esc(c.plate || '-')}</td>` +
+          `<td class="mono">${esc(c.batch || '-')}</td><td class="mono">${esc(c.order || '-')}</td>` +
+          `<td class="mono">${fmtSimClock(c.queueAt)}</td><td class="mono">${fmtSimClock(c.startAt)}</td>` +
+          `<td class="mono">${fmtSimClock(c.hoistAt)}</td><td class="mono">${fmtSimClock(c.dropAt)}</td>` +
+          `<td class="mono">${c.unhookAt != null ? fmtSimClock(c.unhookAt) : '<span class="t-dim">—</span>'}</td>` +
+          `<td class="mono">${wait} / ${work}${hook != null ? ' / ' + hook : ''}</td>` +
+          `<td class="td-marks">${marks.join('；')}</td></tr>`;
+      }
+      html += `</table>`;
+    } else if (r.ledgerCount != null) {
+      html += `<div class="t-dim" style="padding:4px 0">${r.ledgerCount ? '本场次为旧版归档，未含天车逐吊明细 —— 重新开跑的场次会自动记录每吊的排队 / 吊取 / 落位 / 取绳时刻' : '本场无天车作业'}</div>`;
+    }
+  }
+
   /* 捆级明细（每一捆：放好 -> 机器狗扫码 -> 入账/装车；出库被压捆的倒垛逐吊单列，时刻为仿真世界时钟） */
   const bs = r.bundles || [];
   const inN = bs.filter(b => b.io === 'in').length, outN = bs.filter(b => b.io === 'out').length, rsN = bs.length - inN - outN;
@@ -449,6 +497,32 @@ function exportRunBundles(runId) {
   a.download = `场次捆级明细-${runId}-${bs.length}条.csv`;
   a.click();
   flash(`已导出 ${runId} 捆级明细 ${bs.length} 条`);
+}
+
+/* ---------------- 导出 CSV（单场次天车逐吊执行明细） ---------------- */
+function exportRunCranes(runId) {
+  const r = runs.find(x => x.id === runId);
+  const cs = (r && r.cranes) || [];
+  if (!cs.length) { flash('该场次无天车作业明细', false); return; }
+  const head = ['场次号', '天车', '类型', '规格', '库位', '垛', '捆号', '车牌', '车次', '合同号',
+    '排队(时钟)', '开始(时钟)', '吊取(时钟)', '落位/落车(时钟)', '取绳(时钟)',
+    '排队等待(秒)', '吊运作业(秒)', '取绳(秒)', '倒垛让位捆'];
+  const rows = cs.map(c => [
+    r.id, c.crane, c.kind === 'in' ? '入库' : c.kind === 'restack' ? '倒垛' : '出库', c.spec || '',
+    c.slot || '', String(c.stack ?? ''), c.bundle || '', c.plate || '', c.batch || '', c.order || '',
+    fmtSimClock(c.queueAt), fmtSimClock(c.startAt), fmtSimClock(c.hoistAt), fmtSimClock(c.dropAt),
+    c.unhookAt != null ? fmtSimClock(c.unhookAt) : '',
+    Math.max(0, c.startAt - c.queueAt), Math.max(0, c.dropAt - c.startAt),
+    c.unhookAt != null ? Math.max(0, c.unhookAt - c.dropAt) : '',
+    c.kind === 'restack' ? (c.forBundle || '') : '',
+  ].join(','));
+  const csv = '﻿' + head.join(',') + '\n' + rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `场次天车作业明细-${runId}-${cs.length}吊.csv`;
+  a.click();
+  flash(`已导出 ${runId} 天车作业明细 ${cs.length} 吊`);
 }
 
 /* ---------------- 删除 / 导出（单场次） ---------------- */
@@ -536,6 +610,27 @@ function exportRunFull(runId) {   // 单场完整数据记录：概览/KPI + 参
       pr.map(p => [p.name, p.scans, p.tasksDone, p.distTotal, p.busyPct != null ? p.busyPct : '']));
     L.push('');
   }
+  const cs = r.cranes || [], pc = r.perCrane || [];
+  if (pc.length) {
+    L.push('【天车汇总】');
+    pushTable(['天车', '入库吊', '出库吊', '倒垛吊', '吊运作业时长(秒)', '作业占比(%)'],
+      pc.map(p => [p.name, p.in, p.out, p.restack, p.busy, p.busyPct ?? '']));
+    L.push('');
+  }
+  if (cs.length) {
+    L.push(`【天车作业明细（${cs.length} 吊）】`);
+    pushTable(['天车', '类型', '规格', '库位', '垛', '捆号', '车牌', '车次', '合同号',
+      '排队(时钟)', '开始(时钟)', '吊取(时钟)', '落位/落车(时钟)', '取绳(时钟)',
+      '排队等待(秒)', '吊运作业(秒)', '取绳(秒)', '倒垛让位捆'],
+      cs.map(c => [c.crane, c.kind === 'in' ? '入库' : c.kind === 'restack' ? '倒垛' : '出库', c.spec || '',
+        c.slot || '', String(c.stack ?? ''), c.bundle || '', c.plate || '', c.batch || '', c.order || '',
+        fmtSimClock(c.queueAt), fmtSimClock(c.startAt), fmtSimClock(c.hoistAt), fmtSimClock(c.dropAt),
+        c.unhookAt != null ? fmtSimClock(c.unhookAt) : '',
+        Math.max(0, c.startAt - c.queueAt), Math.max(0, c.dropAt - c.startAt),
+        c.unhookAt != null ? Math.max(0, c.unhookAt - c.dropAt) : '',
+        c.kind === 'restack' ? (c.forBundle || '') : '']));
+    L.push('');
+  }
   const bs = r.bundles || [];
   const rsN = bs.filter(b => b.io === 'restack').length;
   L.push(`【捆级明细（${bs.length} 条${rsN ? ` · 含倒垛确认 ${rsN} 吊` : ''}）】`);
@@ -574,9 +669,11 @@ function refresh(live = false) {
 }
 $('btnRefresh').addEventListener('click', () => refresh());
 $('btnExport').addEventListener('click', exportCsv);
-$('content').addEventListener('click', e => {   // 场次卡片内「导出捆级 CSV」（事件委托，卡片为动态渲染）
-  const btn = e.target.closest('button[data-expbundles]');
-  if (btn) exportRunBundles(btn.getAttribute('data-expbundles'));
+$('content').addEventListener('click', e => {   // 场次卡片内「导出捆级/天车 CSV」（事件委托，卡片为动态渲染）
+  const btn = e.target.closest('button[data-expbundles], button[data-expcranes]');
+  if (!btn) return;
+  if (btn.dataset.expbundles) exportRunBundles(btn.getAttribute('data-expbundles'));
+  else exportRunCranes(btn.getAttribute('data-expcranes'));
 });
 $('btnClear').addEventListener('click', () => {
   if (!runs.length) { flash('留档已为空'); return; }

@@ -7,7 +7,7 @@ import {
   openDb, seed, getInventory, getSlots, getSlot, getSpecs, setStack,
   syncBundlePositions, getBundlePositions, getSeedSlots,
   getAppData, seedAppData, createTask, updateTaskStatus, getSimParams, setSimParams, DB_PATH,
-  getBundleRules, applyBundleRules,
+  getBundleRules, applyBundleRules, getSlotRacks, applySlotRacks, globalStacksPerSlot,
 } from './database.js';
 import { PARAM_SCHEMA } from './params.js';
 import {
@@ -58,7 +58,7 @@ export function startServer({ host = HOST, port = PORT } = {}) {
       // ?variant=seed：期初种子分布（纯函数重建，与 /api/slots 行形状一致）——
       // 沙盘 ?feed=all 全量回放以此为期初，避免在数据库当前值上重放历史事件导致重复计数
       if (req.method === 'GET' && p === '/api/slots') {
-        if (url.searchParams.get('variant') === 'seed') return json(res, 200, { slots: getSeedSlots() });
+        if (url.searchParams.get('variant') === 'seed') return json(res, 200, { slots: getSeedSlots(db) });
         return json(res, 200, { slots: getSlots(db) });
       }
       if (req.method === 'GET' && p === '/api/specs') return json(res, 200, getSpecs(db));
@@ -80,6 +80,17 @@ export function startServer({ host = HOST, port = PORT } = {}) {
         const body = await readBody(req);
         const { warnings, weights } = applyBundleRules(db, body.rules || []);
         return json(res, 200, { rules: getBundleRules(db), warnings, weights });
+      }
+
+      // 每库位垛数（「库房参数设计」页）：全局统一值（warehouse.stacksPerSlot 参数）+
+      // 逐库位覆盖（racks = { 库位编码: 垛数|null }，null = 清除覆盖跟随全局）
+      if (req.method === 'GET' && p === '/api/slot-racks') {
+        return json(res, 200, { global: globalStacksPerSlot(), racks: getSlotRacks(db) });
+      }
+      if (req.method === 'PUT' && p === '/api/slot-racks') {
+        const body = await readBody(req);
+        const r = applySlotRacks(db, body.racks || {});
+        return json(res, 200, r);
       }
 
       // 主应用（三维库区）数据接口：前端启动时从这里加载全量数据

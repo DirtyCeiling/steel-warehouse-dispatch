@@ -281,7 +281,8 @@ function shadeHex(color, f = 0.42) {
  * 与 2D 沙盘完全共用同一套仿真逻辑与实时数据（storages / robots / cranes / trucks / tasks 等），
  * 仅把主画布的渲染层从 Canvas 2D 换成 three.js 三维场景：
  *   库位料架 + 捆级三维码放（落位坐标与库存三维视图同源）、机器狗四足行走/扫码波束、
- *   天车桥架/小车/吊绳吊物、货车沿通道进出场、立柱摄像头识别闪光、任务目标脉冲框。
+ *   天车（双梁桥式：双主梁+走台栏杆+端梁车轮+小车卷扬+吊梁吊绳吊物）、货车沿通道进出场、
+ *   立柱摄像头识别闪光、任务目标脉冲框。
  * 交互：左键拖拽平移 · 右键拖拽旋转 · 滚轮缩放 · 悬停看明细 · 点击库位下发出入库任务 ·
  *       Alt+点击 聚焦库位 · ⊞视图复位 回到总览。 */
 (function () {
@@ -997,105 +998,273 @@ function syncRobots(now) {
   }
 }
 
-/* ---------------- 天车（跨轨 + 桥架大车沿 X + 小车沿跨 + 吊绳吊物） ---------------- */
-const CRANE_Y = 8.6;   // 大车梁标高
+/* ---------------- 天车（双梁桥式起重机） ----------------
+ * 结构仿真桥吊搭建（标高均以 CRANE_Y 为基准，单位米）：
+ *   跨轨轨道（轨底板+轨头+两端车档+下方支撑立柱） -> 端梁（底面高轨顶 .42，大车轮下半外露如轮箱）
+ *   -> 双箱形主梁（跨向）+ 梁顶小车轨道 -> 小车架（跨坐双梁）+ 卷筒/电机/减速机 + 小车轮
+ *   起升穿绳：小车架四角四根起升绳 -> 扁担吊梁（双主梁间净空内升降）-> 两根吊绳下穿捆打带位。
+ *   大车轮随桥架行进滚动、小车轮随横移滚动、卷筒随吊具升降收放、作业中警示灯爆闪。 */
+const CRANE_Y = 8.6;   // 轨顶标高基准：跨轨轨顶 = CRANE_Y-.19，主梁底 = +.91，小车架底 = +2.42
+const CR_HOOK_LOW = 2.1, CR_HOOK_HIGH = CRANE_Y + .06;   // 吊梁行程：垛顶/车斗低位 ~ 主梁下高位（空吊梁恒低于主梁底）
 const craneG = new Map();
-let craneRailsSpans = -1;
-function makeCraneG(cr) {
+let craneRailsSpans = -1, craneLodBuilt = null;
+const _ropeV = new THREE.Vector3(), _ropeDown = V3(0, -1, 0);
+function ropeBetween(m, ax, ay, az, bx, by, bz) {   // 两点间张一根钢丝绳（几何约定：原点在绳顶、沿 -Y 单位长，实例侧拉伸至两点距）
+  const dx = bx - ax, dy = by - ay, dz = bz - az;
+  const len = Math.max(.04, Math.sqrt(dx * dx + dy * dy + dz * dz));
+  m.position.set((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2);
+  m.scale.set(1, len, 1);
+  m.quaternion.setFromUnitVectors(_ropeDown, _ropeV.set(dx / len, dy / len, dz / len));
+}
+function makeCraneG(cr, fine) {   // fine = 真实模细部（两侧走台栏杆/滑触线/小车轮/卷筒电机组）
   const g = new THREE.Group();
-  const beamMat = mat('craneBeam', () => new THREE.MeshStandardMaterial({ color: 0xa85577, metalness: .5, roughness: .45, emissive: 0xf472b6, emissiveIntensity: .08 }));
-  const girder = new THREE.Mesh(geo('craneGirder', () => new THREE.BoxGeometry(1.5, 1.1, M.SPAN_W - 1)), beamMat);
-  girder.position.set(0, CRANE_Y, WZ((cr.band.y0 + cr.band.y1) / 2));
-  girder.castShadow = true;
-  g.add(girder);
-  const endGeo = geo('craneEnd', () => new THREE.BoxGeometry(2.4, .9, 1.5));
-  for (const e of [cr.band.y0 + .5, cr.band.y1 - .5]) {
-    const em = new THREE.Mesh(endGeo, beamMat);
-    em.position.set(0, CRANE_Y - .8, WZ(e)); g.add(em);
+  const zMid = WZ((cr.band.y0 + cr.band.y1) / 2);
+  const yRailTop = CRANE_Y - .19;              // 跨轨轨顶
+  const yWheelB = yRailTop + .38;              // 大车轮心（轮下半外露于端梁底）
+  const yEndT = yRailTop + .76;                // 端梁中心（底面高轨顶 .42：大车轮下半外露，轮箱式端梁）
+  const yGirder = yEndT + .865;                // 主梁中心（底面坐端梁顶）
+  const yTRail = yGirder + .625;               // 小车轨道中心
+  const yWheelT = yTRail + .23;                // 小车轮心
+  const yTFrame = yWheelT + .45;               // 小车架中心
+  const paint = mat('crPaint', () => new THREE.MeshStandardMaterial({ color: 0xa85577, metalness: .4, roughness: .5 }));
+  const steelD = mat('crSteelD', () => new THREE.MeshStandardMaterial({ color: 0x3f444c, metalness: .65, roughness: .38 }));
+  const galv = mat('crGalv', () => new THREE.MeshStandardMaterial({ color: 0x99a3ad, metalness: .5, roughness: .55 }));
+  const mach = mat('crMach', () => new THREE.MeshStandardMaterial({ color: 0x5b6675, metalness: .6, roughness: .4 }));
+  /* 桥架：双箱形主梁（跨向 Z，让出两端端梁位）+ 梁顶小车轨道 */
+  const girderGeo = geo('crGirder2', () => new THREE.BoxGeometry(1.25, 1.05, M.SPAN_W - 2.3));
+  const tRailGeo = geo('crTRail', () => new THREE.BoxGeometry(.3, .2, M.SPAN_W - 3.2));
+  for (const sx of [-1, 1]) {
+    const gd = new THREE.Mesh(girderGeo, paint);
+    gd.position.set(sx * 2.0, yGirder, zMid); gd.castShadow = true; g.add(gd);
+    const tr = new THREE.Mesh(tRailGeo, steelD);
+    tr.position.set(sx * 2.0, yTRail, zMid); g.add(tr);
   }
-  const trolley = new THREE.Mesh(geo('craneTrolley', () => new THREE.BoxGeometry(1.9, .75, 2)),
-    mat('craneTrolley', () => new THREE.MeshStandardMaterial({ color: 0x2f4a7a, metalness: .5, roughness: .4, emissive: 0xf472b6, emissiveIntensity: .18 })));
-  trolley.castShadow = true; g.add(trolley);
-  const rope = new THREE.Mesh(geo('craneRope', () => { const g2 = new THREE.CylinderGeometry(.05, .05, 1); g2.translate(0, -.5, 0); return g2; }),
-    mat('craneRope', () => new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: .5 })));
-  g.add(rope);
-  const load = new THREE.Mesh(geo('craneLoad', () => new THREE.BoxGeometry(1, 1, 1)),
-    new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: .55, metalness: .3 }));
+  /* 两端端梁 + 大车轮（每端两轮沿轨向 X 排列，同压一条跨轨，随桥架行进滚动） */
+  const wheelsB = [];
+  const endGeo = geo('crEndT', () => new THREE.BoxGeometry(4.7, .68, 1.15));
+  const endMat = mat('crEndM', () => new THREE.MeshStandardMaterial({ color: 0x6d3b57, metalness: .35, roughness: .5 }));
+  const wheelGeoB = geo('crWheelB', () => { const w = new THREE.CylinderGeometry(.38, .38, .26, 18); w.rotateX(Math.PI / 2); return w; });
+  const wheelMat = mat('crWheelM', () => new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: .7, roughness: .3 }));
+  for (const ez of [cr.band.y0 + .5, cr.band.y1 - .5]) {
+    const et = new THREE.Mesh(endGeo, endMat);
+    et.position.set(0, yEndT, WZ(ez)); et.castShadow = true; g.add(et);
+    for (const sx of [-1, 1]) {
+      const w = new THREE.Mesh(wheelGeoB, wheelMat);
+      w.position.set(sx * 1.9, yWheelB, WZ(ez)); g.add(w); wheelsB.push(w);
+    }
+  }
+  if (fine) {   // 两侧检修走台：格栅铺板+踢脚板+双层扶手+立柱（InstancedMesh），主梁内侧滑触线
+    const deckGeo = geo('crDeck', () => new THREE.BoxGeometry(.95, .07, M.SPAN_W - 3.2));
+    const kickGeo = geo('crKick', () => new THREE.BoxGeometry(.05, .18, M.SPAN_W - 3.2));
+    const handGeo = geo('crHand', () => new THREE.BoxGeometry(.05, .05, M.SPAN_W - 3.2));
+    const handMat = mat('crHandM', () => new THREE.MeshStandardMaterial({ color: 0xb9c0c8, metalness: .4, roughness: .5 }));
+    const yDeck = yGirder - .12;
+    for (const sx of [-1, 1]) {
+      const deck = new THREE.Mesh(deckGeo, galv);
+      deck.position.set(sx * 3.08, yDeck, zMid); g.add(deck);
+      const kick = new THREE.Mesh(kickGeo, handMat);
+      kick.position.set(sx * 3.53, yDeck + .12, zMid); g.add(kick);
+      for (const hh of [.5, .95]) {
+        const hd = new THREE.Mesh(handGeo, handMat);
+        hd.position.set(sx * 3.5, yDeck + hh, zMid); g.add(hd);
+      }
+      const n = Math.round((M.SPAN_W - 3.2) / 4.6) + 1, half = (M.SPAN_W - 3.2) / 2;
+      const im = new THREE.InstancedMesh(geo('crPost', () => new THREE.BoxGeometry(.07, .98, .07)), handMat, n);
+      const m4 = new THREE.Matrix4();
+      for (let i = 0; i < n; i++) {
+        m4.makeTranslation(sx * 3.5, yDeck + .49, zMid - half + (n > 1 ? i / (n - 1) : 0) * half * 2);
+        im.setMatrixAt(i, m4);
+      }
+      im.instanceMatrix.needsUpdate = true;
+      g.add(im);
+    }
+    const cond = new THREE.Mesh(geo('crCond', () => new THREE.BoxGeometry(.09, .16, M.SPAN_W - 3.2)),
+      mat('crCondM', () => new THREE.MeshStandardMaterial({ color: 0x8a6a4a, metalness: .6, roughness: .4 })));
+    cond.position.set(-1.39, yGirder - .1, zMid); g.add(cond);   // 滑触线（西主梁内侧供电）
+  }
+  /* 小车：跨坐双梁的小车架 + 小车轮（梁顶轨道上沿跨滚动）+ 卷扬机械组（真实模）+ 警示灯 */
+  const trolley = new THREE.Group();
+  trolley.position.z = WZ(cr.y);
+  g.add(trolley);
+  const frame = new THREE.Mesh(geo('crTframe', () => new THREE.BoxGeometry(4.6, .6, 2.05)),
+    mat('crTrolley', () => new THREE.MeshStandardMaterial({ color: 0x2f4a7a, metalness: .5, roughness: .4, emissive: 0xf472b6, emissiveIntensity: .12 })));
+  frame.position.y = yTFrame; frame.castShadow = true; trolley.add(frame);
+  let drum = null;
+  const wheelsT = [];
+  if (fine) {
+    drum = new THREE.Mesh(geo('crDrum', () => { const d = new THREE.CylinderGeometry(.34, .34, 1.7, 16); d.rotateZ(Math.PI / 2); return d; }),
+      mat('crDrumM', () => new THREE.MeshStandardMaterial({ color: 0x8b939e, metalness: .7, roughness: .35 })));
+    drum.position.set(0, yTFrame + .64, -.3); trolley.add(drum);
+    for (const fx of [-.85, .85]) {   // 卷筒挡绳法兰
+      const fl = new THREE.Mesh(geo('crDrumF', () => { const f = new THREE.CylinderGeometry(.44, .44, .06, 16); f.rotateZ(Math.PI / 2); return f; }), drum.material);
+      fl.position.set(fx, yTFrame + .64, -.3); trolley.add(fl);
+    }
+    const motor = new THREE.Mesh(geo('crMotor', () => new THREE.BoxGeometry(.8, .55, .95)), mach);
+    motor.position.set(0, yTFrame + .575, .72); trolley.add(motor);
+    const gear = new THREE.Mesh(geo('crGear', () => new THREE.BoxGeometry(.55, .42, .6)), mach);
+    gear.position.set(1.05, yTFrame + .51, .72); trolley.add(gear);
+    const wheelGeoT = geo('crWheelT', () => { const w = new THREE.CylinderGeometry(.13, .13, .2, 12); w.rotateZ(Math.PI / 2); return w; });
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const w = new THREE.Mesh(wheelGeoT, wheelMat);
+      w.position.set(sx * 2.0, yWheelT, sz * .62); trolley.add(w); wheelsT.push(w);
+    }
+  }
+  const beacon = new THREE.Mesh(geo('crBeacon', () => new THREE.CylinderGeometry(.1, .13, .24, 10)),
+    new THREE.MeshStandardMaterial({ color: 0xffb020, emissive: 0xff9d00, emissiveIntensity: .25, roughness: .4 }));   // 各车独立材质：警示灯按车闪
+  beacon.position.set(1.75, yTFrame + .42, .8); trolley.add(beacon);
+  /* 起升穿绳：四根起升绳 -> 扁担吊梁 + 滑轮组 -> 两根吊绳（下端每帧落到位穿捆打带位） */
+  const ropeGeo = geo('craneRope', () => { const r = new THREE.CylinderGeometry(.05, .05, 1, 6); r.translate(0, -.5, 0); return r; });
+  const ropeMat = mat('crRopeM', () => new THREE.MeshStandardMaterial({ color: 0x7d838d, metalness: .6, roughness: .45 }));
+  const ropes = [];
+  for (let i = 0; i < 4; i++) { const r = new THREE.Mesh(ropeGeo, ropeMat); g.add(r); ropes.push(r); }
+  const slings = [];
+  for (let i = 0; i < 2; i++) {
+    const s = new THREE.Mesh(geo('crSling', () => { const r = new THREE.CylinderGeometry(.055, .055, 1, 6); r.translate(0, -.5, 0); return r; }),
+      mat('crSlingM', () => new THREE.MeshStandardMaterial({ color: 0xe86fa4, roughness: .6 })));   // 合成吊带（彩色软吊绳）
+    s.visible = false; g.add(s); slings.push(s);
+  }
+  const spread = new THREE.Mesh(geo('crSpread', () => new THREE.BoxGeometry(4.7, .26, .42)),
+    mat('crSpreadM', () => new THREE.MeshStandardMaterial({ color: 0x33507f, metalness: .55, roughness: .4 })));
+  g.add(spread);
+  const pulleys = [];
+  for (let i = 0; i < 2; i++) {
+    const p = new THREE.Mesh(geo('crPulley', () => new THREE.BoxGeometry(.52, .3, .52)), steelD);
+    g.add(p); pulleys.push(p);
+  }
+  const load = new THREE.Mesh(geo('craneLoad', () => { const b = new THREE.BoxGeometry(1, 1, 1); b.translate(0, .5, 0); return b; }),
+    new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: .55, metalness: .3 }));   // 底面原点方盒（与杆束几何同约定），真实模运行中换杆束截面
   load.castShadow = true; load.visible = false; g.add(load);
   const craneStrapMat = mat('strapG', () => new THREE.MeshStandardMaterial({ color: 0xc9a24e, metalness: .8, roughness: .3 }));
   const strapL = new THREE.Mesh(geo('craneStrap', () => new THREE.BoxGeometry(1, 1, 1)), craneStrapMat);
   const strapR = new THREE.Mesh(strapL.geometry, craneStrapMat);
   strapL.visible = strapR.visible = false; g.add(strapL); g.add(strapR);
   const name = makeLabel(cr.name, '#f472b6', 4.5);
-  name.position.y = CRANE_Y + 2.2; g.add(name);
+  name.position.y = yTFrame + 1.85; g.add(name);
   dynGroup.add(g);
-  return { g, trolley, rope, load, strapL, strapR, loadSpec: null, loadLod: null };
+  return { g, trolley, wheelsB, wheelsT, drum, beacon, ropes, slings, spread, pulleys, load, strapL, strapR, loadSpec: null, loadLod: null, lastHook: null, lx: NaN };
 }
 function syncCranes() {
-  // 跨轨（每跨上下各一条，静态，只建一次）
+  // 跨轨轨道（每跨上下各一条，静态，只建一次）：轨底板+轨头工字廓形，两端车档防越程，下方支撑立柱落到跨间通道
   if (cranes.length && craneRailsSpans !== cranes.length) {
     craneRailsSpans = cranes.length;
-    const railMat = mat('craneRail', () => new THREE.MeshStandardMaterial({ color: 0x6e5a85, roughness: .6 }));
-    const railGeo = geo('craneRail', () => new THREE.BoxGeometry(M.L, .45, .7));
+    const railMat = mat('craneRail', () => new THREE.MeshStandardMaterial({ color: 0x6e5a85, metalness: .55, roughness: .45 }));
+    const headG = geo('craneRailHead', () => new THREE.BoxGeometry(M.L, .48, .42));
+    const footG = geo('craneRailFoot', () => new THREE.BoxGeometry(M.L, .18, .9));
+    const stopG = geo('craneRailStop', () => new THREE.BoxGeometry(1.2, .9, .85));
+    const stopM = mat('craneStop', () => new THREE.MeshStandardMaterial({ color: 0x8a4a5c, roughness: .6 }));
+    const colG = geo('craneRailCol', () => { const c = new THREE.BoxGeometry(.55, 1, .55); c.translate(0, .5, 0); return c; });
+    const capG = geo('craneRailColCap', () => new THREE.BoxGeometry(1.05, .18, 1.05));
+    const armG = geo('craneRailArm', () => new THREE.BoxGeometry(.5, .35, 1));
+    const colM = mat('craneRailColM', () => new THREE.MeshStandardMaterial({ color: 0x8b8f96, roughness: .8 }));
+    const colH = CRANE_Y - 1.0;    // 柱顶标高（托臂承接轨底）
+    const laneXs = LANE_COLS.map(c => colX(c) + M.CELL_L / 2);   // 三条车道中心（仿真 x），立柱避让门洞
     const spansDone = new Set();
     for (const cr of cranes) {
       if (spansDone.has(cr.span)) continue;
       spansDone.add(cr.span);
-      for (const e of [cr.band.y0 + .5, cr.band.y1 - .5]) {
-        const rail = new THREE.Mesh(railGeo, railMat);
-        rail.position.set(0, CRANE_Y - .55, WZ(e));
-        envGroup.add(rail);
+      for (const [e, sgn] of [[cr.band.y0 + .5, -1], [cr.band.y1 - .5, 1]]) {   // 跨上/下轨：外侧横向通道
+        for (const [geoRef, y] of [[headG, CRANE_Y - .43], [footG, CRANE_Y - .76]]) {
+          const r = new THREE.Mesh(geoRef, railMat);
+          r.position.set(0, y, WZ(e));
+          envGroup.add(r);
+        }
+        for (const sx of [-1, 1]) {
+          const st = new THREE.Mesh(stopG, stopM);
+          st.position.set(sx * (M.L / 2 - .9), CRANE_Y - .35, WZ(e));
+          envGroup.add(st);
+        }
+        /* 支撑立柱：跨边横向通道外侧缘（避开机器狗走道中线），每 24m 一根、避让车道门洞；柱顶托臂承接轨底 */
+        const yc = e + sgn * 2.15;
+        for (let x = 12; x < M.L - 6; x += 24) {
+          if (laneXs.some(lx => Math.abs(x - lx) < 4.5)) continue;
+          const col = new THREE.Mesh(colG, colM);
+          col.scale.y = colH;
+          col.position.set(WX(x), 0, WZ(yc));
+          col.castShadow = true;
+          envGroup.add(col);
+          const cap = new THREE.Mesh(capG, colM);
+          cap.position.set(WX(x), colH + .09, WZ(yc));
+          envGroup.add(cap);
+          const arm = new THREE.Mesh(armG, colM);
+          arm.scale.z = Math.abs(e - yc) + 1.0;
+          arm.position.set(WX(x), CRANE_Y - 1.0, WZ((e + yc) / 2));
+          envGroup.add(arm);
+        }
       }
     }
+  }
+  const lodWant = !!window.__lodSimple;
+  if (craneLodBuilt !== lodWant) {   // 精度切换：天车组整体重建（走台栏杆/卷扬机械组随精度增减）
+    craneLodBuilt = lodWant;
+    for (const C of craneG.values()) dynGroup.remove(C.g);
+    craneG.clear();
   }
   const ids = focusTaskIds();
   for (const cr of cranes) {
     let C = craneG.get(cr.name);
-    if (!C) { C = makeCraneG(cr); craneG.set(cr.name, C); }
+    if (!C) { C = makeCraneG(cr, !lodWant); craneG.set(cr.name, C); }
     const rel = !ids || !!(cr.job && ids.has(cr.job.taskId));
     C.g.visible = rel;
     if (!rel) continue;
-    C.g.position.x = WX(cr.x);
+    const wx = WX(cr.x);
+    if (isFinite(C.lx)) for (const w of C.wheelsB) w.rotation.z -= (wx - C.lx) / .38;   // 大车轮随桥架行进滚动
+    C.lx = wx;
+    C.g.position.x = wx;
     const tz = WZ(cr.y);
-    C.trolley.position.set(0, CRANE_Y + .9, tz);
-    // 吊钩高度：吊取/放下时按进度走 V 形轨迹，其余悬停高位
+    for (const w of C.wheelsT) w.rotation.x -= (tz - C.trolley.position.z) / .13;       // 小车轮随横移滚动
+    C.trolley.position.z = tz;
+    // 吊具高度：吊取/放下时按进度走 V 形轨迹（先落到位再起升）；取吊绳（UNHOOK）保持车斗低位摘绳作业；其余高位悬挂
     const dur = cr.state === 'HOIST' ? CFG.crane.hoistTime : cr.state === 'LOWER' ? CFG.crane.lowerTime : 0;
-    const high = CRANE_Y + .5, low = 2.1;
-    let hookY = high;
-    if (dur) {
-      const p = Math.min(1, cr.timer / dur);
-      hookY = low + (high - low) * Math.abs(Math.cos(Math.PI * p));
-    }
-    C.rope.position.set(0, high, tz);
-    C.rope.scale.y = Math.max(.05, high - hookY);
+    let hookY = cr.state === 'UNHOOK' ? CR_HOOK_LOW : CR_HOOK_HIGH;
+    if (dur) hookY = CR_HOOK_LOW + (CR_HOOK_HIGH - CR_HOOK_LOW) * Math.abs(Math.cos(Math.PI * Math.min(1, cr.timer / dur)));
+    if (C.drum && C.lastHook != null) C.drum.rotation.x += (C.lastHook - hookY) / .34;  // 卷筒随吊具升降收放绳
+    C.lastHook = hookY;
+    C.beacon.material.emissiveIntensity = cr.job ? 1 + Math.max(0, Math.sin(simTime * 7)) * 1.4 : .25;   // 作业中警示灯爆闪，待命常暗
     const showLoad = !!cr.carrying || (cr.state === 'LOWER' && cr.timer < CFG.crane.lowerTime * .6);
     C.load.visible = showLoad;
+    let spY;   // 扁担吊梁高度
     if (showLoad) {
       const sp = cr.carrying || (cr.job && cr.job.spec) || null;
-      const lodWant = !!window.__lodSimple;
       if (sp && (C.loadSpec !== sp || C.loadLod !== lodWant)) {   // 吊具捆与垛内落位捆同几何同精度：真实=杆束截面 / 简模=方盒
         C.loadSpec = sp;
         C.loadLod = lodWant;
         C.load.material.color.set(sp.color);
         C.load.geometry = lodWant
-          ? geo('craneLoad', () => new THREE.BoxGeometry(1, 1, 1))
+          ? geo('craneLoad', () => { const b = new THREE.BoxGeometry(1, 1, 1); b.translate(0, .5, 0); return b; })
           : geo('bnd' + SPECS.indexOf(sp), () => bundleGeoFor(sp));   // 与垛内捆共用同一杆束截面几何
       }
       const len = (cr.job && cr.job.len) || 9;
       const lenU = Math.min(len, BAR_MAX);
       const Hb = sp ? bundleH(sp) : .65, Wb = sp ? bundleW(sp) : .9;
+      const yBot = hookY - 1.15;   // 捆底标高（吊梁吊点下挂 1.15m）
       C.load.scale.set(lenU, Hb, Wb);   // 与垛内落位捆同截面同长：吊着什么样，落下就什么样
-      C.load.position.set(0, hookY - .4, tz);
-      const strapOn = !lodWant && sp && sp.rods > 1;   // 打捆带（真实模多杆捆）：±28% 捆长两道金带，与垛内捆同位
-      for (const st of [C.strapL, C.strapR]) st.visible = !!strapOn;
+      C.load.position.set(0, yBot, tz);
+      spY = yBot + Hb + .28;
+      const strapOn = !lodWant && sp && sp.rods > 1;   // 打捆带（真实模多杆捆）：±28% 捆长两道金带，与垛内捆同位（带心=捆心）
+      C.strapL.visible = C.strapR.visible = !!strapOn;
       if (strapOn) {
-        C.strapL.position.set(-lenU * .28, hookY - .4 + Hb / 2, tz);
-        C.strapR.position.set(lenU * .28, hookY - .4 + Hb / 2, tz);
-        for (const st of [C.strapL, C.strapR]) st.scale.set(.13, Hb + .04, Wb + .04);
+        C.strapL.position.set(-lenU * .28, yBot + Hb / 2, tz);
+        C.strapR.position.set(lenU * .28, yBot + Hb / 2, tz);
+        for (const st of [C.strapL, C.strapR]) st.scale.set(.07, Hb + .04, Wb + .04);
+      }
+      const sX = lenU * .28;   // 吊绳穿捆位 = 打带位（捆短于吊梁时吊绳内收斜拉）
+      for (const [s, sx] of [[C.slings[0], -1], [C.slings[1], 1]]) {
+        s.visible = true;
+        ropeBetween(s, sx * 2.3, spY - .08, tz, sx * sX, yBot + Hb - .12, tz);
       }
     } else {
       C.strapL.visible = C.strapR.visible = false;
+      C.slings[0].visible = C.slings[1].visible = false;
+      spY = hookY + .5;   // 空吊梁：高位悬挂（恒低于主梁底面，起升绳在双梁间净空内）
     }
+    C.spread.position.set(0, spY, tz);
+    C.pulleys[0].position.set(-.95, spY + .04, tz);
+    C.pulleys[1].position.set(.95, spY + .04, tz);
+    const yRT = CRANE_Y + 2.44;   // 起升绳上锚点 = 小车架底面
+    ropeBetween(C.ropes[0], -.72, yRT, tz - .5, -.95, spY + .1, tz - .33);
+    ropeBetween(C.ropes[1], .72, yRT, tz - .5, .95, spY + .1, tz - .33);
+    ropeBetween(C.ropes[2], -.72, yRT, tz + .5, -.95, spY + .1, tz + .33);
+    ropeBetween(C.ropes[3], .72, yRT, tz + .5, .95, spY + .1, tz + .33);
   }
 }
 

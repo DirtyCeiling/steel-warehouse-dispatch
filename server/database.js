@@ -1,5 +1,6 @@
 // 本地库存数据库（Node + SQLite / better-sqlite3）
-// 存储钢厂棒材库区库存/库位数据：库位 -> 8 垛 -> 每垛 ≤ 400 捆（限高收窄）
+// 存储钢厂棒材库区库存/库位数据：库位 -> 垛 1~8 个（全局参数 stacksPerSlot + 逐库位覆盖
+// slot_racks 表，「库房参数设计」页编辑）-> 每垛 ≤ 400 捆（通用上限，实际按限高收窄）
 // 另含主应用（三维库区）数据：库区/跨/库位/钢卷/调度任务
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +23,7 @@ export function openDb(path = DB_PATH) {
   migrate(db);
   syncGeoCfg(db);     // 库房几何/捆制参数：sim_params warehouse 段 -> geoCfg
   syncSpecRules(db);  // 捆制规则覆盖 -> specRulesCache
+  syncRackOverrides(db);   // 每库位垛数覆盖 -> slotRacksCache
   if (!hasAppData(db)) {
     try { seedAppData(db); } catch { /* 种子 JSON 缺失时保持空库 */ }
   }
@@ -40,6 +42,13 @@ function migrate(db) {
     CREATE TABLE IF NOT EXISTS spec_rules (
       spec  TEXT PRIMARY KEY,
       rods  INTEGER NOT NULL CHECK (rods BETWEEN 0 AND 999)
+    );
+    -- 每库位垛数（货架数）覆盖（「库房参数设计」页编辑）：无行 = 全局统一值
+    --（sim_params warehouse.stacksPerSlot）；code 与 storage_slots.code 同源但不设外键——
+    -- 重建库区会清空重灌 storage_slots，覆盖配置须保留
+    CREATE TABLE IF NOT EXISTS slot_racks (
+      code  TEXT PRIMARY KEY,
+      racks INTEGER NOT NULL CHECK (racks BETWEEN 1 AND 8)
     );
     CREATE TABLE IF NOT EXISTS storage_slots (
       id     INTEGER PRIMARY KEY,
@@ -356,6 +365,7 @@ function rowsOf(rods) {
 /* 库房几何参数（默认 = 历史常量；openDb / setSimParams / 规则保存时与 sim_params 同步）
  * fillRatio = 库容装载比例（%）：仅期初灌库（seed/buildSeedSlots）按此比例铺层，重建库区生效 */
 export const GEO_DEFAULTS = {
+  stacksPerSlot: 8,
   rackH: 3.0, pileW: 2.7, railTop: 0.41, packShim: 15, packGap: 30,
   diaKw: 1.08, diaKh: 1.06, bundlesPerStack: 400, minDiaCm: 15, maxDiaCm: 50,
   fillRatio: 22,
@@ -371,6 +381,55 @@ function syncGeoCfg(db) {
 let specRulesCache = new Map();
 function syncSpecRules(db) {
   specRulesCache = new Map(db.prepare('SELECT spec, rods FROM spec_rules').all().map(r => [r.spec, r.rods]));
+}
+
+/* ================= 每库位垛数（货架数）：全局统一值 + 逐库位覆盖 =================
+ * 生效垛数 = slot_racks 覆盖 > sim_params warehouse.stacksPerSlot（geoCfg 同步）。
+ * 物理栅格固定 8 垛层（跨深 30m ÷ 3.75m 垛格），故取值 1~8；
+ * 调小后仍有存货的高位垛保留（垛清空即自然收敛），getSlots 按此合成垛行。 */
+let slotRacksCache = new Map();
+function syncRackOverrides(db) {
+  slotRacksCache = new Map(db.prepare('SELECT code, racks FROM slot_racks').all().map(r => [r.code, r.racks]));
+}
+const rackLimit = n => Math.max(1, Math.min(STACKS_PER_SLOT, Math.round(Number(n) || STACKS_PER_SLOT)));
+/** 全局统一垛数（sim_params warehouse.stacksPerSlot，已夹取 1~8） */
+export function globalStacksPerSlot() { return rackLimit(geoCfg.stacksPerSlot); }
+/** 生效垛数（不含在货兜底）：覆盖 > 全局参数 */
+export function effectiveRacks(code) {
+  const ov = slotRacksCache.get(code);
+  return rackLimit(ov != null ? ov : geoCfg.stacksPerSlot);
+}
+/** 逐库位覆盖快照：{ code: racks }（仅覆盖项），供 GET /api/slot-racks 与期初重灌 */
+export function getSlotRacks(db) {
+  syncRackOverrides(db);
+  return Object.fromEntries(slotRacksCache);
+}
+/** 更新逐库位覆盖：racks = { code: 垛数 | null }（null/越界回退 = 清除该覆盖，跟随全局）；
+ *  返回 { racks 合并后的覆盖快照, global 当前全局值, changed 变更明细 } */
+export function applySlotRacks(db, racks = {}) {
+  const known = new Set(db.prepare('SELECT code FROM storage_slots').all().map(r => r.code));
+  const up = db.prepare('INSERT INTO slot_racks (code, racks) VALUES (?, ?) ON CONFLICT(code) DO UPDATE SET racks=excluded.racks');
+  const del = db.prepare('DELETE FROM slot_racks WHERE code=?');
+  const changed = [];
+  const tx = db.transaction(() => {
+    for (const [code, raw] of Object.entries(racks || {})) {
+      if (!known.has(code)) continue;
+      const v = raw == null ? null : rackLimit(raw);
+      const cur = slotRacksCache.get(code);
+      if (v == null) {
+        if (cur == null) continue;
+        del.run(code); slotRacksCache.delete(code);
+        changed.push({ code, from: cur, to: null });
+      } else {
+        if (cur === v) continue;
+        const fromEff = effectiveRacks(code);   // 先取变更前生效值（覆盖 > 全局）
+        up.run(code, v); slotRacksCache.set(code, v);
+        changed.push({ code, from: fromEff, to: v });
+      }
+    }
+  });
+  tx();
+  return { racks: Object.fromEntries(slotRacksCache), global: rackLimit(geoCfg.stacksPerSlot), changed };
 }
 
 /** 捆制规则引擎：给定杆径(mm)，按三角数支数（1,3,6,10,15,21…）推导使捆径落入
@@ -491,7 +550,7 @@ function mulberry32(seed) {
  * 沙盘 ?feed=all 全量回放时以此为期初（数据库当前值已含历史出入库结果，
  * 直接在其上重放事件流会重复计数），从期初重建与驾驶实例一致的库存轨迹。
  */
-export function buildSeedSlots() {
+export function buildSeedSlots(rackOverrides = null) {
   const slots = generateSlots();
   const rnd = mulberry32(20260825);
   const out = [];
@@ -499,9 +558,11 @@ export function buildSeedSlots() {
     const pool = ZONE_SPEC_POOL[s.zone] || ['螺纹钢 Φ20'];
     const occupied = rnd() >= 0.04;                    // 约 4% 空库位（入库缓冲位，其余靠未满垛顶装）
     const primary = occupied ? pool[(s.area + s.span) % pool.length] : null;  // 按号区成带，相邻库位连片聚簇
-    const usedStacks = occupied ? 7 + (rnd() < 0.8 ? 1 : 0) : 0;   // 高密度：7~8 垛（八成库位满 8 垛），余下留空垛
+    const nRacks = rackOverrides && rackOverrides[s.code] != null
+      ? rackLimit(rackOverrides[s.code]) : effectiveRacks(s.code);   // 每库位垛数：覆盖 > 全局
+    const usedStacks = occupied ? Math.min(nRacks, 7 + (rnd() < 0.8 ? 1 : 0)) : 0;   // 高密度：尽量铺满（八成满垛），余下留空垛
     const stacks = [];
-    for (let n = 1; n <= STACKS_PER_SLOT; n++) {
+    for (let n = 1; n <= nRacks; n++) {
       if (n > usedStacks) { stacks.push({ stack_no: n, spec: null, count: 0, pending: 0, in_time: null }); continue; }
       let spec = primary;
       if (n === usedStacks && pool.length > 1 && rnd() < 0.3) {    // 末垛 30% 概率混入同族相近规格（相似货物同库位）
@@ -520,13 +581,14 @@ export function buildSeedSlots() {
       stacks.push({ stack_no: n, spec, count, pending: 0, in_time: inTime });
     }
     out.push({ id: s.id, code: s.code, zone: s.zone, area: s.area, span: s.span, merged: s.merged,
-      state: occupied ? 'occupied' : 'free', stacks });
+      state: occupied ? 'occupied' : 'free', racks: nRacks, stacks });
   }
   return out;
 }
-/** 期初种子分布（与 /api/slots 行形状一致，供沙盘全量回放重建期初） */
-export function getSeedSlots() {
-  return buildSeedSlots();
+/** 期初种子分布（与 /api/slots 行形状一致，供沙盘全量回放重建期初）；
+ *  逐库位垛数覆盖与全局参数一并生效（与 seed 同源） */
+export function getSeedSlots(db) {
+  return buildSeedSlots(getSlotRacks(db));
 }
 
 /**
@@ -536,8 +598,8 @@ export function getSeedSlots() {
  *  实际垛容按规格限高收窄），均已扫码入账；保留少量空库位与未满垛作入库缓冲）。
  */
 export function seed(db) {
-  syncGeoCfg(db); syncSpecRules(db);   // 重建按当前库房参数/捆制规则铺层
-  const slots = buildSeedSlots();
+  syncGeoCfg(db); syncSpecRules(db); syncRackOverrides(db);   // 重建按当前库房参数/捆制规则/每库位垛数铺层
+  const slots = buildSeedSlots(getSlotRacks(db));
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM bundle_positions').run();   // 捆级落位坐标随重建清空（外键依赖 storage_slots，须先删）
     db.prepare('DELETE FROM stacks').run();
@@ -559,13 +621,16 @@ export function seed(db) {
   tx();
 }
 
-/** 库存汇总 */
+/** 库存汇总（库容 = Σ 每库位生效垛数 × 每垛通用上限，逐库位垛数覆盖/全局参数即时生效） */
 export function getInventory(db) {
+  syncRackOverrides(db);
   const slotCount = db.prepare('SELECT COUNT(*) n FROM storage_slots').get().n;
   const totalBundles = db.prepare('SELECT COALESCE(SUM(count), 0) n FROM stacks').get().n;
   const pending = db.prepare('SELECT COALESCE(SUM(pending), 0) n FROM stacks').get().n;
   const occupiedSlots = db.prepare("SELECT COUNT(*) n FROM storage_slots WHERE state='occupied'").get().n;
-  const totalCapacity = slotCount * STACKS_PER_SLOT * geoCfg.bundlesPerStack;
+  let stackTotal = 0;
+  for (const r of db.prepare('SELECT code FROM storage_slots').all()) stackTotal += effectiveRacks(r.code);
+  const totalCapacity = stackTotal * geoCfg.bundlesPerStack;
   const perZone = db.prepare(`
     SELECT s.zone,
            COUNT(DISTINCT s.id)          AS slots,
@@ -581,7 +646,24 @@ export function getInventory(db) {
   };
 }
 
-/** 全部库位（含各垛）：两条查询 + 内存归并，避免逐库位 N+1 */
+/** 库位垛行按生效垛数裁剪/合成（getSlots / getSlot 共用）：空垛超出部分隐藏、
+ *  缺失补空行；仍有存货的高位垛保留到实际最高有货层 */
+function shapeSlotStacks(db, st) {
+  syncRackOverrides(db);
+  const n = effectiveRacks(st.code);
+  st.racks = n;
+  const raw = st.stacks;
+  const floor = raw.reduce((m, k) => Math.max(m, (k.count > 0 || k.pending > 0) ? k.stack_no : 0), n);
+  const keep = new Map(raw.map(k => [k.stack_no, k]));
+  st.stacks = [];
+  for (let no = 1; no <= floor; no++) {
+    st.stacks.push(keep.get(no) || { slot_id: st.id, stack_no: no, spec: null, count: 0, pending: 0, in_time: null });
+  }
+  return st;
+}
+
+/** 全部库位（含各垛）：两条查询 + 内存归并，避免逐库位 N+1。
+ *  每库位按生效垛数（覆盖 > 全局）裁剪/合成垛行——行内 racks = 生效垛数。 */
 export function getSlots(db) {
   const slots = db.prepare('SELECT * FROM storage_slots ORDER BY id').all()
     .map(s => ({ ...s, stacks: [] }));
@@ -590,6 +672,7 @@ export function getSlots(db) {
     const st = byId.get(k.slot_id);
     if (st) st.stacks.push(k);
   }
+  for (const st of slots) shapeSlotStacks(db, st);
   return slots;
 }
 
@@ -597,7 +680,7 @@ export function getSlots(db) {
 export function getSlot(db, id) {
   const s = db.prepare('SELECT * FROM storage_slots WHERE id=?').get(id);
   if (!s) return null;
-  return { ...s, stacks: getStacks(db, s.id) };
+  return shapeSlotStacks(db, { ...s, stacks: getStacks(db, s.id) });
 }
 
 function getStacks(db, slotId) {
@@ -611,12 +694,17 @@ export function getSpecs(db) {
 
 /**
  * 更新某一垛（spec/count/pending/in_time），并同步库位状态。
+ * 行不存在时按需补插（调大每库位垛数后未重建即可投用，序号 1~8 受表约束）。
  * 垛清零时强制清空 spec 与 pending，并删除该垛全部捆级落位坐标；
- * 库位所有垛清零后状态置 free。垛不存在返回 null。
+ * 库位所有垛清零后状态置 free。垛序号超物理上限返回 null。
  */
 export function setStack(db, slotId, stackNo, patch = {}) {
-  const cur = db.prepare('SELECT * FROM stacks WHERE slot_id=? AND stack_no=?').get(slotId, stackNo);
-  if (!cur) return null;
+  let cur = db.prepare('SELECT * FROM stacks WHERE slot_id=? AND stack_no=?').get(slotId, stackNo);
+  if (!cur) {
+    if (!(stackNo >= 1 && stackNo <= STACKS_PER_SLOT)) return null;
+    db.prepare('INSERT INTO stacks (slot_id, stack_no) VALUES (?, ?)').run(slotId, stackNo);
+    cur = db.prepare('SELECT * FROM stacks WHERE slot_id=? AND stack_no=?').get(slotId, stackNo);
+  }
   let spec = patch.spec !== undefined ? patch.spec : cur.spec;
   let count = patch.count !== undefined ? patch.count : cur.count;
   let pending = patch.pending !== undefined ? patch.pending : cur.pending;

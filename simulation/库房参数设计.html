@@ -72,6 +72,11 @@
     padding: 2px 6px; text-align: right; outline: none;
   }
   .tbl input.rods:focus { border-color: var(--cyan); }
+  /* ---- 每库位垛数覆盖表：限高滚动 + 吸顶表头 ---- */
+  .rack-scroll { max-height: 340px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; margin-top: 6px; }
+  .rack-scroll .tbl { margin-top: 0; }
+  .rack-scroll thead th { position: sticky; top: 0; z-index: 1; background: rgba(8, 18, 38, .97); border-bottom: 1px solid var(--line2); }
+  .rack-scroll .badge { white-space: nowrap; }
   .badge { display: inline-block; border: 1px solid var(--line2); border-radius: 999px; padding: 0 8px; font-size: 10.5px; color: var(--dim); }
   .badge.override { border-color: rgba(251, 191, 36, .55); color: var(--amber); }
   .badge.auto { border-color: rgba(45, 212, 191, .55); color: var(--teal); }
@@ -173,7 +178,19 @@ function zoneOfArea(a) {
 let schema = [], values = {}, saved = {};   // 调度参数（warehouse + robot.charger*）
 let rules = [];                          // 捆制规则行（含编辑态 edit: null|数字|'auto'|'preset'）
 let rulesSaved = null;                   // 规则编辑态快照（脏判断）
+let rackSaved = {};                      // 每库位垛数覆盖快照（{ code: 垛数 }，仅覆盖项）
+let rackEdits = {};                      // 覆盖编辑增量（{ code: 垛数|null }，null = 清除覆盖跟随全局）
 let inv = null;                          // /api/inventory 快照
+
+/* 每库位垛数（货架数）：生效值 = 编辑增量（null=清除）> 已存覆盖 > 全局参数；物理上限 8 垛层 */
+const rackLimit = v => Math.max(1, Math.min(8, Math.round(Number(v) || 8)));
+function effRacksOf(code) {
+  let v = code in rackEdits ? rackEdits[code] : rackSaved[code];
+  if (v == null) v = values.warehouse?.stacksPerSlot;
+  return rackLimit(v);
+}
+const globalRacks = () => rackLimit(values.warehouse?.stacksPerSlot);
+const racksDirty = () => Object.keys(rackEdits).length > 0;
 
 /* ---- 与 server/database.js 同口径的捆制几何（米制入参，cm 出参） ---- */
 const MANUAL_ROWS = { 1: [1], 4: [2, 2], 5: [3, 2] };
@@ -229,7 +246,7 @@ function effWeight(r, rods) {   // 棒材理论吨位预览（管材保持手工
 const rulesDirty = () => JSON.stringify(rules.map(r => r.edit)) !== JSON.stringify(rulesSaved);
 const paramsDirty = () => JSON.stringify(values) !== JSON.stringify(saved);
 function refreshButtons() {
-  const dirty = paramsDirty() || rulesDirty();
+  const dirty = paramsDirty() || rulesDirty() || racksDirty();
   btnSave.disabled = !dirty;
   btnSave.textContent = dirty ? '✓ 保存修改' : '已保存';
 }
@@ -446,7 +463,20 @@ function renderDimsTbl() {
 /* ---- 卡片 3：垛位与库容 ---- */
 let rebuilding = false;
 function cardStack() {
-  const c = card(colYardParams, 'c-stack', '📦', '垛位与库容', '每库位 8 垛（沿跨向纵深，机器狗导航栅格同构）；每垛捆数上限收窄通用垛容；库容装载比例决定期初库存铺层');
+  const c = card(colYardParams, 'c-stack', '📦', '垛位与库容', '每库位垛数（货架）可设全局统一值、也可逐库位单独调整（1~8 垛 · 跨深 30m 内 3.75m 垛格）；每垛捆数上限收窄通用垛容；库容装载比例决定期初库存铺层');
+  const s0 = subOf(c, '每库位垛数（货架）', '全局统一值作用于所有库位；个别库位在下方表格单独覆盖（如长钢位减垛、混装位加垛），留空 = 跟随全局');
+  renderSliders(s0, 'warehouse', ['stacksPerSlot']);
+  const rackScroll = document.createElement('div');
+  rackScroll.className = 'rack-scroll';
+  const tbl = document.createElement('table');
+  tbl.className = 'tbl';
+  tbl.id = 'rackTbl';
+  rackScroll.appendChild(tbl);
+  s0.appendChild(rackScroll);
+  const rnote = document.createElement('p');
+  rnote.className = 'note';
+  rnote.innerHTML = '提示：<b>每库位垛数</b>为结构性参数——保存后库容/推荐即时按新垛数核算，沙盘刷新后生效；期初库存按新垛数重灌需点下方「<b>重建库区</b>」（自动先保存全部修改）。调小垛数的库位若高位垛仍有存货，该垛在清空前保留显示（重建可立即按新垛数重铺）。';
+  s0.appendChild(rnote);
   const s1 = subOf(c, '垛容量上限', '全局通用上限，实际垛容 = min(本上限, 并排数 × 限高层数)');
   renderSliders(s1, 'warehouse', ['bundlesPerStack']);
   const s2 = subOf(c, '当前库容', '库存汇总来自数据库实时值；「期初装载比例」为下方设定值，重建后生效');
@@ -478,7 +508,8 @@ function cardStack() {
       const sr = await fetch(DB_API + '/api/slots');   // 库房总览占用着色同步为新期初
       if (sr.ok) yardSlots = (await sr.json()).slots;
       renderAll();
-      renderMsg(true, `库区已按当前参数重建：${inv.totalBundles} 捆 · 利用率 ${(inv.utilization * 100).toFixed(1)}%（运行中的沙盘刷新后按新期初加载）。` + (msgs.length ? ' ' + msgs.join('；') : ''));
+      const nOv = Object.keys(rackSaved).length;
+      renderMsg(true, `库区已按当前参数重建：${inv.totalBundles} 捆 · 利用率 ${(inv.utilization * 100).toFixed(1)}%（每库位垛数 全局 ${globalRacks()}${nOv ? ` + ${nOv} 位覆盖` : ''}；运行中的沙盘刷新后按新期初加载）。` + (msgs.length ? ' ' + msgs.join('；') : ''));
     } catch {
       renderMsg(false, '重建失败：数据库服务不可达（请先执行 npm run db:serve 或 npm run sim）。');
     }
@@ -489,16 +520,23 @@ function cardStack() {
   s3.appendChild(row);
   const note = document.createElement('p');
   note.className = 'note';
-  note.innerHTML = '提示：<b>库容装载比例</b> = 期初每垛按物理垛容铺层的比例（±4% 抖动、每垛至少 3 层；大口径单支管 Φ200/400/600 保持满垛），仅在「重建库区」时生效；仅修改<b>捆径口径 / 每垛上限 / 尺寸码放</b>时，入库推荐与沙盘运行时垛容即时生效，不必重建。';
+  note.innerHTML = '提示：<b>库容装载比例</b> = 期初每垛按物理垛容铺层的比例（±4% 抖动、每垛至少 3 层；大口径单支管 Φ200/400/600 保持满垛），仅在「重建库区」时生效；<b>每库位垛数</b>变更保存后库容/推荐即时按新垛数核算（期初重灌需重建）；仅修改<b>捆径口径 / 每垛上限 / 尺寸码放</b>时，入库推荐与沙盘运行时垛容即时生效，不必重建。';
   s3.appendChild(note);
 }
 
 function renderCapKpis() {
   const el = document.getElementById('capKpis');
   if (!el) return;
-  const cap = 91 * 8 * geo().bundlesPerStack;
+  // 总库容 = Σ 每库位生效垛数 × 每垛通用上限（逐库位覆盖与全局参数实时联动）
+  const bps = geo().bundlesPerStack;
+  const cap = yardSlots.length
+    ? yardSlots.reduce((n, s) => n + effRacksOf(s.code), 0) * bps
+    : 91 * globalRacks() * bps;
+  const rackTotal = yardSlots.reduce((n, s) => n + effRacksOf(s.code), 0);
+  const nOverride = yardSlots.filter(s => (s.code in rackEdits ? rackEdits[s.code] : rackSaved[s.code] ?? null) != null).length;
   el.innerHTML = '';
   [['总库容', `${cap.toLocaleString()} 捆`],
+   ['垛位总数', `${rackTotal.toLocaleString()} 垛（91 库位 · ${nOverride} 位单独覆盖）`],
    ['期初装载比例', `${geo().fillRatio ?? 22}%`],
    ...(!inv ? [] : [
      ['当前库存', `${inv.totalBundles.toLocaleString()} 捆`],
@@ -510,6 +548,87 @@ function renderCapKpis() {
     d.innerHTML = `<div class="k">${k}</div><div class="v">${v}</div>`;
     el.appendChild(d);
   });
+}
+
+/* ---- 每库位垛数覆盖表：91 行，输入空 = 跟随全局（已覆盖位清空 = 清除覆盖） ---- */
+const SPAN_NAMES = { 0: 'A 跨', 1: 'B 跨', 2: 'C 跨', 3: '整跨 A~C' };
+function renderRackTbl() {
+  const tbl = document.getElementById('rackTbl');
+  if (!tbl) return;
+  tbl.innerHTML = '';
+  const theadEl = document.createElement('thead');
+  const thead = document.createElement('tr');
+  ['库位', '分区', '跨', '垛数/库位', '来源', '当前在货'].forEach(h => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    thead.appendChild(th);
+  });
+  theadEl.appendChild(thead);
+  tbl.appendChild(theadEl);
+  const tbody = document.createElement('tbody');
+  tbl.appendChild(tbody);
+  if (!yardSlots.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 6;
+    td.textContent = '库位数据未加载（数据库服务不可达）';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+  for (const s of yardSlots) {
+    const code = s.code;
+    const tr = document.createElement('tr');
+    const mk = txt => { const td = document.createElement('td'); td.textContent = txt; tr.appendChild(td); return td; };
+    mk(code + (s.merged ? '（整跨）' : ''));
+    mk(s.zone);
+    mk(SPAN_NAMES[s.span] || '');
+    const tdIn = document.createElement('td');
+    const input = document.createElement('input');
+    input.className = 'rods';
+    input.type = 'number';
+    input.min = 1; input.max = 8; input.step = 1;
+    const savedOv = rackSaved[code] ?? null;
+    const editing = code in rackEdits ? rackEdits[code] : savedOv;
+    input.placeholder = String(globalRacks());
+    if (editing != null) input.value = editing;
+    input.title = '留空 = 跟随全局统一值；填 1~8 = 单独覆盖该库位垛数';
+    const tdSrc = document.createElement('td');
+    const tdCur = document.createElement('td');
+    tdCur.className = 'mono';
+    const paintRow = () => {
+      const eff = effRacksOf(code);
+      const isOv = (code in rackEdits ? rackEdits[code] : rackSaved[code] ?? null) != null;
+      const badge = document.createElement('span');
+      badge.className = 'badge' + (isOv ? ' override' : ' auto');
+      badge.textContent = isOv ? `覆盖 ${eff} 垛` : `全局 ${eff} 垛`;
+      tdSrc.innerHTML = '';
+      tdSrc.appendChild(badge);
+      const occ = (s.stacks || []).filter(k => (k.count || 0) + (k.pending || 0) > 0);
+      const nB = (s.stacks || []).reduce((n, k) => n + (k.count || 0), 0);
+      tdCur.textContent = occ.length
+        ? `${occ.length}/${(s.stacks || []).length} 垛有货 · ${nB.toLocaleString()} 捆${(s.stacks || []).length > eff ? ` · 旧高位存货保留至清空` : ''}`
+        : '空库位';
+    };
+    paintRow();
+    input.oninput = () => {
+      if (input.value === '') {
+        // 清空 = 跟随全局：已存覆盖须发 null 清除，否则无需编辑项
+        if (savedOv != null) rackEdits[code] = null;
+        else delete rackEdits[code];
+      } else {
+        rackEdits[code] = rackLimit(input.value);
+      }
+      paintRow();
+      renderCapKpis();
+      renderYard();
+      refreshButtons();
+    };
+    tdIn.appendChild(input);
+    tr.append(tdIn, tdSrc, tdCur);
+    tbody.appendChild(tr);
+  }
+  window.__whcfgDbg.rackRows = tbody.children.length;
 }
 
 /* ---- 卡片 4：充电位置 ---- */
@@ -810,12 +929,26 @@ function renderYard() {
   ctx.fillStyle = 'rgba(56,132,246,.13)';
   for (const c of LANE_COLS) ctx.fillRect(X((c - 2) * CELL_L), Y(rowTop(0)), CELL_L * SX, 99 * SY);
 
-  // 库位（按分区分色，占用深浅）
+  // 库位（按分区分色，占用深浅；每库位垛数覆盖位右上角标出生效垛数）
   const used = new Map();   // code -> Σcount
   for (const s of yardSlots || []) {
     used.set(s.code, (s.stacks || []).reduce((n, k) => n + (k.count || 0), 0));
   }
-  const maxPerSlot = 8 * geo().bundlesPerStack;
+  const gN = globalRacks();
+  const draw = (c, tint, y0m, hm, code) => {
+    const nR = effRacksOf(code);
+    const ratio = Math.min(1, (used.get(code) || 0) / (nR * geo().bundlesPerStack));
+    ctx.fillStyle = `rgba(${tint},${(0.10 + 0.75 * ratio).toFixed(3)})`;
+    const rx = X((c - 2) * CELL_L) + 0.5, ry = Y(y0m) + 0.5, rw = CELL_L * SX - 1, rh = hm * SY - 1;
+    ctx.fillRect(rx, ry, rw, rh);
+    if (nR !== gN) {   // 覆盖位：右上角标生效垛数
+      ctx.fillStyle = 'rgba(251,191,36,.92)';
+      ctx.font = '700 9px "Microsoft YaHei",sans-serif';
+      ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+      ctx.fillText(`${nR}垛`, rx + rw - 2.5, ry + 2);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    }
+  };
   const codeOf = (area, merged, i) => merged ? String(area) : `${area}-${area <= 2 ? (i === 0 ? 1 : 2) : i + 1}`;
   for (let c = 2; c <= 37; c++) {
     if (LANE_COLS.includes(c)) continue;
@@ -823,15 +956,10 @@ function renderYard() {
     if (area == null) continue;
     const zone = zoneOfArea(area);
     const tint = YARD_ZONES[zone] || '114,136,179';
-    const draw = (y0m, hm, code) => {
-      const ratio = Math.min(1, (used.get(code) || 0) / maxPerSlot);
-      ctx.fillStyle = `rgba(${tint},${(0.10 + 0.75 * ratio).toFixed(3)})`;
-      ctx.fillRect(X((c - 2) * CELL_L) + 0.5, Y(y0m) + 0.5, CELL_L * SX - 1, hm * SY - 1);
-    };
-    if (area >= 14 && area <= 16) { draw(rowTop(1), 64, codeOf(area, true)); continue; }   // 整跨合并位
+    if (area >= 14 && area <= 16) { draw(c, tint, rowTop(1), 64, codeOf(area, true)); continue; }   // 整跨合并位
     for (let i = 0; i < 3; i++) {
       if (area <= 2 && i === 1) continue;   // 1、2 号区 B 跨为车辆通道
-      draw(rowTop([1, 3, 5][i]), 30, codeOf(area, false, i));
+      draw(c, tint, rowTop([1, 3, 5][i]), 30, codeOf(area, false, i));
     }
   }
   // 分区名标注
@@ -855,8 +983,9 @@ function renderYard() {
     ctx.font = '700 9px sans-serif';
     ctx.fillText(`⚡${i + 1}`, x, y + 3);
   });
-  // 库容 KPI（左下，联动每垛上限）+ 图例（右上一行，避免与 KPI 重叠）
-  const cap = 91 * 8 * geo().bundlesPerStack;
+  // 库容 KPI（左下，联动每垛上限与每库位垛数）+ 图例（右上一行，避免与 KPI 重叠）
+  const bps = geo().bundlesPerStack;
+  const cap = yardSlots.length ? yardSlots.reduce((n, s) => n + effRacksOf(s.code), 0) * bps : 91 * globalRacks() * bps;
   const util = inv ? inv.totalBundles / cap : 0;
   ctx.textAlign = 'left';
   ctx.font = '11px "Microsoft YaHei",sans-serif';
@@ -1212,7 +1341,8 @@ function cardRo() {
     ['横向通道', '4 条 × 2m（不含充电服务带）'],
     ['充电服务带', '3m（厂房外 C 跨一路）'],
     ['库位', '91 个（含 14~16 整跨合并位 3 个）'],
-    ['每库位垛数', '8 垛（沿跨向纵深）'],
+    ['垛格（物理）', '每库位最多 8 垛层 × 3.75m（跨深 30m）'],
+    ['每库位垛数', '可在「垛位与库容」按全局/逐库位配置 1~8 垛'],
     ['库区分区', '铁姆肯区(1-2) · 大棒区域(3-13) · 大棒单支和长钢(14-16) · 中棒区域(17-33)'],
     ['天车', '6 台（每跨 2 台，TC-A1~TC-C2）'],
   ];
@@ -1229,6 +1359,7 @@ function renderAll() {
   renderYard();
   renderRulesTbl();
   renderDimsTbl();
+  renderRackTbl();
   renderCapKpis();
   renderChgStrip();
   renderPreview();
@@ -1238,11 +1369,12 @@ function renderAll() {
 async function load() {
   app.innerHTML = '<p class="hint"><span class="spin">◌</span> 正在从数据库加载库房参数…</p>';
   try {
-    const [pr, rr, ir, sr] = await Promise.all([
+    const [pr, rr, ir, sr, kr] = await Promise.all([
       fetch(DB_API + '/api/params'),
       fetch(DB_API + '/api/bundle-rules'),
       fetch(DB_API + '/api/inventory'),
       fetch(DB_API + '/api/slots'),
+      fetch(DB_API + '/api/slot-racks'),
     ]);
     if (!pr.ok || !rr.ok) throw new Error('HTTP ' + pr.status);
     const p = await pr.json();
@@ -1255,6 +1387,8 @@ async function load() {
     inv = ir.ok ? await ir.json() : null;
     yardSlots = sr.ok ? (await sr.json()).slots : [];
     window.__whcfgDbg.slotCount = yardSlots.length;
+    rackSaved = kr.ok ? ((await kr.json()).racks || {}) : {};
+    rackEdits = {};
     app.innerHTML = '';
     /* 按主题配对：每个块 左=预览图（sticky）/ 右=该主题的参数卡 */
     const mkGrp = (id, ico, title, gdesc) => {
@@ -1292,6 +1426,7 @@ async function load() {
     desc.className = 'desc';
     desc.innerHTML = '库房参数与钢材捆制规则，持久化在本地库存数据库（' + DB_API + '），全站同源：' +
       '入库推荐（<code>stackCap</code> 物理垛容）、沙盘三维码放、捆级落位坐标共用同一套几何口径；' +
+      '<b>每库位垛数（货架）</b>支持全局统一值 + 逐库位单独覆盖（见「垛位与库容」）；' +
       '保存后运行中的沙盘数秒内自动同步，期初库存分布按需「重建库区」（自动先保存全部修改，按「库容装载比例」铺层重生成）。';
     app.prepend(desc);
     renderAll();
@@ -1305,6 +1440,7 @@ btnReset.onclick = () => {
   const defs = Object.fromEntries(schema.map(s => [s.sec, Object.fromEntries(s.defs.map(d => [d.key, d.def]))]));
   values = JSON.parse(JSON.stringify(defs));
   for (const r of rules) r.edit = 'preset';   // 规则一并恢复预置
+  rackEdits = Object.fromEntries(Object.keys(rackSaved).map(c => [c, null]));   // 垛数覆盖一并清除（跟随全局默认）
   renderAll();
 };
 /* 保存全部（库房参数 + 捆制规则编辑），返回附加提示消息数组；失败抛错。
@@ -1336,7 +1472,19 @@ async function saveAll() {
       if (rrj.warnings?.length) msgs.push('⚠ 捆径越界警示：\n' + rrj.warnings.join('\n'));
       if (rrj.weights?.length) msgs.push('单捆吨位基准已重算：' + rrj.weights.map(w => `${w.spec} ${w.from}→${w.to}t`).join(' · '));
     }
-    rulesSaved = JSON.stringify(rules.map(r => r.edit));
+      rulesSaved = JSON.stringify(rules.map(r => r.edit));
+  }
+  if (racksDirty()) {
+    const kr = await fetch(DB_API + '/api/slot-racks', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ racks: rackEdits }),
+    });
+    if (!kr.ok) throw new Error('HTTP ' + kr.status);
+    const kj = await kr.json();
+    rackSaved = kj.racks || {};
+    rackEdits = {};
+    msgs.push(`每库位垛数覆盖已保存（当前 ${Object.keys(rackSaved).length} 个库位单独设置；期初分布按新垛数重灌请「重建库区」）`);
   }
   return msgs;
 }
