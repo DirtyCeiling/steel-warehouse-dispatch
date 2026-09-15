@@ -284,6 +284,47 @@ check('装载比例 22% -> 90% 重建后库存显著上升（>2 倍）', inv1 > 
 const msgEl3 = documentStub.querySelector('.msg');
 check('重建回显新期初利用率', msgEl3 && /利用率 \d+(\.\d)?%/.test(msgEl3.textContent), msgEl3 && msgEl3.textContent.slice(0, 50));
 
+console.log('== 每库位垛数（全局统一值 + 逐库位覆盖） ==');
+r = await (await fetch(`${API}/api/params`)).json();
+const spsDef = r.schema.find(s => s.sec === 'warehouse').defs.find(d => d.key === 'stacksPerSlot');
+check('库房参数 schema 含每库位垛数（默认 8 垛 · 1~8）',
+  !!spsDef && spsDef.def === 8 && spsDef.min === 1 && spsDef.max === 8 && r.values.warehouse.stacksPerSlot === 8,
+  JSON.stringify(spsDef));
+const spsInputs = documentStub.querySelectorAll('[data-sec="warehouse"][data-key="stacksPerSlot"]');
+check('页面渲染每库位垛数滑杆（range+number）', spsInputs.length === 2, String(spsInputs.length));
+check('逐库位垛数覆盖表渲染 91 行', sandbox.__whcfgDbg.rackRows === 91, String(sandbox.__whcfgDbg.rackRows));
+const rackTbody = tbodyOf(byId.get('rackTbl'));
+const rackInputOf = tr => tr.children[3]?.children[0];
+const row11 = rackTbody.children.find(tr => tr.children[0]?.textContent === '1-1');
+check('垛数表按库位编码列出（含 1-1）', !!row11, row11 && row11.children[0].textContent);
+rackInputOf(row11).value = '4';
+rackInputOf(row11).oninput();
+check('覆盖 1-1=4 垛后保存按钮可用', btnSave.disabled === false, String(btnSave.disabled));
+await btnSave.onclick();
+let rk = await (await fetch(`${API}/api/slot-racks`)).json();
+check('保存后覆盖落库（1-1 -> 4 垛）', rk.racks['1-1'] === 4 && rk.global === 8, JSON.stringify(rk.racks));
+let slotsNow = (await (await fetch(`${API}/api/slots`)).json()).slots;
+const s11now = slotsNow.find(s => s.code === '1-1');
+check('/api/slots 下发 racks=4（旧期初高位存货保留显示，不丢账）', s11now.racks === 4 && s11now.stacks.length >= 4,
+  `racks=${s11now.racks} 行=${s11now.stacks.length}`);
+// 全局 8 -> 6：页面 KPI 即时联动，保存后 API 库容按逐库位垛数汇总
+const spsSlider = spsInputs.find(e => e.type === 'range');
+spsSlider.value = '6';
+spsSlider.oninput({ target: spsSlider });
+check('全局 6 + 1-1 覆盖 4：页面总库容 KPI 即时联动（(90×6+4)×400）',
+  (byId.get('capKpis')?.children[0]?._html || '').includes('217,600'), byId.get('capKpis')?.children[0]?._html);
+await btnSave.onclick();
+let invR = (await (await fetch(`${API}/api/inventory`)).json());
+check('保存后 API 库容按逐库位垛数汇总（(90×6+4)×400）', invR.totalCapacity === (90 * 6 + 4) * 400, String(invR.totalCapacity));
+await btnRebuild.onclick();
+slotsNow = (await (await fetch(`${API}/api/slots`)).json()).slots;
+const s11b = slotsNow.find(s => s.code === '1-1'), s17b = slotsNow.find(s => s.code === '17-1');
+check('重建后 1-1 共 4 垛、无覆盖位 17-1 共 6 垛（覆盖跨重建保留）',
+  s11b.stacks.length === 4 && s17b.stacks.length === 6, `1-1=${s11b.stacks.length} 17-1=${s17b.stacks.length}`);
+const msgRk = documentStub.querySelector('.msg');
+check('重建回显垛数配置（全局 6 + 1 位覆盖）', msgRk && msgRk.textContent.includes('全局 6 + 1 位覆盖'),
+  msgRk && msgRk.textContent.slice(0, 60));
+
 // 恢复默认按钮：参数回 schema 默认 + 规则全部标记恢复预置
 btnReset.onclick();
 check('恢复默认后保存按钮可用（规则待恢复预置）', btnSave.disabled === false, '');
@@ -291,6 +332,8 @@ await btnSave.onclick();
 const restored = await (await fetch(`${API}/api/bundle-rules`)).json();
 check('恢复预置保存后全部规格 source=preset 且吨位回写', restored.rules.every(x => x.source === 'preset')
   && restored.rules.find(x => x.spec === '螺纹钢 Φ20').weight === 0.47, '');
+rk = await (await fetch(`${API}/api/slot-racks`)).json();
+check('恢复默认保存后清除全部垛数覆盖（跟随全局 8）', Object.keys(rk.racks).length === 0 && rk.global === 8, JSON.stringify(rk.racks));
 
 try { rmSync(join(process.env.WAREHOUSE_DB, '..'), { recursive: true, force: true }); } catch { /* Windows 下服务进程仍持句柄，忽略 */ }
 console.log(failed === 0 ? '\n库房参数设计自检通过 ✓' : `\n${failed} 项断言失败 ✗`);

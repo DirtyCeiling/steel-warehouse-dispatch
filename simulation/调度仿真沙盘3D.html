@@ -281,7 +281,7 @@ function shadeHex(color, f = 0.42) {
  * 与 2D 沙盘完全共用同一套仿真逻辑与实时数据（storages / robots / cranes / trucks / tasks 等），
  * 仅把主画布的渲染层从 Canvas 2D 换成 three.js 三维场景：
  *   库位料架 + 捆级三维码放（落位坐标与库存三维视图同源）、机器狗四足行走/扫码波束、
- *   天车（双梁桥式：双主梁+走台栏杆+端梁车轮+小车卷扬+吊梁吊绳吊物）、货车沿通道进出场、
+ *   天车（双梁桥式：双主梁+走台栏杆+端梁车轮+小车卷扬+钩块大钩缆绳吊物）、货车沿通道进出场、
  *   立柱摄像头识别闪光、任务目标脉冲框。
  * 交互：左键拖拽平移 · 右键拖拽旋转 · 滚轮缩放 · 悬停看明细 · 点击库位下发出入库任务 ·
  *       Alt+点击 聚焦库位 · ⊞视图复位 回到总览。 */
@@ -1002,10 +1002,11 @@ function syncRobots(now) {
  * 结构仿真桥吊搭建（标高均以 CRANE_Y 为基准，单位米）：
  *   跨轨轨道（轨底板+轨头+两端车档+下方支撑立柱） -> 端梁（底面高轨顶 .42，大车轮下半外露如轮箱）
  *   -> 双箱形主梁（跨向）+ 梁顶小车轨道 -> 小车架（跨坐双梁）+ 卷筒/电机/减速机 + 小车轮
- *   起升穿绳：小车架四角四根起升绳 -> 扁担吊梁（双主梁间净空内升降）-> 两根吊绳下穿捆打带位。
+ *   起升穿绳：小车架四角四根起升绳 -> 滑轮钩块 + 锻钢大钩（双主梁间净空内升降）->
+ *   吊装工把穿捆的两根缆绳收拢挂上钩尖（WAIT_HOOK 挂 / WAIT_UNHOOK 摘），钩起即吊运。
  *   大车轮随桥架行进滚动、小车轮随横移滚动、卷筒随吊具升降收放、作业中警示灯爆闪。 */
 const CRANE_Y = 8.6;   // 轨顶标高基准：跨轨轨顶 = CRANE_Y-.19，主梁底 = +.91，小车架底 = +2.42
-const CR_HOOK_LOW = 2.1, CR_HOOK_HIGH = CRANE_Y + .06;   // 吊梁行程：垛顶/车斗低位 ~ 主梁下高位（空吊梁恒低于主梁底）
+const CR_HOOK_LOW = 2.1, CR_HOOK_HIGH = CRANE_Y + .06;   // 吊钩行程：垛顶/车斗低位 ~ 主梁下高位（空钩钩块恒低于主梁底）
 const craneG = new Map();
 let craneRailsSpans = -1, craneLodBuilt = null;
 const _ropeV = new THREE.Vector3(), _ropeDown = V3(0, -1, 0);
@@ -1112,7 +1113,7 @@ function makeCraneG(cr, fine) {   // fine = 真实模细部（两侧走台栏杆
   const beacon = new THREE.Mesh(geo('crBeacon', () => new THREE.CylinderGeometry(.1, .13, .24, 10)),
     new THREE.MeshStandardMaterial({ color: 0xffb020, emissive: 0xff9d00, emissiveIntensity: .25, roughness: .4 }));   // 各车独立材质：警示灯按车闪
   beacon.position.set(1.75, yTFrame + .42, .8); trolley.add(beacon);
-  /* 起升穿绳：四根起升绳 -> 扁担吊梁 + 滑轮组 -> 两根吊绳（下端每帧落到位穿捆打带位） */
+  /* 起升穿绳：四根起升绳 -> 滑轮钩块 + 锻钢大钩 -> 吊装工把穿捆的两根缆绳收拢挂上钩尖 */
   const ropeGeo = geo('craneRope', () => { const r = new THREE.CylinderGeometry(.05, .05, 1, 6); r.translate(0, -.5, 0); return r; });
   const ropeMat = mat('crRopeM', () => new THREE.MeshStandardMaterial({ color: 0x7d838d, metalness: .6, roughness: .45 }));
   const ropes = [];
@@ -1120,17 +1121,20 @@ function makeCraneG(cr, fine) {   // fine = 真实模细部（两侧走台栏杆
   const slings = [];
   for (let i = 0; i < 2; i++) {
     const s = new THREE.Mesh(geo('crSling', () => { const r = new THREE.CylinderGeometry(.055, .055, 1, 6); r.translate(0, -.5, 0); return r; }),
-      mat('crSlingM', () => new THREE.MeshStandardMaterial({ color: 0xe86fa4, roughness: .6 })));   // 合成吊带（彩色软吊绳）
+      mat('crSlingM', () => new THREE.MeshStandardMaterial({ color: 0xe86fa4, roughness: .6 })));   // 缆绳（彩色软吊带）
     s.visible = false; g.add(s); slings.push(s);
   }
-  const spread = new THREE.Mesh(geo('crSpread', () => new THREE.BoxGeometry(4.7, .26, .42)),
-    mat('crSpreadM', () => new THREE.MeshStandardMaterial({ color: 0x33507f, metalness: .55, roughness: .4 })));
-  g.add(spread);
-  const pulleys = [];
-  for (let i = 0; i < 2; i++) {
-    const p = new THREE.Mesh(geo('crPulley', () => new THREE.BoxGeometry(.52, .3, .52)), steelD);
-    g.add(p); pulleys.push(p);
-  }
+  const hookMat = mat('crHookM', () => new THREE.MeshStandardMaterial({ color: 0x3a3f46, metalness: .7, roughness: .35 }));
+  const hookG = new THREE.Group();   // 锻钢大钩：原点在钩尖下方缆绳挂点，随吊具行程整体升降
+  const bill = new THREE.Mesh(geo('crHookBill', () => { const t = new THREE.TorusGeometry(.3, .09, 8, 16, Math.PI * 1.75); t.rotateZ(112.5 * Math.PI / 180); return t; }), hookMat);
+  bill.position.y = .31; hookG.add(bill);          // 钩身圆弧（开口朝上）
+  const shank = new THREE.Mesh(geo('crHookShank', () => new THREE.CylinderGeometry(.09, .09, .42, 10)), hookMat);
+  shank.position.set(-.115, .4, 0); hookG.add(shank);   // 钩柄（上端没入钩块）
+  const tip = new THREE.Mesh(geo('crHookTip', () => new THREE.ConeGeometry(.075, .22, 8)), hookMat);
+  tip.position.set(.13, .68, 0); tip.rotation.z = -.55; hookG.add(tip);   // 钩尖微内收
+  g.add(hookG);
+  const hookBlock = new THREE.Mesh(geo('crHookBlock', () => new THREE.BoxGeometry(.55, .45, .4)), steelD);
+  g.add(hookBlock);
   const load = new THREE.Mesh(geo('craneLoad', () => { const b = new THREE.BoxGeometry(1, 1, 1); b.translate(0, .5, 0); return b; }),
     new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: .55, metalness: .3 }));   // 底面原点方盒（与杆束几何同约定），真实模运行中换杆束截面
   load.castShadow = true; load.visible = false; g.add(load);
@@ -1141,7 +1145,7 @@ function makeCraneG(cr, fine) {   // fine = 真实模细部（两侧走台栏杆
   const name = makeLabel(cr.name, '#f472b6', 4.5);
   name.position.y = yTFrame + 1.85; g.add(name);
   dynGroup.add(g);
-  return { g, trolley, wheelsB, wheelsT, drum, beacon, ropes, slings, spread, pulleys, load, strapL, strapR, loadSpec: null, loadLod: null, lastHook: null, lx: NaN };
+  return { g, trolley, wheelsB, wheelsT, drum, beacon, ropes, slings, hookG, hookBlock, load, strapL, strapR, loadSpec: null, loadLod: null, lastHook: null, hookShown: null, lastSimT: null, lx: NaN };
 }
 function syncCranes() {
   // 跨轨轨道（每跨上下各一条，静态，只建一次）：轨底板+轨头工字廓形，两端车档防越程，下方支撑立柱落到跨间通道
@@ -1213,16 +1217,33 @@ function syncCranes() {
     const tz = WZ(cr.y);
     for (const w of C.wheelsT) w.rotation.x -= (tz - C.trolley.position.z) / .13;       // 小车轮随横移滚动
     C.trolley.position.z = tz;
-    // 吊具高度：吊取/放下时按进度走 V 形轨迹（先落到位再起升）；等人挂绳/摘绳（WAIT_HOOK/WAIT_UNHOOK）保持低位供吊装工作业；其余高位悬挂
+    // 吊具行程：人力环节下吊取=挂绳后纯起升、放下=纯下落（挂/摘绳独立成态）；无人力环节保留 V 形（下落到点即起升/放下即回升）；
+    // 等人挂绳/摘绳（WAIT_HOOK/WAIT_UNHOOK）钩子保持低位供吊装工作业；其余高位悬挂
     const dur = cr.state === 'HOIST' ? CFG.crane.hoistTime : cr.state === 'LOWER' ? CFG.crane.lowerTime : 0;
     let hookY = (cr.state === 'UNHOOK' || cr.state === 'WAIT_HOOK' || cr.state === 'WAIT_UNHOOK') ? CR_HOOK_LOW : CR_HOOK_HIGH;
-    if (dur) hookY = CR_HOOK_LOW + (CR_HOOK_HIGH - CR_HOOK_LOW) * Math.abs(Math.cos(Math.PI * Math.min(1, cr.timer / dur)));
-    if (C.drum && C.lastHook != null) C.drum.rotation.x += (C.lastHook - hookY) / .34;  // 卷筒随吊具升降收放绳
-    C.lastHook = hookY;
+    if (dur) {
+      const p = Math.min(1, cr.timer / dur);
+      hookY = crewEnabled()
+        ? (cr.state === 'HOIST'
+            ? CR_HOOK_LOW + (CR_HOOK_HIGH - CR_HOOK_LOW) * p          // 挂绳完毕：纯起升
+            : CR_HOOK_HIGH - (CR_HOOK_HIGH - CR_HOOK_LOW) * p)        // 吊运到位：纯下落
+        : CR_HOOK_LOW + (CR_HOOK_HIGH - CR_HOOK_LOW) * Math.abs(Math.cos(Math.PI * p));
+    }
+    // 渲染侧平滑：摘绳完成转待命等状态跳变处，吊钩以吊取速度匀速升降（不瞬移）
+    const dtS = C.lastSimT == null ? 0 : Math.max(0, Math.min(5, simTime - C.lastSimT));
+    C.lastSimT = simTime;
+    if (C.hookShown == null) C.hookShown = hookY;
+    const hookRate = (CR_HOOK_HIGH - CR_HOOK_LOW) / Math.max(2, CFG.crane.hoistTime || 8);
+    C.hookShown = Math.abs(hookY - C.hookShown) <= hookRate * dtS
+      ? hookY
+      : C.hookShown + Math.sign(hookY - C.hookShown) * hookRate * dtS;
+    const hY = C.hookShown;   // 吊钩实际显示高度（吊具/吊物/卷筒均取平滑值）
+    if (C.drum && C.lastHook != null) C.drum.rotation.x += (C.lastHook - hY) / .34;  // 卷筒随吊具升降收放绳
+    C.lastHook = hY;
     C.beacon.material.emissiveIntensity = cr.job ? 1 + Math.max(0, Math.sin(simTime * 7)) * 1.4 : .25;   // 作业中警示灯爆闪，待命常暗
     const showLoad = !!cr.carrying || (cr.state === 'LOWER' && cr.timer < CFG.crane.lowerTime * .6);
     C.load.visible = showLoad;
-    let spY;   // 扁担吊梁高度
+    let blockY;   // 钩块高度
     if (showLoad) {
       const sp = cr.carrying || (cr.job && cr.job.spec) || null;
       if (sp && (C.loadSpec !== sp || C.loadLod !== lodWant)) {   // 吊具捆与垛内落位捆同几何同精度：真实=杆束截面 / 简模=方盒
@@ -1236,10 +1257,13 @@ function syncCranes() {
       const len = (cr.job && cr.job.len) || 9;
       const lenU = Math.min(len, BAR_MAX);
       const Hb = sp ? bundleH(sp) : .65, Wb = sp ? bundleW(sp) : .9;
-      const yBot = hookY - 1.15;   // 捆底标高（吊梁吊点下挂 1.15m）
+      const yBot = hY - 1.15;   // 捆底标高（钩吊点下挂 1.15m）
       C.load.scale.set(lenU, Hb, Wb);   // 与垛内落位捆同截面同长：吊着什么样，落下就什么样
       C.load.position.set(0, yBot, tz);
-      spY = yBot + Hb + .28;
+      // 钩尖（缆绳挂点）：捆顶上方，缆绳成 V 形收拢上挂；限高保证钩块不没入主梁
+      const hookTip = Math.min(yBot + Hb + .6, CRANE_Y + .24);
+      C.hookG.position.set(0, hookTip, tz);
+      blockY = hookTip + .42;
       const strapOn = !lodWant && sp && sp.rods > 1;   // 打捆带（真实模多杆捆）：±28% 捆长两道金带，与垛内捆同位（带心=捆心）
       C.strapL.visible = C.strapR.visible = !!strapOn;
       if (strapOn) {
@@ -1247,24 +1271,34 @@ function syncCranes() {
         C.strapR.position.set(lenU * .28, yBot + Hb / 2, tz);
         for (const st of [C.strapL, C.strapR]) st.scale.set(.07, Hb + .04, Wb + .04);
       }
-      const sX = lenU * .28;   // 吊绳穿捆位 = 打带位（捆短于吊梁时吊绳内收斜拉）
+      const sX = lenU * .28;   // 缆绳穿捆位 = 打带位（双绳收拢挂同一钩尖）
       for (const [s, sx] of [[C.slings[0], -1], [C.slings[1], 1]]) {
         s.visible = true;
-        ropeBetween(s, sx * 2.3, spY - .08, tz, sx * sX, yBot + Hb - .12, tz);
+        ropeBetween(s, 0, hookTip - .05, tz, sx * sX, yBot + Hb - .1, tz);
       }
     } else {
       C.strapL.visible = C.strapR.visible = false;
-      C.slings[0].visible = C.slings[1].visible = false;
-      spY = hookY + .5;   // 空吊梁：高位悬挂（恒低于主梁底面，起升绳在双梁间净空内）
+      const sp = cr.job && cr.job.spec;
+      if (cr.state === 'WAIT_UNHOOK' && sp) {   // 摘绳中：缆绳仍穿在已落位的捆上，吊装工自钩上取下
+        const lenU = Math.min((cr.job && cr.job.len) || 9, BAR_MAX);
+        const Hb = bundleH(sp), yBot = CR_HOOK_LOW - 1.15;
+        const sX = lenU * .28;
+        for (const [s, sx] of [[C.slings[0], -1], [C.slings[1], 1]]) {
+          s.visible = true;
+          ropeBetween(s, 0, hY + .03, tz, sx * sX, yBot + Hb - .1, tz);
+        }
+      } else {
+        C.slings[0].visible = C.slings[1].visible = false;
+      }
+      blockY = hY + .5;   // 空钩：高位悬挂（钩块恒低于主梁底面，起升绳在双梁间净空内）
+      C.hookG.position.set(0, blockY - .42, tz);
     }
-    C.spread.position.set(0, spY, tz);
-    C.pulleys[0].position.set(-.95, spY + .04, tz);
-    C.pulleys[1].position.set(.95, spY + .04, tz);
+    C.hookBlock.position.set(0, blockY, tz);
     const yRT = CRANE_Y + 2.44;   // 起升绳上锚点 = 小车架底面
-    ropeBetween(C.ropes[0], -.72, yRT, tz - .5, -.95, spY + .1, tz - .33);
-    ropeBetween(C.ropes[1], .72, yRT, tz - .5, .95, spY + .1, tz - .33);
-    ropeBetween(C.ropes[2], -.72, yRT, tz + .5, -.95, spY + .1, tz + .33);
-    ropeBetween(C.ropes[3], .72, yRT, tz + .5, .95, spY + .1, tz + .33);
+    ropeBetween(C.ropes[0], -.72, yRT, tz - .5, -.18, blockY + .22, tz - .12);
+    ropeBetween(C.ropes[1], .72, yRT, tz - .5, .18, blockY + .22, tz - .12);
+    ropeBetween(C.ropes[2], -.72, yRT, tz + .5, -.18, blockY + .22, tz + .12);
+    ropeBetween(C.ropes[3], .72, yRT, tz + .5, .18, blockY + .22, tz + .12);
   }
 }
 

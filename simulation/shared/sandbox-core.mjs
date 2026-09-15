@@ -842,7 +842,7 @@ const CFG = {
     scanTime: 60,                      // 扫码核验耗时（二维码扫描 + 信息比对）
     reportTime: 0.6,                   // 状态回传耗时
     endurance: 3,                      // 满电续航（小时）：满电按额定速度连续作业可运行 3 小时
-    chargeHours: 2,                    // 充满电耗时（小时）：电量从 0 充到 100% 约需 2 小时
+    chargeMin: 120,                    // 充满电耗时（分钟）：电量从 0 充到 100% 约需 120 分钟
     lowBattery: 25, fullBattery: 98,   // 返航充电阈值 / 满电阈值
     interruptCharge: 85,               // 充电中可被派单打断的电量
     critical: 12,                      // 临界告警电量
@@ -976,8 +976,8 @@ function clearSavedFeedCursor() {
 /* 电量模型：满电续航 endurance 小时（按当前行进速度连续作业折算）。
  * 每米电耗 = 100% ÷ (续航小时 × 3600s × 速度 m/s)，速度参数调整后续航时长保持不变。 */
 function drainPerM() { return 100 / (CFG.robot.endurance * 3600 * CFG.robot.speed); }
-/* 充电速率（%/秒）= 100% ÷ (充满小时 × 3600s) */
-function chargePerS() { return 100 / (CFG.robot.chargeHours * 3600); }
+/* 充电速率（%/秒）= 100% ÷ (充满分钟 × 60s) */
+function chargePerS() { return 100 / (CFG.robot.chargeMin * 60); }
 /* 剩余续航（小时）= 当前电量% × 满电续航 */
 function fmtEndurance(battery) {
   const h = battery / 100 * CFG.robot.endurance;
@@ -985,8 +985,8 @@ function fmtEndurance(battery) {
 }
 /* 预计充满耗时：从当前电量充到满电阈值 */
 function fmtChargeLeft(battery) {
-  const h = Math.max(0, CFG.robot.fullBattery - battery) / 100 * CFG.robot.chargeHours;
-  return h >= 1 ? `${h.toFixed(1)}h` : `${Math.max(1, Math.round(h * 60))}min`;
+  const m = Math.max(0, CFG.robot.fullBattery - battery) / 100 * CFG.robot.chargeMin;
+  return m >= 60 ? `${(m / 60).toFixed(1)}h` : `${Math.max(1, Math.round(m))}min`;
 }
 
 /* 棒材规格（颜色用于地图渲染与图例；rods = 每捆支数，捆径口径 15~50cm；weight = 9m 基准单捆吨位） */
@@ -1037,7 +1037,7 @@ const PARAM_DEFS = [
   { sec: 'robot', key: 'chargerC3', label: '充电桩#3 列位', min: 1, max: 37, step: 1, unit: '列' },
   { sec: 'robot', key: 'speed',      label: '行进速度',     min: 1,   max: 10, step: 0.1, unit: 'm/s' },
   { sec: 'robot', key: 'scanTime',   label: '扫码核验时间', min: 0.5, max: 60, step: 0.1, unit: '秒' },
-  { sec: 'robot', key: 'chargeHours', label: '充满电时间',  min: 0,   max: 6,  step: 0.5, unit: '小时' },
+  { sec: 'robot', key: 'chargeMin',  label: '充满电时间',  min: 0,   max: 180, step: 5,   unit: '分钟' },
   { sec: 'robot', key: 'endurance',  label: '满电续航',     min: 0.5, max: 8,  step: 0.5, unit: '小时' },
   { sec: 'robot', key: 'spanA',      label: '监测 A 跨',   min: 0,   max: 1,  step: 1,   unit: '开/关', toggle: true },
   { sec: 'robot', key: 'fromA',      label: 'A 跨监测起始号区', min: 1, max: 33, step: 1, unit: '号区' },
@@ -1999,7 +1999,7 @@ class Robot {
         }
         break;
       case 'CHARGING':
-        this.battery = R.chargeHours <= 0 ? 100 : Math.min(100, this.battery + chargePerS() * dt);
+        this.battery = R.chargeMin <= 0 ? 100 : Math.min(100, this.battery + chargePerS() * dt);
         if (this.battery >= R.fullBattery) {
           this.battery = R.fullBattery;
           this.setState('IDLE');
@@ -4610,7 +4610,7 @@ function assessScanCapacity(force = false) {
   const cycleSec = +(fixedSec + travelSec + scanSec).toFixed(1);
   const battPerScan = travelAvgM * drainPerM();            // 每捆耗电 %（仅行进耗电，扫码不耗）
   const workPerCycle = battPerScan > 0 ? (R.fullBattery - R.lowBattery) / battPerScan * cycleSec : Infinity;
-  const chargePerCycle = (R.fullBattery - R.lowBattery) / 100 * R.chargeHours * 3600;
+  const chargePerCycle = (R.fullBattery - R.lowBattery) / 100 * R.chargeMin * 60;
   const dutyPct = workPerCycle === Infinity ? 100
     : Math.round(100 * workPerCycle / (workPerCycle + chargePerCycle));
   const capPerHour = +(3600 / cycleSec * (dutyPct / 100) * robots.length).toFixed(1);
@@ -5102,7 +5102,7 @@ function refreshPanels() {
   const sumCol = minRb.battery > 50 ? '#34d399' : minRb.battery > 25 ? '#fbbf24' : '#f87171';
   const chargingN = robots.filter(r => r.state === 'CHARGING').length;
   $('battSum').innerHTML = `🔋 机器狗电量：均值 ${avgB | 0}% · 最低 <b style="color:${sumCol}">${minRb.name} ${minRb.battery | 0}%</b>`
-    + `（续航 ${fmtEndurance(minRb.battery)}）· 满电续航 ${CFG.robot.endurance}h · 充满 ${CFG.robot.chargeHours}h`
+    + `（续航 ${fmtEndurance(minRb.battery)}）· 满电续航 ${CFG.robot.endurance}h · 充满 ${CFG.robot.chargeMin}min`
     + (chargingN ? ` · ${chargingN} 台充电中` : '');
   const dogCards = robots.map(rb => {
     const bcol = rb.battery > 50 ? '#34d399' : rb.battery > 25 ? '#fbbf24' : '#f87171';
@@ -5731,7 +5731,7 @@ function updateDogPanel() {
     <span class="dl">电量</span><span class="dv"><span class="bbar inline"><i style="width:${rb.battery}%;background:${bcol}"></i></span><b style="color:${bcol}">${batt}%</b> · 续航 ${fmtEndurance(rb.battery)}${chargeLeft}</span>
     <span class="dl">位置</span><span class="dv">x ${rb.x.toFixed(1)}m · y ${rb.y.toFixed(1)}m</span>
     <span class="dl">朝向</span><span class="dv">${deg.toFixed(0)}°（${dirWord}，0° = 厂房北端）</span>
-    <span class="dl">速度</span><span class="dv">${CFG.robot.speed} m/s · 续航 ${CFG.robot.endurance}h · 充满 ${CFG.robot.chargeHours}h</span>
+    <span class="dl">速度</span><span class="dv">${CFG.robot.speed} m/s · 续航 ${CFG.robot.endurance}h · 充满 ${CFG.robot.chargeMin}min</span>
     <span class="dl">充电桩</span><span class="dv">#${rb.chargerNo}（C跨南侧服务带）</span>
     <span class="dl">累计</span><span class="dv">扫码 ${rb.scans} 次 · 完成任务 ${rb.tasksDone} · 行驶 ${Math.round(rb.distTotal)} m</span>
     <span class="dl">作业</span><span class="dv">${fmtDur(rb.busyTime)} · 利用率 ${util}</span>

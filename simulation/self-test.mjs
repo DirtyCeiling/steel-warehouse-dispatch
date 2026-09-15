@@ -334,15 +334,15 @@ check('满电按额定速度连续行进正好续航 3 小时',
 check('续航参数运行时调整并夹取（0.5-8h）',
   sandbox.setDeviceParam('robot', 'endurance', 4.5) === 4.5 && sandbox.setDeviceParam('robot', 'endurance', 99) === 8, '');
 sandbox.setDeviceParam('robot', 'endurance', 3);
-check('充满电耗时参数为 2 小时', rcfg.chargeHours === 2, `chargeHours=${rcfg.chargeHours}h`);
-check('充电速率折算：100% ÷ (2h × 3600s)',
-  Math.abs(rcfg.chargePerS - 100 / (rcfg.chargeHours * 3600)) < 1e-12,
-  `charge=${rcfg.chargePerS.toFixed(6)}%/s（0->100% 约 ${(100 / rcfg.chargePerS / 3600).toFixed(1)}h）`);
-check('充满时间参数运行时调整并夹取（0.5-6h）',
-  sandbox.setDeviceParam('robot', 'chargeHours', 3.5) === 3.5 && sandbox.setDeviceParam('robot', 'chargeHours', 99) === 6, '');
+check('充满电耗时参数为 120 分钟', rcfg.chargeMin === 120, `chargeMin=${rcfg.chargeMin}min`);
+check('充电速率折算：100% ÷ (120min × 60s)',
+  Math.abs(rcfg.chargePerS - 100 / (rcfg.chargeMin * 60)) < 1e-12,
+  `charge=${rcfg.chargePerS.toFixed(6)}%/s（0->100% 约 ${(100 / rcfg.chargePerS / 60).toFixed(0)}min）`);
+check('充满时间参数运行时调整并夹取（0-180min）',
+  sandbox.setDeviceParam('robot', 'chargeMin', 90) === 90 && sandbox.setDeviceParam('robot', 'chargeMin', 300) === 180, '');
 // 3 小时续航下 36 仿真分钟不会自然触发返航充电——强制低电验证完整充电循环
-// （测试提速：临时把充满时间调到 0.5h，验证完恢复 2h）
-sandbox.setDeviceParam('robot', 'chargeHours', 0.5);
+// （测试提速：临时把充满时间调到 30 分钟，验证完恢复 120 分钟）
+sandbox.setDeviceParam('robot', 'chargeMin', 30);
 let rbLow = null;
 for (let i = 0; i < 40 && !rbLow; i++) {
   rbLow = sandbox.__dbg.robots.find(r => r.state === 'IDLE' && !r.task);
@@ -366,7 +366,7 @@ check('充电使电量回升至 85%+（85% 起可被派单打断）', rbPeak >= 
 check('运行期最高电量 >= 85%（充电补充）', (sandbox.__maxBatt || 0) >= 85, 'max=' + (sandbox.__maxBatt || 0).toFixed(1) + '%');
 check('返航充电事件已记录日志（电量类事件计数）', (sandbox.__logCounts?.charge || 0) >= 1,
   'charge=' + (sandbox.__logCounts?.charge || 0));
-sandbox.setDeviceParam('robot', 'chargeHours', 2);   // 恢复充满 2 小时
+sandbox.setDeviceParam('robot', 'chargeMin', 120);   // 恢复充满 120 分钟
 
 console.log('== 阶段四：货车通道阻塞机制 ==');
 // 车流有低峰间隙（组车等待/排产间隔）：有界等待下一辆货车进场再断言，避免瞬时空场误报

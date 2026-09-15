@@ -7,6 +7,7 @@ import {
   openDb, seed, getInventory, getSlots, getSlot, setStack,
   syncBundlePositions, getBundlePositions,
   bundleDiaCm, bundleRods, getBundleRules, applyBundleRules, getGeoCfg, deriveRods,
+  getSlotRacks, applySlotRacks, effectiveRacks, setSimParams,
   STACKS_PER_SLOT, BUNDLES_PER_STACK,
 } from './database.js';
 import { SPECS } from './layout.js';
@@ -35,8 +36,10 @@ seed(db);
 console.log('== 布局/库存 ==');
 const inv = getInventory(db);
 check('库位总数 91', inv.slotCount === 91, String(inv.slotCount));
-const stackCount = getSlots(db).reduce((s, x) => s + x.stacks.length, 0);
-check(`每库位 ${STACKS_PER_SLOT} 垛 -> 垛位总数 ${91 * STACKS_PER_SLOT}`, stackCount === 91 * STACKS_PER_SLOT, String(stackCount));
+const slots0 = getSlots(db);
+const stackCount = slots0.reduce((s, x) => s + x.racks, 0);
+check(`每库位 ${STACKS_PER_SLOT} 垛（默认全局）-> 垛位总数 ${91 * STACKS_PER_SLOT}`,
+  stackCount === 91 * STACKS_PER_SLOT && slots0.every(x => x.racks === STACKS_PER_SLOT), String(stackCount));
 check(`总库容 91×${STACKS_PER_SLOT}×${BUNDLES_PER_STACK}=${91 * STACKS_PER_SLOT * BUNDLES_PER_STACK}`, inv.totalCapacity === 91 * STACKS_PER_SLOT * getGeoCfg().bundlesPerStack, String(inv.totalCapacity));
 check('初始库存为实际钢材分布（捆径 15~50cm 口径约 4.7 万捆，利用率 ~16%，均已入账）',
   inv.totalBundles > 40000 && inv.totalBundles < 52000 && inv.utilization > 0.13 && inv.utilization < 0.2 && inv.pending === 0,
@@ -69,13 +72,34 @@ check('清除覆盖恢复预置（Φ20 -> 21 支、吨位回写）',
   bundleRods('螺纹钢 Φ20') === r20.rods && getBundleRules(db).every(r => r.source === 'preset')
   && getBundleRules(db).find(r => r.spec === '螺纹钢 Φ20').weight === r20.weight, String(bundleRods('螺纹钢 Φ20')));
 
+console.log('== 每库位垛数（全局 stacksPerSlot + 逐库位覆盖 slot_racks） ==');
+const rack1 = applySlotRacks(db, { '1-1': 4, '不存在位': 6 });
+check('覆盖写入生效（1-1 -> 4 垛；未知库位忽略）', effectiveRacks('1-1') === 4 && rack1.racks['1-1'] === 4 && !('不存在位' in rack1.racks), JSON.stringify(rack1.racks));
+let s11 = getSlots(db).find(x => x.code === '1-1');
+check('getSlots 下发生效垛数（1-1 racks=4；旧期初高位存货保留显示）', s11.racks === 4 && s11.stacks.length >= 4, `racks=${s11.racks} 行=${s11.stacks.length}`);
+setSimParams(db, { warehouse: { stacksPerSlot: 6 } });
+check('全局垛数参数生效（无覆盖位 17-1 -> 6；覆盖位 1-1 仍 4）', effectiveRacks('17-1') === 6 && effectiveRacks('1-1') === 4, `17-1=${effectiveRacks('17-1')} 1-1=${effectiveRacks('1-1')}`);
+let invR = getInventory(db);
+check('库容按逐库位垛数汇总（90×6 + 1×4）× 400', invR.totalCapacity === (90 * 6 + 4) * getGeoCfg().bundlesPerStack, String(invR.totalCapacity));
+seed(db);   // 重建：期初按新垛数重灌（覆盖保留）
+s11 = getSlots(db).find(x => x.code === '1-1');
+const s171 = getSlots(db).find(x => x.code === '17-1');
+check('重建后 1-1 最多 4 垛、17-1 最多 6 垛且 racks 字段一致',
+  s11.racks === 4 && s11.stacks.length === 4 && s171.racks === 6 && s171.stacks.length === 6,
+  `1-1=${s11.stacks.length} 17-1=${s171.stacks.length}`);
+check('覆盖跨重建保留', getSlotRacks(db)['1-1'] === 4, JSON.stringify(getSlotRacks(db)));
+applySlotRacks(db, { '1-1': null });
+setSimParams(db, { warehouse: { stacksPerSlot: 8 } });
+seed(db);
+check('清除覆盖并恢复全局 8 后回到 91×8 垛', effectiveRacks('1-1') === 8 && getSlots(db).every(x => x.racks === 8), '');
+
 console.log('== 写入 / 状态同步 ==');
 // 选一个初始为空闲的库位做写入测试，保证状态同步断言不受随机撒点影响
 const freeSlot = getSlots(db).find(x => x.state === 'free');
 check('存在空闲库位可测写入', !!freeSlot, freeSlot && freeSlot.code);
 const slotId = freeSlot.id;
 let s = getSlot(db, slotId);
-check(`库位 ${s.code} 含 8 垛`, s.stacks.length === STACKS_PER_SLOT, `${s.code}`);
+check(`库位 ${s.code} 含 8 垛（racks 与垛行一致）`, s.racks === STACKS_PER_SLOT && s.stacks.length === STACKS_PER_SLOT, `${s.code}`);
 setStack(db, slotId, 1, { spec: '螺纹钢 Φ20', count: 5, pending: 1, in_time: 100 });
 s = getSlot(db, slotId);
 check('写入第 1 垛 5 捆', s.stacks[0].count === 5 && s.stacks[0].spec === '螺纹钢 Φ20', `count=${s.stacks[0].count}`);

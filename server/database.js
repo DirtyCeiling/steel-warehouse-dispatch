@@ -586,9 +586,9 @@ export function buildSeedSlots(rackOverrides = null) {
   return out;
 }
 /** 期初种子分布（与 /api/slots 行形状一致，供沙盘全量回放重建期初）；
- *  逐库位垛数覆盖与全局参数一并生效（与 seed 同源） */
-export function getSeedSlots(db) {
-  return buildSeedSlots(getSlotRacks(db));
+ *  逐库位垛数覆盖与全局参数一并生效（与 seed 同源）。db 可选：不传时仅按全局参数（探针离线调用） */
+export function getSeedSlots(db = null) {
+  return buildSeedSlots(db ? getSlotRacks(db) : null);
 }
 
 /**

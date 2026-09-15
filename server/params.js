@@ -61,7 +61,7 @@ export const PARAM_SCHEMA = [
       { key: 'speed',       label: '行进速度',     min: 1,   max: 10, step: 0.1, unit: 'm/s',  def: 5.0 },
       { key: 'scanTime',    label: '扫码核验时间', min: 0.5, max: 60, step: 0.1, unit: '秒',   def: 60 },
       { key: 'endurance',   label: '满电续航',     min: 0.5, max: 8,  step: 0.5, unit: '小时', def: 3 },
-      { key: 'chargeHours', label: '充满电时间',   min: 0,   max: 6,  step: 0.5, unit: '小时', def: 2 },
+      { key: 'chargeMin',   label: '充满电时间',   min: 0,   max: 180, step: 5,  unit: '分钟', def: 120 },
       { key: 'spanA',       label: '监测 A 跨',   min: 0,   max: 1,  step: 1,   unit: '开/关', def: 1, toggle: true },
       { key: 'fromA',       label: 'A 跨监测起始号区', min: 1, max: 33, step: 1, unit: '号区', def: 1 },
       { key: 'toA',         label: 'A 跨监测截止号区', min: 1, max: 33, step: 1, unit: '号区', def: 33 },
