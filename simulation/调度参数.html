@@ -88,13 +88,13 @@ const btnReset = document.getElementById('btnReset');
 /* 分类：schema 的 sec -> 展示分类（顺序即展示顺序） */
 const CATEGORIES = [
   { id: 'ops',      cls: 'c-ops',      ico: '🚦', name: '生产运营', desc: '生产节奏与车辆组车规则' },
-  { id: 'device',   cls: 'c-device',   ico: '🤖', name: '设备集群', desc: '机器狗 / 天车的台数、监测范围、作业参数与扫描能力评估阈值' },
+  { id: 'device',   cls: 'c-device',   ico: '🤖', name: '设备集群', desc: '机器狗 / 天车 / 吊装工的台数（人数）、监测范围、作业参数与扫描能力评估阈值' },
   { id: 'algo',     cls: 'c-algo',     ico: '🧮', name: '调度算法', desc: '卸货归堆推荐评分权重' },
   { id: 'abnormal', cls: 'c-abnormal', ico: '⚡', name: '异常注入', desc: '异常事件概率演练' },
 ];
 const SEC_CAT = {
   production: 'ops', truck: 'ops', task: 'ops',
-  robot: 'device', crane: 'device', assess: 'device',
+  robot: 'device', crane: 'device', crew: 'device', assess: 'device',
   placement: 'algo',
   abnormal: 'abnormal',
 };

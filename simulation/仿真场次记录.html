@@ -99,7 +99,8 @@
       <b>车辆进厂时效</b>（组车等待 / 通道排队 / 在场全程的均值 / P95 / 最大）、
       <b>扫描时效</b>（扫码延时均值 / P95 / 最大，按场次号过滤任务台账）、
       <b>机器狗效率评估</b>（需求 vs 能力、利用率、待扫码积压、结论与整改建议）、
-      <b>天车作业明细</b>（按天车汇总吊数/作业时长 + 逐吊执行五时刻：排队 → 认领开始 → 吊取 → 落位/落车 → 取绳，含时长拆解、倒垛让位联动）、
+      <b>天车作业明细</b>（按天车汇总吊数/作业时长 + 逐吊执行六时刻：排队 → 认领开始 → 挂绳 → 吊取 → 落位/落车 → 摘绳，含时长拆解、倒垛让位联动）、
+      <b>吊装工</b>（挂绳/摘绳人次 + 天车等人时长 + 按人步行/忙碌汇总），
       <b>捆级明细</b>（每一捆的捆号、放好时刻、机器狗开始扫码 / 扫码入库时刻、入账完成时刻；出库目标捆被压时的<b>倒垛作业</b>逐吊单列：
       源垛→目标垛、被倒捆号、让位目标捆、双点确认时刻，与所属出库车同车牌 / 车次 / 合同；标记列注明扫码机器狗编号、直通方式与异常明细）与 KPI。
       每场卡片支持 <b>⤓ 导出本场</b>（完整数据记录 CSV）与 <b>🗑 删除单场留档</b>。
@@ -129,9 +130,10 @@ const { esc, delayCls } = SIM;
  *   + vehicles[{plate,kind,loads,batch,spec,lane,summonAt,leftAt}]（lane = 进场通道号 1/2/3）
  *   + scan{inCount,delayAvg,delayP95,delayMax,postAvg,perRobot[...]}
  *   + perCrane[{name,in,out,restack,busy,busyPct}]（按天车汇总：吊数分型 / 吊运作业时长 / 作业占比）
- *   + cranes[{crane,kind,spec,slot,stack,bundle,plate,batch,order,forBundle,queueAt,startAt,hoistAt,dropAt,unhookAt}]
- *     （天车逐吊执行明细：排队/认领开始/吊取/落位落车/取绳 五时刻（仿真秒）；倒垛吊 slot/stack 为「源→目标」，
- *       forBundle = 所让位的出库目标捆号；unhookAt 仅出库装车吊有。旧版归档无此字段时显示提示）
+ *   + crew[{count,hooked,unhooked,waitHook,waitUnhook,per[{name,jobs,walk,busyPct}]}]（吊装工班组：挂/摘绳人次、天车等人时长、按人汇总）
+ *   + cranes[{crane,kind,spec,slot,stack,bundle,plate,batch,order,forBundle,queueAt,startAt,hookAt,hoistAt,dropAt,unhookAt}]
+ *     （天车逐吊执行明细：排队/认领开始/挂绳/吊取/落位落车/摘绳 六时刻（仿真秒）；倒垛吊 slot/stack 为「源→目标」，
+ *       forBundle = 所让位的出库目标捆号；hookAt/unhookAt = 吊装工挂/摘绳完成（人力环节开启时有；旧版归档无此字段时显示提示）
  *   + bundles[{bundle,io,spec,slot,stack,putAt,scanStartAt,scanDoneAt,doneAt,scanDelay,restack,forBundle,robot,retries,manualFix,mismatch,plate,batch,order,anomaly,skip,manual}]
  *     （捆级明细：每捆放好 -> 机器狗扫码 -> 入账/装车时刻；io=restack 为倒垛确认行 —— 库位/垛显示「源→目标」，
  *       forBundle = 本吊让位的出库目标捆号；出库行 restack = 装车前倒垛吊数；robot = 扫码机器狗编号（直通为空）；
@@ -166,10 +168,11 @@ function bundleMarks(b) {
 }
 
 /* 调度参数中文标签（与沙盘 PARAM_DEFS 同源维护） */
-const SEC_NAMES = { robot: '机器狗', crane: '天车', truck: '货车', production: '生产节奏', placement: '归堆策略', abnormal: '异常注入', assess: '效率评估' };
+const SEC_NAMES = { robot: '机器狗', crane: '天车', crew: '吊装工', truck: '货车', production: '生产节奏', placement: '归堆策略', abnormal: '异常注入', assess: '效率评估', task: '出库选捆', warehouse: '库房参数' };
 const PARAM_LABELS = {
   robot: { count: '机器狗数量(台)', chargerCount: '充电桩数量(个)', speed: '行进速度(m/s)', scanTime: '扫码核验时间(秒)', chargeHours: '充满电时间(小时)', endurance: '满电续航(小时)', spanA: '监测A跨', spanB: '监测B跨', spanC: '监测C跨', lowBattery: '返航充电阈值(%)', fullBattery: '满电阈值(%)', interruptCharge: '充电打断阈值(%)' },
-  crane: { speed: '行进速度(m/s)', hoistTime: '吊取时间(秒)', lowerTime: '放下时间(秒)', unhookTime: '取吊绳时间(秒)' },
+  crane: { speed: '行进速度(m/s)', hoistTime: '吊取时间(秒)', lowerTime: '放下时间(秒)' },
+  crew: { count: '吊装工人数(人)', walkSpeed: '行走速度(m/s)', hookTime: '挂绳时间(秒)', unhookTime: '摘绳时间(秒)' },
   truck: { speed: '行进速度(m/s)', minLoads: '每车最少吊数', maxLoads: '每车最多吊数', mixedSpecPct: '混装车比例(%)', plateScanTime: '车牌识别时间(秒)', manifestTime: '运单吊取时间(秒)', verifyTime: '出场复验时间(秒)' },
   production: { inPerDay: '每日进厂车辆(辆/日)', outPerDay: '每日出厂车辆(辆/日)', dayHours: '日时长(小时)' },
   placement: {},   // 归堆权重项多，仅展示原始键
@@ -372,12 +375,12 @@ function renderRun(r, idx) {
     if ((a.tips || []).length) html += `<div class="t-dim" style="margin-top:3px;font-size:12px">整改建议：${a.tips.map(esc).join('；')}</div>`;
   }
 
-  /* 天车作业明细（逐吊执行五时刻：排队 → 认领开始 → 吊取 → 落位/落车 → 取绳；旧版归档无此字段时提示） */
+  /* 天车作业明细（逐吊执行六时刻：排队 → 认领开始 → 挂绳 → 吊取 → 落位/落车 → 摘绳；旧版归档无此字段时提示） */
   const cs = r.cranes || [];
   if (cs.length || (r.perCrane || []).length || r.ledgerCount != null) {
     const cin = cs.filter(c => c.kind === 'in').length, cout = cs.filter(c => c.kind === 'out').length, crsN = cs.length - cin - cout;
     html += `<div class="sec-title">🚜 天车作业明细（${cs.length} 吊 · 入 ${cin} / 出 ${cout}${crsN ? ` / 倒垛 ${crsN}` : ''}${r.cranesTruncated ? ' · 仅保留最后 800 吊' : ''}）` +
-      (cs.length ? `<button data-expcranes="${esc(r.id)}" title="导出本场逐吊执行明细 CSV（五时刻 + 时长拆解 + 天车/车牌/车次/合同）">导出天车 CSV</button>` : '') + `</div>`;
+      (cs.length ? `<button data-expcranes="${esc(r.id)}" title="导出本场逐吊执行明细 CSV（六时刻 + 时长拆解 + 天车/车牌/车次/合同）">导出天车 CSV</button>` : '') + `</div>`;
     const pc = r.perCrane || [];
     if (pc.length) {
       html += `<div class="kv-grid" style="margin-top:6px">`;
@@ -385,25 +388,37 @@ function renderRun(r, idx) {
         `<div class="v">吊运 ${fmtSim(p.busy)}${p.busyPct != null ? ` · ${p.busyPct}%` : ''}</div></div>`;
       html += `</div>`;
     }
+    /* 吊装工班组（人因环节）：挂/摘绳人次 + 天车等人时长 + 按人汇总 */
+    const cw = r.crew;
+    if (cw && (cw.hooked || cw.unhooked || (cw.per || []).length)) {
+      html += `<div class="kv-grid" style="margin-top:6px">`;
+      html += `<div class="kv"><div class="k">🧍 吊装工 ${cw.count} 人</div>` +
+        `<div class="v">挂绳 ${cw.hooked} 次 / 摘绳 ${cw.unhooked} 次 · 天车等人：挂 ${fmtSim(cw.waitHook)} / 摘 ${fmtSim(cw.waitUnhook)}</div></div>`;
+      for (const p of cw.per || []) html += `<div class="kv"><div class="k">${esc(p.name)}</div>` +
+        `<div class="v">挂/摘 ${p.jobs} 次 · 步行 ${p.walk}m${p.busyPct != null ? ` · ${p.busyPct}%` : ''}</div></div>`;
+      html += `</div>`;
+    }
     if (cs.length) {
       html += `<table><tr><th>天车</th><th>类型</th><th>规格</th><th title="倒垛吊显示 源垛→目标垛">库位·垛</th><th>捆号</th>` +
         `<th>车牌</th><th>车次</th><th>合同</th>` +
         `<th title="排队入列（作业条件未就绪的等待起点）">排队</th><th title="天车认领、开始前往吊点">开始</th>` +
+        `<th title="吊装工挂绳完成（人力环节开启时有）">挂绳</th>` +
         `<th title="吊起完成（离垛/离车）">吊取</th><th title="落位完成（入库落料 / 倒垛落位 / 出库落车）">落位</th>` +
-        `<th title="出库装车吊落车后取回吊绳完成">取绳</th>` +
-        `<th title="排队等待 / 吊运作业（认领→落位）/ 取绳（秒）">时长拆解(秒)</th><th>标记</th></tr>`;
+        `<th title="吊装工摘绳完成（人力环节开启时有；关闭环节的旧版为出库取绳）">摘绳</th>` +
+        `<th title="排队等待 / 吊运作业（认领→落位）/ 摘绳（秒）">时长拆解(秒)</th><th>标记</th></tr>`;
       for (const c of cs) {
         const wait = Math.max(0, c.startAt - c.queueAt), work = Math.max(0, c.dropAt - c.startAt);
         const hook = c.unhookAt != null ? Math.max(0, c.unhookAt - c.dropAt) : null;
         const marks = [];
         if (c.kind === 'restack' && c.forBundle) marks.push(`为出库捆 ${esc(c.forBundle)} 让位`);
-        if (c.unhookAt != null) marks.push('含取吊绳');
+        if (c.unhookAt != null) marks.push('含挂/摘绳');
         html += `<tr><td class="mono">${esc(c.crane)}</td>` +
           `<td class="${c.kind === 'in' ? 't-in' : c.kind === 'out' ? 't-out' : 't-rs'}">${c.kind === 'in' ? '入库' : c.kind === 'out' ? '出库' : '倒垛'}</td>` +
           `<td>${esc(c.spec || '-')}</td><td class="mono">${esc(c.slot || '-')} ${esc(String(c.stack ?? ''))}</td>` +
           `<td class="mono">${esc(c.bundle || '-')}</td><td class="mono">${esc(c.plate || '-')}</td>` +
           `<td class="mono">${esc(c.batch || '-')}</td><td class="mono">${esc(c.order || '-')}</td>` +
           `<td class="mono">${fmtSimClock(c.queueAt)}</td><td class="mono">${fmtSimClock(c.startAt)}</td>` +
+          `<td class="mono">${c.hookAt != null ? fmtSimClock(c.hookAt) : '<span class="t-dim">—</span>'}</td>` +
           `<td class="mono">${fmtSimClock(c.hoistAt)}</td><td class="mono">${fmtSimClock(c.dropAt)}</td>` +
           `<td class="mono">${c.unhookAt != null ? fmtSimClock(c.unhookAt) : '<span class="t-dim">—</span>'}</td>` +
           `<td class="mono">${wait} / ${work}${hook != null ? ' / ' + hook : ''}</td>` +
@@ -411,7 +426,7 @@ function renderRun(r, idx) {
       }
       html += `</table>`;
     } else if (r.ledgerCount != null) {
-      html += `<div class="t-dim" style="padding:4px 0">${r.ledgerCount ? '本场次为旧版归档，未含天车逐吊明细 —— 重新开跑的场次会自动记录每吊的排队 / 吊取 / 落位 / 取绳时刻' : '本场无天车作业'}</div>`;
+      html += `<div class="t-dim" style="padding:4px 0">${r.ledgerCount ? '本场次为旧版归档，未含天车逐吊明细 —— 重新开跑的场次会自动记录每吊的排队 / 挂绳 / 吊取 / 落位 / 摘绳时刻' : '本场无天车作业'}</div>`;
     }
   }
 
@@ -505,12 +520,14 @@ function exportRunCranes(runId) {
   const cs = (r && r.cranes) || [];
   if (!cs.length) { flash('该场次无天车作业明细', false); return; }
   const head = ['场次号', '天车', '类型', '规格', '库位', '垛', '捆号', '车牌', '车次', '合同号',
-    '排队(时钟)', '开始(时钟)', '吊取(时钟)', '落位/落车(时钟)', '取绳(时钟)',
-    '排队等待(秒)', '吊运作业(秒)', '取绳(秒)', '倒垛让位捆'];
+    '排队(时钟)', '开始(时钟)', '挂绳(时钟)', '吊取(时钟)', '落位/落车(时钟)', '摘绳(时钟)',
+    '排队等待(秒)', '吊运作业(秒)', '摘绳(秒)', '倒垛让位捆'];
   const rows = cs.map(c => [
     r.id, c.crane, c.kind === 'in' ? '入库' : c.kind === 'restack' ? '倒垛' : '出库', c.spec || '',
     c.slot || '', String(c.stack ?? ''), c.bundle || '', c.plate || '', c.batch || '', c.order || '',
-    fmtSimClock(c.queueAt), fmtSimClock(c.startAt), fmtSimClock(c.hoistAt), fmtSimClock(c.dropAt),
+    fmtSimClock(c.queueAt), fmtSimClock(c.startAt),
+    c.hookAt != null ? fmtSimClock(c.hookAt) : '',
+    fmtSimClock(c.hoistAt), fmtSimClock(c.dropAt),
     c.unhookAt != null ? fmtSimClock(c.unhookAt) : '',
     Math.max(0, c.startAt - c.queueAt), Math.max(0, c.dropAt - c.startAt),
     c.unhookAt != null ? Math.max(0, c.unhookAt - c.dropAt) : '',

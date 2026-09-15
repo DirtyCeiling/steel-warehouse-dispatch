@@ -529,7 +529,7 @@ function buildEnv() {
     const lb = makeLabel(s.code, ZONES[s.zone].label, 6.5);
     lb.position.set(WX(g.x), RACK_H + 1.6, WZ(g.z) - dEff / 2 - 1.4);
     envGroup.add(lb);
-    for (let i = 0; i < STACKS_PER_SLOT; i++) {
+    for (let i = 0; i < s.stacks.length; i++) {   // 每库位按生效垛数建料架（垛层划分仍固定 8 层）
       const cell = stackCell3(s, i);
       const px = STACK_W / 2 - .07, pz = cell.cd / 2 - .35;   // 立柱外缘贴料架边界：相邻两列柱间净距 = 1.8m 空道
       for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
@@ -1213,9 +1213,9 @@ function syncCranes() {
     const tz = WZ(cr.y);
     for (const w of C.wheelsT) w.rotation.x -= (tz - C.trolley.position.z) / .13;       // 小车轮随横移滚动
     C.trolley.position.z = tz;
-    // 吊具高度：吊取/放下时按进度走 V 形轨迹（先落到位再起升）；取吊绳（UNHOOK）保持车斗低位摘绳作业；其余高位悬挂
+    // 吊具高度：吊取/放下时按进度走 V 形轨迹（先落到位再起升）；等人挂绳/摘绳（WAIT_HOOK/WAIT_UNHOOK）保持低位供吊装工作业；其余高位悬挂
     const dur = cr.state === 'HOIST' ? CFG.crane.hoistTime : cr.state === 'LOWER' ? CFG.crane.lowerTime : 0;
-    let hookY = cr.state === 'UNHOOK' ? CR_HOOK_LOW : CR_HOOK_HIGH;
+    let hookY = (cr.state === 'UNHOOK' || cr.state === 'WAIT_HOOK' || cr.state === 'WAIT_UNHOOK') ? CR_HOOK_LOW : CR_HOOK_HIGH;
     if (dur) hookY = CR_HOOK_LOW + (CR_HOOK_HIGH - CR_HOOK_LOW) * Math.abs(Math.cos(Math.PI * Math.min(1, cr.timer / dur)));
     if (C.drum && C.lastHook != null) C.drum.rotation.x += (C.lastHook - hookY) / .34;  // 卷筒随吊具升降收放绳
     C.lastHook = hookY;
@@ -1265,6 +1265,96 @@ function syncCranes() {
     ropeBetween(C.ropes[1], .72, yRT, tz - .5, .95, spY + .1, tz - .33);
     ropeBetween(C.ropes[2], -.72, yRT, tz + .5, -.95, spY + .1, tz + .33);
     ropeBetween(C.ropes[3], .72, yRT, tz + .5, .95, spY + .1, tz + .33);
+  }
+}
+
+/* ---------------- 吊装工（挂绳 / 摘绳 · 人因环节） ----------------
+ * 低多边形人形（≈1.75m × 1.5 图示放大）：工装裤 + 反光背心 + 安全帽 + 作业臂；
+ * 行走摆腿（walkPhase 由仿真核心推进）、挂/摘绳双臂上举操作，脚下橙色作业环脉冲。
+ * 数据源 = 仿真核心 riggers（行走/作业状态机见 shared/sandbox-core.mjs 吊装工模块）。 */
+const CREW_STATE_TXT3 = { IDLE: '待命', GO_HOOK: '前往挂绳', HOOK: '挂绳中', GO_UNHOOK: '前往摘绳', UNHOOK: '摘绳中' };
+const crewG = new Map();
+function makeCrewG(r) {
+  const g = new THREE.Group();
+  const pantsM = mat('cwPants', () => new THREE.MeshStandardMaterial({ color: 0x2f3b52, roughness: .85 }));
+  const vestM = mat('cwVest', () => new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: .6, emissive: 0x7c3a00, emissiveIntensity: .18 }));   // 反光背心（橙）
+  const skinM = mat('cwSkin', () => new THREE.MeshStandardMaterial({ color: 0xd9a066, roughness: .7 }));
+  const hatM = mat('cwHat', () => new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: .45, emissive: 0x92600a, emissiveIntensity: .3 }));      // 安全帽（黄）
+  const bootM = mat('cwBoot', () => new THREE.MeshStandardMaterial({ color: 0x1c2534, roughness: .9 }));
+  // 双腿（髋部枢轴，可行走摆动）：建模朝 +X（与机器狗同向约定）
+  const legGeo = geo('cwLeg', () => { const b = new THREE.BoxGeometry(.13, .82, .16); b.translate(0, -.41, 0); return b; });
+  const legs = [];
+  for (const sz of [-1, 1]) {
+    const hip = new THREE.Group(); hip.position.set(0, .84, sz * .095); g.add(hip);
+    const leg = new THREE.Mesh(legGeo, pantsM); leg.castShadow = true; hip.add(leg);
+    const boot = new THREE.Mesh(geo('cwBoot', () => { const b = new THREE.BoxGeometry(.20, .10, .16); b.translate(.03, -.05, 0); return b; }), bootM);
+    boot.position.set(0, -.80, 0); hip.add(boot);
+    legs.push(hip);
+  }
+  // 躯干（反光背心）
+  const torso = new THREE.Mesh(geo('cwTorso', () => new THREE.BoxGeometry(.24, .60, .40)), vestM);
+  torso.position.y = 1.14; torso.castShadow = true; g.add(torso);
+  const belt = new THREE.Mesh(geo('cwBelt', () => new THREE.BoxGeometry(.26, .07, .42)), pantsM);
+  belt.position.y = .86; g.add(belt);
+  // 双臂（肩部枢轴：行走小幅摆动、作业上举过头）
+  const armGeo = geo('cwArm', () => { const b = new THREE.BoxGeometry(.10, .56, .12); b.translate(0, -.28, 0); return b; });
+  const arms = [];
+  for (const sz of [-1, 1]) {
+    const sh = new THREE.Group(); sh.position.set(0, 1.40, sz * .26); g.add(sh);
+    sh.add(new THREE.Mesh(armGeo, vestM));
+    const hand = new THREE.Mesh(geo('cwHand', () => new THREE.SphereGeometry(.055, 8, 6)), skinM);
+    hand.position.y = -.56; sh.add(hand);
+    arms.push(sh);
+  }
+  // 头 + 安全帽
+  const head = new THREE.Mesh(geo('cwHead', () => new THREE.SphereGeometry(.135, 12, 10)), skinM);
+  head.position.y = 1.60; head.castShadow = true; g.add(head);
+  const hat = new THREE.Mesh(geo('cwHatD', () => new THREE.SphereGeometry(.155, 12, 8, 0, Math.PI * 2, 0, Math.PI * .55)), hatM);
+  hat.position.y = 1.62; g.add(hat);
+  const brim = new THREE.Mesh(geo('cwHatB', () => new THREE.CylinderGeometry(.185, .185, .022, 14)), hatM);
+  brim.position.y = 1.63; g.add(brim);
+  // 头顶姓名标牌 + 脚下作业环（挂/摘绳时脉冲）
+  const name = makeLabel(r.name + ' 吊装工', '#b45309', 4);
+  name.position.y = 2.35; g.add(name);
+  const ring = new THREE.Mesh(geo('cwRing', () => new THREE.RingGeometry(.55, .68, 36)),
+    new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = .02; g.add(ring);
+  g.scale.setScalar(1.5);   // 图示放大（略小于机器狗 2×：人比狗大、比设备小）
+  dynGroup.add(g);
+  return { g, legs, arms, ring, name, stateTxt: CREW_STATE_TXT3[r.state] || r.state };
+}
+function syncCrew(now) {
+  const seen = new Set();
+  for (const r of riggers) {
+    seen.add(r.name);
+    let C = crewG.get(r.name);
+    if (!C) { C = makeCrewG(r); crewG.set(r.name, C); }
+    C.g.position.set(WX(r.x), 0, WZ(r.y));
+    C.g.rotation.y = -r.heading;
+    const walking = r.state === 'GO_HOOK' || r.state === 'GO_UNHOOK';
+    const working = r.state === 'HOOK' || r.state === 'UNHOOK';
+    const wp = r.walkPhase * Math.PI;
+    C.legs.forEach((hip, i) => {   // 行走摆腿（对相反位）；作业/待命时并腿微分回正
+      const ph = wp + (i === 0 ? 0 : Math.PI);
+      const sw = walking ? Math.sin(ph) * .55 : 0;
+      hip.rotation.z += (sw - hip.rotation.z) * .4;
+    });
+    C.arms.forEach((sh, i) => {    // 行走小幅前后摆；挂/摘绳双臂上举过头（够吊绳/吊具）带轻微操作起伏
+      const ph = wp + (i === 0 ? Math.PI : 0);
+      let rot = walking ? Math.sin(ph) * .35 : 0;
+      if (working) rot = -2.35 + Math.sin(now / 160 + i * 1.7) * .16;   // 上举（-Z 向上转）
+      sh.rotation.z += (rot - sh.rotation.z) * .22;
+    });
+    if (working) {   // 作业环脉冲（扩散渐隐）
+      const ph = (simTime * 1.2) % 1;
+      C.ring.scale.setScalar(.6 + ph * 1.6);
+      C.ring.material.opacity = .5 * (1 - ph);
+      C.ring.visible = true;
+    } else C.ring.visible = false;
+  }
+  for (const [name, C] of crewG) if (!seen.has(name)) {   // 班组裁员清理（人数参数下调）
+    dynGroup.remove(C.g);
+    crewG.delete(name);
   }
 }
 
@@ -1691,7 +1781,7 @@ cv3.addEventListener('pointermove', e => {
     const t = tiles[hoverCell.r][hoverCell.c];
     if (t.type === 'storage') {
       const stH = storages[t.slotId];
-      for (let i = 0; i < STACKS_PER_SLOT; i++) {
+      for (let i = 0; i < stH.stacks.length; i++) {
         const c3 = stackCell3(stH, i);
         if (Math.abs(p.x - WX(c3.x)) <= c3.cw / 2 && Math.abs(p.z - WZ(c3.z)) <= c3.cd / 2) {
           window.__hoverStack = stH; window.__hoverStackSi = i;
@@ -1739,11 +1829,11 @@ cv3.addEventListener('click', e => {
   const hs = stackAtWorld(p, cell);
   showStackCard(st, hs ? hs.si : -1, e);
 });
-function stackAtWorld(p, cell) {   // 地面交点 -> 具体垛（8 垛沿跨向纵深，与 stackCell3 划分一致）
+function stackAtWorld(p, cell) {   // 地面交点 -> 具体垛（垛层划分固定 8 层，与 stackCell3 一致；未设货架层返回 si=-1）
   const t = tiles[cell.r][cell.c];
   if (t.type !== 'storage') return null;
   const st = storages[t.slotId];
-  for (let i = 0; i < STACKS_PER_SLOT; i++) {
+  for (let i = 0; i < st.stacks.length; i++) {
     const c3 = stackCell3(st, i);
     if (Math.abs(p.x - WX(c3.x)) <= c3.cw / 2 && Math.abs(p.z - WZ(c3.z)) <= c3.cd / 2) return { st, si: i };
   }
@@ -1828,6 +1918,7 @@ window.__render3D = function () {
     if (envChargers !== CFG.robot.chargerCount) buildChargers();
     syncBundles(now);
     syncRobots(now);
+    syncCrew(now);
     syncCranes();
     syncTrucks();
     syncTargets();

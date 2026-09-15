@@ -75,13 +75,22 @@ export const PARAM_SCHEMA = [
   },
   {
     sec: 'crane', secLabel: '天车（吊运装卸）',
-    desc: '6 台（每跨 2 台，TC-A1~TC-C2）：行进速度（大车）/ 小车运行速度 / 吊取 / 放下耗时；出库装车落车后需取回吊绳（仅出库吊，取绳期间天车被占用，货车待末吊吊绳取出后复验离场；0 = 关闭该环节）',
+    desc: '6 台（每跨 2 台，TC-A1~TC-C2）：行进速度（大车）/ 小车运行速度 / 吊取 / 放下耗时（挂绳/摘绳由吊装工完成，见「吊装工」段）',
     defs: [
       { key: 'speed',     label: '行进速度', min: 0.5, max: 10, step: 0.1, unit: 'm/s', def: 4.0 },
       { key: 'trolleySpeed', label: '小车运行速度', min: 0.2, max: 4, step: 0.1, unit: 'm/s', def: 1.0 },
       { key: 'hoistTime', label: '吊取时间', min: 0.5, max: 180, step: 0.1, unit: '秒', def: 2.0 },
       { key: 'lowerTime', label: '放下时间', min: 0.5, max: 180, step: 0.1, unit: '秒', def: 1.8 },
-      { key: 'unhookTime', label: '取吊绳时间', min: 0, max: 300, step: 1, unit: '秒', def: 74 },
+    ],
+  },
+  {
+    sec: 'crew', secLabel: '吊装工（挂绳 / 摘绳）',
+    desc: '钢材吊运需吊装工配合（人因环节）：吊运前人工把吊绳穿上钢材挂上吊具（挂绳）、卸货落位后人工把吊绳自钢材取下（摘绳）——入库卸车 / 出库装车 / 倒垛每吊两端各一次；天车到位后人未到须等待（等待时长入场次台账）。人数 0 = 关闭人力环节（天车自动挂摘绳，不等待）',
+    defs: [
+      { key: 'count',      label: '吊装工人数', min: 0,   max: 12,  step: 1,   unit: '人',   def: 6 },
+      { key: 'walkSpeed',  label: '行走速度',   min: 0.5, max: 3,   step: 0.1, unit: 'm/s',  def: 1.4 },
+      { key: 'hookTime',   label: '挂绳时间',   min: 0,   max: 300, step: 1,   unit: '秒',   def: 60 },
+      { key: 'unhookTime', label: '摘绳时间',   min: 0,   max: 300, step: 1,   unit: '秒',   def: 45 },
     ],
   },
   {
