@@ -207,8 +207,12 @@ check('调度参数 schema 全量可写（含开关型监测跨，写入并夹�
   && sandbox.setDeviceParam('placement', 'sameSpecBase', 80) === 80, '');
 const spd = sandbox.setDeviceParam('robot', 'speed', 8);
 check('机器狗速度参数写入并夹取', spd === 8, 'speed=' + spd);
-check('天车吊取/放下参数写入',
-  sandbox.setDeviceParam('crane', 'hoistTime', 1) === 1 && sandbox.setDeviceParam('crane', 'lowerTime', 0.6) === 0.6, '');
+check('天车吊取/放下时间已挪出调度参数（设备固有常数，写不入）；小车速度仍可写',
+  sandbox.setDeviceParam('crane', 'hoistTime', 1) === null && sandbox.setDeviceParam('crane', 'lowerTime', 0.6) === null
+  && sandbox.setDeviceParam('crane', 'trolleySpeed', 1.5) === 1.5, '');
+check('吊运工放绳/出库取绳时间参数写入并夹取',
+  sandbox.setDeviceParam('crew', 'unhookTime', 50) === 50 && sandbox.setDeviceParam('crew', 'ropeOutTime', 40) === 40
+  && sandbox.setDeviceParam('crew', 'ropeOutTime', 9999) === 300, '');
 check('越界参数被夹取', sandbox.setDeviceParam('crane', 'speed', 99) === 10, '');
 await pump(2);
 check('参数调整后零错误', sandbox.__dbg.errs.length === 0, '');
@@ -267,7 +271,7 @@ check('存在 6-10 吊的满车次（一车多吊）', batchLoads.some(n => n >=
 check('所有车次吊数 1..10（一车不超过 10 吊）', batchLoads.every(n => n >= 1 && n <= 10), '');
 const inv = el('kpiInv').textContent;
 const invN = parseInt(inv);
-check('库存在合理区间（捆，总库容 291200）', invN >= 1 && invN <= 291200, inv);
+check('库存在合理区间（捆，总库容 72800）', invN >= 1 && invN <= 72800, inv);
 check('利用率已统计', el('kpiUtil').textContent.includes('%'), el('kpiUtil').textContent);
 check('平均任务时长已统计', /^\d{2}:\d{2}$/.test(el('kpiAvg').textContent.trim()), el('kpiAvg').textContent);
 check('流程链路条渲染', el('flowStrip').innerHTML.includes('库存更新'), '');

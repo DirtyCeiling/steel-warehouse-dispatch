@@ -452,7 +452,7 @@
     <div class="logo">🤖</div>
     <div>
 /*@@core-seg-6@@*/
-      <p id="hdrDesc" title="长 300m × 宽 90m · 三跨（A/B/C，每跨 30m）· 3 条竖向车辆进出通道 · 91 库位（每库位 8 垛 × 400 捆）· 3 台机器狗（扫码核验）+ 6 台天车（每跨 2 台）+ 6 名吊装工（挂绳/摘绳）· 一车 6-10 吊（单跨装卸 · 一车一天车：一辆车的装卸全程由一台天车完成）· 流程：货车进场停靠 -> 跨上立柱摄像头识别车牌 -> 物流系统吊取运单 -> 吊装工挂绳 -> 天车吊运装卸 -> 吊装工摘绳 -> 机器狗扫码确认 -> 库存更新">长 300m × 宽 90m · 三跨（A/B/C，每跨 30m）· 3 条竖向车辆进出通道 · 91 库位（每库位 8 垛 × 400 捆）· <span id="hdrDogN">3 台机器狗</span>（扫码核验）+ 6 台天车（每跨 2 台）+ 6 名吊装工（挂绳/摘绳）· 一车 6-10 吊（单跨装卸 · 一车一天车）· 流程：货车进场停靠 -> 跨上立柱摄像头识别车牌 -> 物流系统吊取运单 -> 吊装工挂绳 -> 天车吊运装卸 -> 吊装工摘绳 -> 机器狗扫码确认 -> 库存更新</p>
+      <p id="hdrDesc" title="长 300m × 宽 90m · 三跨（A/B/C，每跨 30m）· 3 条竖向车辆进出通道 · 91 库位（每库位 8 垛 × 400 捆）· 3 台机器狗（扫码核验）+ 6 台天车（每跨 2 台）+ 6 名库区吊运工（挂绳/放绳/取绳 · 出入库货车另配车上专职 1 名）· 一车 6-10 吊（单跨装卸 · 一车一天车：一辆车的装卸全程由一台天车完成）· 流程：货车进场停靠 -> 跨上立柱摄像头识别车牌 -> 物流系统吊取运单 -> 吊运工挂绳 -> 天车吊运装卸 -> 吊运工放绳/取绳 -> 机器狗扫码确认 -> 库存更新">长 300m × 宽 90m · 三跨（A/B/C，每跨 30m）· 3 条竖向车辆进出通道 · 91 库位（每库位 8 垛 × 400 捆）· <span id="hdrDogN">3 台机器狗</span>（扫码核验）+ 6 台天车（每跨 2 台）+ 6 名库区吊运工（挂绳/放绳/取绳 · 车上另配专职）· 一车 6-10 吊（单跨装卸 · 一车一天车）· 流程：货车进场停靠 -> 跨上立柱摄像头识别车牌 -> 物流系统吊取运单 -> 吊运工挂绳 -> 天车吊运装卸 -> 吊运工放绳/取绳 -> 机器狗扫码确认 -> 库存更新</p>
     </div>
   </div>
   <div class="seg" id="viewTabs" title="切换视图：仿真沙盘 / 库存三维 / 机器狗视角">
@@ -511,12 +511,12 @@
       <span class="li"><span class="sw" style="border-color:#2dd4bf;background:rgba(45,212,191,.35)"></span>管材</span>
       <span class="li"><span class="sw" style="border-color:#34d399;background:rgba(52,211,153,.15)"></span>车辆进出通道 ×3</span>
       <span class="li"><span class="sw" style="border-color:#a3e635;background:rgba(163,230,53,.2)"></span>货车</span>
-      <span class="li"><span class="sw" style="border-color:#fbbf24;background:rgba(251,191,36,.55)"></span>吊装工（挂绳/摘绳）</span>
+      <span class="li"><span class="sw" style="border-color:#fbbf24;background:rgba(251,191,36,.55)"></span>吊运工（挂绳/放绳/取绳 · 含车上专职）</span>
       <span class="li"><span class="sw" style="border-color:#94a3b8;background:rgba(148,163,184,.3)"></span>跨上立柱摄像头</span>
       <span class="li"><span class="sw" style="border-color:#f472b6;background:rgba(244,114,182,.2)"></span>天车(架空)</span>
       <span class="li hint">横置布局：左 = 南端（1 号区 · 铁姆肯区）-> 右 = 北端（33 号区）；货车由通道北端入口进场，停靠目标跨，离场顺路前行驶出南端出口</span>
       <span class="li hint">货车停靠后：跨上立柱摄像头识别车牌 -> 凭车牌从物流系统吊取运单（该车送的捆/规格）-> 天车认领开工（一车一天车：该车全部装卸由这台天车完成）</span>
-      <span class="li hint">钢材吊运需吊装工配合：每吊两端人工挂绳（吊运前把吊绳穿上钢材挂上吊具）/ 摘绳（卸货后把吊绳取下）——天车到位等人，人走过去干活，人数见「调度参数 · 吊装工」</span>
+      <span class="li hint">钢材吊运需吊运工配合：每吊两端人工挂绳（吊运前把吊绳穿上钢材挂上吊钩）/ 放绳（落位后自吊钩取下）——库位侧由库区班组步行前往，车侧由该车专职吊运工负责（不上库位）；出库落车后另需取出捆内吊绳收回，人数见「调度参数 · 吊运工」</span>
       <span class="li hint">机器狗不搬运钢材：天车负责吊运装卸，机器狗经库位间空道到垛位前扫码确认入/出库</span>
       <span class="li hint">货车一车 6-10 吊（同跨装卸）：出库车按物流订单配满才发车（不设等待超时），入库车凑满一车发车</span>
 /*@@core-seg-12@@*/
@@ -543,7 +543,7 @@
         <button data-tab="all" class="on">全部</button>
         <button data-tab="robot">机器狗</button>
         <button data-tab="crane">天车</button>
-        <button data-tab="crew">吊装工</button>
+        <button data-tab="crew">吊运工</button>
       </div>
       <div class="battsum" id="battSum">–</div>
       <div class="scroll" id="robotCards"></div>
@@ -712,8 +712,11 @@ window.__dbg = {
     jobKind: c.job ? c.job.kind : null, truckTaskId: c.job && c.job.task.truck ? c.job.task.truck.taskId : null })); },
   get crewStates() { return riggers.map(r => ({ name: r.name, state: r.state, x: +r.x.toFixed(1), y: +r.y.toFixed(1),
     jobs: r.jobsDone, walk: Math.round(r.walkDist), busy: Math.round(r.busyTime),
-    req: r.req ? { kind: r.req.kind, crane: r.req.crane.name } : null })); },   // 吊装工探针（人因环节自检）
-  get crewStat() { return { ...crewStat, count: riggers.length }; },   // 班组累计：挂/摘次数 + 天车等人时长
+    req: r.req ? { kind: r.req.kind, crane: r.req.crane.name } : null })); },   // 库区吊运工探针（人因环节自检）
+  get truckRiggerStates() { return trucks.map(tk => tk.rigger).filter(Boolean).map(r => ({ name: r.name, state: r.state,
+    truck: r.truck.taskId, plate: r.truck.plate, jobs: r.jobsDone, walk: Math.round(r.walkDist),
+    req: r.req ? { kind: r.req.kind, crane: r.req.crane.name } : null })); },   // 车上专职吊运工探针（每车 1 名 · 专管车上绳索、不上库位）
+  get crewStat() { return { ...crewStat, count: riggers.length }; },   // 班组累计：挂/放/取绳次数 + 天车等人时长
   get crewCfg() { return { ...CFG.crew }; },
   get truckCrane() { return { ...truckCraneStat }; },   // 一车一天车探针：双车同时服务违规 / 离场车次 / 跨天车车次 / 代吊次数
 /*@@core-seg-13@@*/
@@ -801,6 +804,10 @@ window.__dbg = {
  *   · 出库按订单履约：一车出厂 = 一张提货订单（合同号 + 需求捆数/吨数），
  *     捆级先进先出选捆（目标捆 = 全库最早已扫码捆，可能在垛底；被压即先倒垛，上方整层压货全倒；
  *     「调度参数」页可切回垛顶直取免倒垛），合同捆齐套才闭环。
+ *   · 吊运工人因环节：每吊两端人工配合——吊运前挂绳（吊绳穿捆挂上天车吊钩）、
+ *     落位后自吊钩放绳（入库/倒垛吊绳随捆留垛）；出库落车另由车上专职吊运工把
+ *     捆内吊绳抽出收回（不挡天车、挡货车复验离场）。库位侧由库区班组步行前往，
+ *     车侧由该车专职吊运工负责（不上库位）。人数 0 = 关闭人力环节。
  *
  * 库区布局（与库区平面图一致，横置：长 300m 横向、宽 90m 纵向）：
  *   宽 90m = 三跨：A跨/一跨(上) · B跨/二跨(中) · C跨/三跨(下)，每跨 30m
@@ -851,13 +858,15 @@ const CFG = {
   crane: {
     speed: 4.0,                      // 大车行进速度（m/s，沿厂房长向）
     trolleySpeed: 1.0,               // 小车运行速度（m/s，沿主梁横跨方向）
-    hoistTime: 2.0, lowerTime: 1.8,  // 吊取 / 放下耗时（秒；挂绳/摘绳由吊装工完成，见 crew 段）
+    hoistTime: 2.0, lowerTime: 1.8,  // 吊取 / 放下耗时（秒，设备固有常数：已挪出「调度参数」页；绳索环节由吊运工完成，见 crew 段）
   },
-  crew: {                            // 吊装工（地面人因环节：吊运前挂绳、卸货后摘绳）
-    count: 6,                        // 吊装工人数（0 = 关闭人力环节：天车自动挂摘绳、不等待）
-    walkSpeed: 1.4,                  // 场内行走速度（m/s）
-    hookTime: 60,                    // 挂绳耗时（秒）：把吊绳穿上钢材并挂上吊具
-    unhookTime: 45,                  // 摘绳耗时（秒）：把吊绳自钢材取下归还吊具
+  crew: {                            // 吊运工（人因环节：吊运前挂绳 → 落位放绳 → 出库取绳）
+    count: 6,                        // 库区吊运工人数（库位侧作业班组；0 = 关闭人力环节：天车自动挂/放绳、出库免取绳、不等待）
+    walkSpeed: 1.4,                  // 库区班组行进速度（m/s）
+    hookTime: 60,                    // 挂绳耗时（秒）：把吊绳穿上钢材并挂上天车吊钩
+    unhookTime: 45,                  // 放绳耗时（秒）：落位后把吊绳自天车吊钩取下（入库/倒垛吊绳随捆留垛，供下次直接挂钩）
+    ropeOutTime: 30,                 // 取绳耗时（秒）：出库落车后把吊绳自钢材捆中抽出收回（仅出库车端；不挡天车，挡货车复验离场）
+    // 注：出入库货车每车另自动配 1 名车上专职吊运工（专管车上绳索取放，不上库位、不占 count、无行走耗时）
   },
   truck: {
     speed: 8.0,                     // 货车场内行驶速度（m/s）
@@ -906,7 +915,7 @@ const CFG = {
     packShim: 15,                        // 层间垫木厚（mm）
     packGap: 30,                         // 捆间通风缝（mm）
     diaKw: 1.08, diaKh: 1.06,            // 捆截面宽/高向富余系数（×杆径）
-    bundlesPerStack: 400,                // 每垛捆数通用上限（实际垛容按限高收窄）
+    bundlesPerStack: 100,                // 每垛捆数通用上限（10~100，实际垛容按限高收窄）
     minDiaCm: 15, maxDiaCm: 50,          // 捆径口径（一捆合起来的外接圆直径上下限，cm）
   },
   initInventory: 30,                   // 期初库存捆数（兜底：库存数据库服务不可达时使用内置随机分布）
@@ -1012,7 +1021,7 @@ const STATE_TEXT = {
 };
 const CAT_NAMES = {
   task: '任务', dispatch: '调度', plan: '规划', robot: '机器狗', truck: '车辆',
-  inventory: '库存', charge: '电量', crane: '天车', crew: '吊装工', system: '系统',
+  inventory: '库存', charge: '电量', crane: '天车', crew: '吊运工', system: '系统',
 };
 const BUSY_STATES = ['ASSIGN', 'PLAN', 'NAV', 'TURN', 'SCAN', 'REPORT'];
 function ringDur(state) { // 作业进度环时长（实时读取参数，支持运行时调整）
@@ -1050,12 +1059,11 @@ const PARAM_DEFS = [
   { sec: 'robot', key: 'toC',        label: 'C 跨监测截止号区', min: 1, max: 33, step: 1, unit: '号区' },
   { sec: 'crane', key: 'speed',      label: '行进速度',     min: 0.5, max: 10, step: 0.1, unit: 'm/s' },
   { sec: 'crane', key: 'trolleySpeed', label: '小车运行速度', min: 0.2, max: 4, step: 0.1, unit: 'm/s' },
-  { sec: 'crane', key: 'hoistTime',  label: '吊取时间',     min: 0.5, max: 180, step: 0.1, unit: '秒' },
-  { sec: 'crane', key: 'lowerTime',  label: '放下时间',     min: 0.5, max: 180, step: 0.1, unit: '秒' },
-  { sec: 'crew', key: 'count',       label: '吊装工人数',   min: 0,   max: 12,  step: 1,   unit: '人' },
-  { sec: 'crew', key: 'walkSpeed',   label: '行走速度',     min: 0.5, max: 3,   step: 0.1, unit: 'm/s' },
+  { sec: 'crew', key: 'count',       label: '库区吊运工人数', min: 0, max: 12,  step: 1,   unit: '人' },
+  { sec: 'crew', key: 'walkSpeed',   label: '行进速度',     min: 0.5, max: 3,   step: 0.1, unit: 'm/s' },
   { sec: 'crew', key: 'hookTime',    label: '挂绳时间',     min: 0,   max: 300, step: 1,   unit: '秒' },
-  { sec: 'crew', key: 'unhookTime',  label: '摘绳时间',     min: 0,   max: 300, step: 1,   unit: '秒' },
+  { sec: 'crew', key: 'unhookTime',  label: '从钩子上放绳时间', min: 0, max: 300, step: 1, unit: '秒' },
+  { sec: 'crew', key: 'ropeOutTime', label: '出库钢材取吊绳时间', min: 0, max: 300, step: 1, unit: '秒' },
   { sec: 'truck', key: 'minLoads',     label: '每车最少吊数', min: 2,   max: 10, step: 1,   unit: '吊' },
   { sec: 'truck', key: 'maxLoads',     label: '每车最多吊数', min: 4,   max: 16, step: 1,   unit: '吊' },
   { sec: 'truck', key: 'mixedSpecPct', label: '混装车比例',   min: 0,   max: 100, step: 5,  unit: '%' },
@@ -1092,7 +1100,7 @@ const PARAM_DEFS = [
   { sec: 'warehouse', key: 'packGap',   label: '捆间通风缝',   min: 20,  max: 80,  step: 1,    unit: 'mm' },
   { sec: 'warehouse', key: 'diaKw',     label: '截面宽向系数', min: 1.0, max: 1.2, step: 0.01, unit: '×' },
   { sec: 'warehouse', key: 'diaKh',     label: '截面高向系数', min: 1.0, max: 1.2, step: 0.01, unit: '×' },
-  { sec: 'warehouse', key: 'bundlesPerStack', label: '每垛捆数上限', min: 50, max: 400, step: 10, unit: '捆' },
+  { sec: 'warehouse', key: 'bundlesPerStack', label: '每垛捆数上限', min: 10, max: 100, step: 10, unit: '捆' },
   { sec: 'warehouse', key: 'minDiaCm',  label: '捆径下限',     min: 5,   max: 30,  step: 1,    unit: 'cm' },
   { sec: 'warehouse', key: 'maxDiaCm',  label: '捆径上限',     min: 30,  max: 80,  step: 1,    unit: 'cm' },
 ];
@@ -1108,11 +1116,11 @@ const DEFAULT_PARAMS = {
   assess: { ...CFG.assess },
   warehouse: { ...CFG.warehouse },
 };
-const SEC_NAMES = { robot: '机器狗', crane: '天车', crew: '吊装工', truck: '货车', task: '出库选捆', production: '生产节奏', placement: '归堆策略', abnormal: '异常注入', assess: '效率评估阈值', warehouse: '库房参数' };
+const SEC_NAMES = { robot: '机器狗', crane: '天车', crew: '吊运工', truck: '货车', task: '出库选捆', production: '生产节奏', placement: '归堆策略', abnormal: '异常注入', assess: '效率评估阈值', warehouse: '库房参数' };
 const SEC_GROUPS = {
   robot: '机器狗（台数 1-6 · D-01 起 · 监测跨 + 跨内号区范围 = 扫码范围 · 货车停靠按监测跨 · 扫码核验）',
   crane: '天车（6 台 · 每跨 2 台 · TC-A1~TC-C2 · 吊运装卸）',
-  crew: '吊装工（人因环节 · R-01 起 · 入库/出库/倒垛每吊两端各一次人工挂绳/摘绳 · 天车到位等人、人走过去干活 · 人数 0 = 关闭人力环节）',
+  crew: '吊运工（人因环节 · 库区班组 R-01 起 · 挂绳/放绳/取绳：吊运前挂绳 → 落位自吊钩放绳 → 出库落车抽出捆内吊绳收回 · 天车到位等人、人走过去干活 · 出入库货车每车另配车上专职吊运工 T-01 起（专管车上绳索、不上库位、不占班组人数）· 人数 0 = 关闭人力环节）',
   truck: '货车（3 条竖向通道 · 组车规则：一车最少/最多吊数 · 混装车比例 · 立柱摄像头识别车牌 / 物流系统吊取运单）',
   task: '出库选捆（严格先进先出 = 目标捆取全库最早已扫码捆，被压即先把上方整层压货倒垛再装车；关闭 = 垛顶直取免倒垛 · 倒垛等不到落点超时换捆重配）',
   production: FEED_MODE === 'local'
@@ -1274,7 +1282,7 @@ const isChannelCol = c => LANE_COLS.includes(c);
 let tiles = [], storages = [], robots = [], tasks = [], trucks = [];
 let __hdrDogN = 0;   // 页头说明里已渲染的机器狗台数（去重用）
 let craneJobs = [], cranes = [], columns = [];
-let riggers = [];                                   // 吊装工班组（挂绳/摘绳地面人员，人数 = CFG.crew.count）
+let riggers = [];                                   // 库区吊运工班组（库位侧挂绳/放绳地面人员，人数 = CFG.crew.count；车上专职吊运工挂货车对象 tk.rigger）
 let truckCraneStat = { doubleService: 0, served: 0, multiCrane: 0, assists: 0 };   // 一车一天车统计（自检/调试探针）
 let batches = [], batchSeq = 0, trucksDone = 0;   // 车次（一车 6-10 吊）分组层
 let truckHistory = [];                            // 全部货车留档（含已离场），供“车辆作业进度”面板回看
@@ -2243,6 +2251,7 @@ function summonTruck(batch, force = false) {
     forced: !!force,                                      // 强制放行标记（未配满也放车，仅调试/自检钩子）
     scanT: 0,                                             // 车牌识别 / 运单吊取计时
     craneSrv: null, craneNames: [], claimLogged: false,   // 一车一天车：认领天车 / 服务过该车的天车留痕
+    rigger: null, ropeOuts: 0,                            // 车上专职吊运工（就位时配上）/ 车上进行中的取绳作业数
   };
   trucks.push(truck);
   truckHistory.push(truck);                              // 留档（面板可回看已离场车辆）
@@ -2276,6 +2285,7 @@ function updateTrucks(dt) {
           tk.y = tk.targetY;
           tk.state = 'PLATE_SCAN';
           tk.scanT = 0;
+          if (crewEnabled()) spawnTruckRigger(tk);   // 车上专职吊运工随车就位：专管该车钢材绳索取放，不上库位
           for (const t of batch.tasks) t.truckParked = true;
           logEvent('truck', `货车就位：${tk.taskId} ${tk.plate} ${batch.tasks.length} 吊停靠 ${SPANS[batch.span]} ${laneNo(tk.lane)} 号通道，立柱摄像头识别车牌`);
         }
@@ -2309,7 +2319,7 @@ function updateTrucks(dt) {
           for (const t of batch.tasks) maybePushCraneJob(t);
         }
         break;
-      case 'WORKING': // 天车逐一吊运中（吊完由天车置 VERIFY；末吊须待吊装工摘绳，见天车 WAIT_UNHOOK 态）
+      case 'WORKING': // 天车逐一吊运中（吊完由天车置 VERIFY；末吊须待吊运工放绳 + 出库取绳，见天车 WAIT_UNHOOK 态）
         break;
       case 'VERIFY': { // 出场复验：装卸数量与运单复核，异常转人工复核后放行（复验通过才离场）
         tk.scanT += dt;
@@ -2355,7 +2365,7 @@ function updateTrucks(dt) {
  * 覆盖该车全部排队吊的天车；仅当某吊区间超出认领天车结构可达范围（同跨另一侧），
  * 才允许搭档天车代吊（留痕计数，不转移认领）。
  * 固有属性：行进速度 / 吊取时间 / 放下时间（「调度参数」页统一可调）。 */
-const CRANE_STATE_TEXT = { IDLE: '待命', MOVE_PICK: '前往吊点', WAIT_HOOK: '等人挂绳', HOIST: '吊取中', MOVE_DROP: '吊运中', LOWER: '放下中', WAIT_UNHOOK: '等人摘绳' };
+const CRANE_STATE_TEXT = { IDLE: '待命', MOVE_PICK: '前往吊点', WAIT_HOOK: '等人挂绳', HOIST: '吊取中', MOVE_DROP: '吊运中', LOWER: '放下中', WAIT_UNHOOK: '等人放绳' };
 const CRANE_HOME_X = [75, 225];             // 每跨两台天车的停靠位 x（西/东各一）
 const CRANE_GAP = 6;                        // 同跨双车最小安全间距（米）
 const CRANE_ASSIST_GRACE = 240;             // 代吊宽限（仿真秒）：吊排队超过此时长且认领天车结构不可达，搭档才代吊
@@ -2371,22 +2381,29 @@ function resetCranes() {
         home: { x: CRANE_HOME_X[k], y: cy },
         x: CRANE_HOME_X[k], y: cy,        // 停靠本跨（西/东）
         state: 'IDLE', job: null, timer: 0, carrying: null,
-        jobsDone: 0, crewReq: null,        // crewReq = 等人请求（挂绳/摘绳，见下方吊装工模块）
+        jobsDone: 0, crewReq: null,        // crewReq = 等人请求（挂绳/放绳，见下方吊运工模块；含 truckSide 车端标记）
       });
     }
   });
 }
 
-/* ---------------- 吊装工（挂绳 / 摘绳人因环节） ----------------
+/* ---------------- 吊运工（挂绳 / 放绳 / 取绳人因环节） ----------------
  * 每一吊（入库卸车 / 出库装车 / 倒垛）两端都需要地面人员配合：
- *   ① 吊运前（WAIT_HOOK）：吊装工走到吊点，把吊绳穿上钢材并挂上吊具（hookTime）——挂好天车才能起吊；
- *   ② 卸货后（WAIT_UNHOOK）：吊装工走到落点，把吊绳自钢材取下归还吊具（unhookTime）——摘完天车才能走。
- * 吊装工是全厂共享班组（count 人）：请求按先到先得排序，空闲人员按直线距离择近承接；
- * 沿机器狗同款导航栅格寻路行走（不穿垛、不穿墙），完工原地待命。
- * 人数 0 = 关闭人力环节：天车自动挂摘绳（到位即吊 / 落位即走），退回纯设备流程。 */
-const CREW_STATE_TEXT = { IDLE: '待命', GO_HOOK: '前往挂绳', HOOK: '挂绳中', GO_UNHOOK: '前往摘绳', UNHOOK: '摘绳中' };
-let crewStat = { hooked: 0, unhooked: 0, waitHook: 0, waitUnhook: 0 };   // 班组累计（重置清零；等待 = 天车被占用等人时长）
+ *   ① 吊运前（WAIT_HOOK）：吊运工到吊点，把吊绳穿上钢材并挂上天车吊钩（hookTime）——挂好天车才能起吊；
+ *   ② 落位后（WAIT_UNHOOK）：吊运工到落点，把吊绳自天车吊钩取下（unhookTime）——放完天车才能走
+ *      （入库/倒垛吊绳随捆留垛，供下次吊运直接挂钩）；
+ *   ③ 出库落车追加（ROPE_OUT）：出库钢材随车出厂，车上专职把穿在捆内的吊绳抽出收回（ropeOutTime）
+ *      ——不挡天车（放绳即放行），挡货车转出场复验（车上吊绳收清才放行）。
+ * 分工：库位侧作业由库区班组（count 人，R-01 起）步行前往——请求先到先得、空闲按直线距离择近承接，
+ *       沿机器狗同款导航栅格寻路（不穿垛、不穿墙），完工原地待命；
+ *       出入库货车每车自动配 1 名车上专职吊运工（T-01 起），车一就位即守在车侧，专管该车钢材
+ *       绳索取放，不上库位、不占班组人数、无行走耗时（专职正忙时天车原地等，等待计入台账）。
+ * 人数 0 = 关闭人力环节：天车自动挂/放绳（到位即吊 / 落位即走、出库免取绳），退回纯设备流程。 */
+const CREW_STATE_TEXT = { IDLE: '待命', GO_HOOK: '前往挂绳', HOOK: '挂绳中', GO_UNHOOK: '前往放绳', UNHOOK: '放绳中', ROPE_OUT: '取绳中' };
+let crewStat = { hooked: 0, unhooked: 0, ropeOuts: 0, waitHook: 0, waitUnhook: 0 };   // 班组累计（重置清零；等待 = 天车被占用等人时长）
+let truckRiggerSeq = 0;                              // 车上专职吊运工编号（T-01 起，随重置清零）
 const crewEnabled = () => (CFG.crew.count ?? 0) > 0;
+const crewActors = () => [...riggers, ...trucks.map(tk => tk.rigger).filter(Boolean)];   // 全量吊运工（库区班组 + 车上专职；渲染/归档/推进共用）
 function mkRigger(i, n) {   // 初始站位：B/C 跨间横向通道沿线均匀铺开（不占车道、居厂便达三跨）
   return {
     name: `R-${String(i + 1).padStart(2, '0')}`,
@@ -2399,7 +2416,8 @@ function mkRigger(i, n) {   // 初始站位：B/C 跨间横向通道沿线均匀
 function resetCrew() {
   const n = Math.max(0, Math.round(CFG.crew.count));
   riggers = Array.from({ length: n }, (_, i) => mkRigger(i, n));
-  crewStat = { hooked: 0, unhooked: 0, waitHook: 0, waitUnhook: 0 };
+  crewStat = { hooked: 0, unhooked: 0, ropeOuts: 0, waitHook: 0, waitUnhook: 0 };
+  truckRiggerSeq = 0;
 }
 function applyCrewLayout() {   // 人数变更：只补/裁空闲人员（在岗干完手中活再退场，不丢天车正等着的请求）
   const want = Math.max(0, Math.round(CFG.crew.count));
@@ -2410,7 +2428,22 @@ function applyCrewLayout() {   // 人数变更：只补/裁空闲人员（在岗
   }
   const names1 = riggers.map(r => r.name).join(' · ');
   if (names0 !== names1 && _paramsLoadedOnce)
-    logEvent('crew', `吊装工班组更新：${riggers.length} 人（${names1 || '无'}）${want === 0 ? '—— 人力环节关闭，天车自动挂摘绳' : ''}`);
+    logEvent('crew', `吊运工班组更新：库区 ${riggers.length} 人（${names1 || '无'}）${want === 0 ? '—— 人力环节关闭，天车自动挂/放绳' : '· 出入库货车另配车上专职 1 名'}`);
+}
+function spawnTruckRigger(tk) {   // 车上专职吊运工：货车就位即守在车道车侧，专管该车钢材绳索取放（不上库位、不占班组人数）
+  if (tk.rigger) return tk.rigger;
+  const r = {
+    name: `T-${String(++truckRiggerSeq).padStart(2, '0')}`,
+    truckSide: true, truck: tk,
+    x: tk.x + 3.2, y: tk.y,        // 车侧值守位（车道内、不压库位）
+    state: 'IDLE', timer: 0, req: null, ropeOut: null,
+    path: null, pathIdx: 0, walkPhase: 0, heading: Math.PI,
+    jobsDone: 0, walkDist: 0, busyTime: 0,
+  };
+  tk.rigger = r;
+  tk.ropeOuts = 0;                 // 车上进行中的取绳作业数（>0 时货车不得转复验离场）
+  logEvent('crew', `车上专职吊运工就位：${r.name} 守 ${tk.taskId}（${tk.plate}）—— 该车钢材绳索取放专职负责，不上库位`);
+  return r;
 }
 function crewWorkPoint(x, y) {   // 作业站位（米 + 导航格）：目标格不可站立（垛位本体 / 车道被货车占用）时取左右邻侧空道
   const r = navRowOfY(y), c0 = navColOfX(x);
@@ -2437,36 +2470,64 @@ function crewStep(rb, dt) {   // 沿路径行走一步（返回 true = 到达终
   if (tgt) { const dx = tgt.x - rb.x, dy = tgt.y - rb.y; if (Math.hypot(dx, dy) > 1e-6) rb.heading = Math.atan2(dy, dx); }
   return false;
 }
-function crewDispatch() {   // 派单：天车在等的请求先到先得，空闲吊装工按直线距离择近承接
+function startRopeWork(r, req) {   // 开始挂/放绳作业（库区班组行走到位 / 车上专职守在车旁即到即干）
+  const cr = req.crane, j = cr.job;
+  if (!j) { r.req = null; r.state = 'IDLE'; return; }   // 防御：作业已被收尾
+  r.state = req.kind === 'hook' ? 'HOOK' : 'UNHOOK';
+  r.timer = 0;
+  req.specName = j.spec.name;
+  const dur = req.kind === 'hook' ? CFG.crew.hookTime : CFG.crew.unhookTime;
+  const where = req.kind === 'hook'
+    ? (j.kind === 'in' ? `货车 ${j.task.truck.taskId}` : j.kind === 'restack' ? `库位 ${j.slot.code} 第${j.fromStack + 1}垛` : `库位 ${j.slot.code} 第${j.task.stackIdx + 1}垛`)
+    : (j.kind === 'out' ? `货车 ${j.task.truck.taskId}` : j.kind === 'restack' ? `库位 ${j.dest.code} 第${j.destStack + 1}垛` : `库位 ${j.slot.code} 第${j.task.stackIdx + 1}垛`);
+  if (dur > 0) logEvent('crew', `${r.name} ${req.kind === 'hook' ? '挂绳' : '放绳'}：${req.specName} @ ${where}（${cr.name} · 约 ${Math.round(dur)}s）`);
+}
+function crewDispatch() {   // 派单：天车在等的请求先到先得——车端请求由该车专职吊运工承接，库位端请求空闲班组按直线距离择近承接
   if (!crewEnabled()) return;
-  const idle = riggers.filter(r => !r.req);
-  if (!idle.length) return;
   const reqs = cranes.filter(cr => cr.crewReq && !cr.crewReq.by).sort((a, b) => a.crewReq.since - b.crewReq.since);
+  if (!reqs.length) return;
+  const idle = riggers.filter(r => !r.req);
   for (const cr of reqs) {
-    if (!idle.length) break;
-    const p = cr.crewReq.point;
+    const req = cr.crewReq;
+    if (req.truckSide) {   // 车端绳索（入库挂绳 / 出库放绳+取绳）：车上专职吊运工专责，不上库位
+      const tk = req.truck;
+      if (!tk) continue;
+      if (!tk.rigger) spawnTruckRigger(tk);
+      if (tk.rigger.req) continue;   // 专职正忙前一吊：天车原地等（等待计入天车等人时长）
+      tk.rigger.req = req;
+      req.by = tk.rigger;
+      startRopeWork(tk.rigger, req);   // 专职守在车旁：无行走，即刻开工
+      continue;
+    }
+    if (!idle.length) continue;
+    const p = req.point;
     let best = null, bd = Infinity;
     for (const r of idle) { const d = Math.hypot(r.x - p.x, r.y - p.y); if (d < bd) { bd = d; best = r; } }
     idle.splice(idle.indexOf(best), 1);
-    best.req = cr.crewReq;
-    cr.crewReq.by = best;
-    best.state = cr.crewReq.kind === 'hook' ? 'GO_HOOK' : 'GO_UNHOOK';
+    best.req = req;
+    req.by = best;
+    best.state = req.kind === 'hook' ? 'GO_HOOK' : 'GO_UNHOOK';
     const cells = findPath({ r: navRowOfY(best.y), c: navColOfX(best.x) }, { r: p.r, c: p.c });   // 导航栅格寻路（不穿垛）
     best.path = cells && cells.length ? cells.map(w => ({ x: navCX(w.c), y: navCY(w.r) })) : [{ x: p.x, y: p.y }];
     best.pathIdx = 0;
   }
 }
-function finishCraneJob(cr) {   // 一吊收尾：末吊货车放行复验 + 留痕 + 天车转待命（吊装工摘绳完成 / 人力环节关闭共用）
+function maybeVerifyTruck(tk, excludeCr) {   // 末吊绳索收清（同车各吊放绳 + 出库取绳全部完成）货车才转出场复验
+  if (!tk || !tk.awaitUnhook) return;
+  const pending = cranes.some(o => o !== excludeCr && o.state === 'WAIT_UNHOOK' && o.job && o.job.task.truck === tk);
+  if (pending || (tk.ropeOuts || 0) > 0) return;   // 代吊场景：还有天车等人放绳 / 车上专职还在取绳
+  tk.awaitUnhook = false;
+  tk.state = 'VERIFY'; tk.scanT = 0;
+}
+function finishCraneJob(cr) {   // 一吊收尾：末吊货车放行复验 + 留痕 + 天车转待命（吊运工放绳完成 / 人力环节关闭共用）
   const j = cr.job, tk = j && j.task.truck;
-  if (tk && tk.awaitUnhook && !cranes.some(o => o !== cr && o.state === 'WAIT_UNHOOK' && o.job && o.job.task.truck === tk)) {
-    tk.awaitUnhook = false;
-    tk.state = 'VERIFY'; tk.scanT = 0;   // 末吊吊绳取出：货车转出场复验（代吊场景须等同车全部摘绳完成）
-  }
-  if (j) pushCraneRecord(j);
+  maybeVerifyTruck(tk, cr);
+  const rec = j ? pushCraneRecord(j) : null;
   cr.job = null; cr.crewReq = null;
   cr.state = 'IDLE'; cr.timer = 0;
+  return rec;   // 逐吊留痕记录（出库车端取绳完成时刻回填用）
 }
-function crewFinish(req) {   // 挂/摘绳完成回调：放行天车状态机 + 天车等人时长累计
+function crewFinish(req) {   // 挂/放绳完成回调：放行天车状态机 + 天车等人时长累计
   const cr = req.crane, j = cr.job;
   if (!j) { cr.crewReq = null; return; }   // 防御：作业已被收尾
   if (req.kind === 'hook') {
@@ -2479,7 +2540,7 @@ function crewFinish(req) {   // 挂/摘绳完成回调：放行天车状态机 +
     crewStat.unhooked++;
     if (req.since != null) crewStat.waitUnhook += simTime - req.since;
     j.unhookAt = simTime;
-    finishCraneJob(cr);
+    req.recRef = finishCraneJob(cr);   // 出库车端：取绳完成时刻回填该吊留痕
   }
 }
 function updateCrew(dt) {
@@ -2489,29 +2550,49 @@ function updateCrew(dt) {
     applyCrewLayout();
   }
   crewDispatch();
-  for (const r of riggers) {
-    if (r.state === 'IDLE') continue;
+  for (const r of crewActors()) {
+    if (r.state === 'IDLE') {
+      if (r.truckSide && r.truck && (!crewEnabled() || r.truck.state === 'LEAVE' || !trucks.includes(r.truck)))
+        r.truck.rigger = null;   // 车上专职退场：人力环节关闭 / 货车复验完毕离场（手中活已清）
+      continue;
+    }
     r.busyTime += dt;
     if (r.state === 'GO_HOOK' || r.state === 'GO_UNHOOK') {
       const step = Math.max(0.05, CFG.crew.walkSpeed) * dt;
       r.walkDist += step;
       r.walkPhase += step * 1.6;   // 步态相位（渲染摆腿用）
-      if (crewStep(r, dt)) {
-        const cr = r.req.crane, j = cr.job, kind = r.req.kind;
-        r.state = kind === 'hook' ? 'HOOK' : 'UNHOOK';
-        r.timer = 0;
-        const dur = kind === 'hook' ? CFG.crew.hookTime : CFG.crew.unhookTime;
-        const where = kind === 'hook'
-          ? (j.kind === 'in' ? `货车 ${j.task.truck.taskId}` : j.kind === 'restack' ? `库位 ${j.slot.code} 第${j.fromStack + 1}垛` : `库位 ${j.slot.code} 第${j.task.stackIdx + 1}垛`)
-          : (j.kind === 'out' ? `货车 ${j.task.truck.taskId}` : j.kind === 'restack' ? `库位 ${j.dest.code} 第${j.destStack + 1}垛` : `库位 ${j.slot.code} 第${j.task.stackIdx + 1}垛`);
-        if (dur > 0) logEvent('crew', `${r.name} ${kind === 'hook' ? '挂绳' : '摘绳'}：${j.spec.name} @ ${where}（${cr.name} · 约 ${Math.round(dur)}s）`);
-      }
+      if (crewStep(r, dt)) startRopeWork(r, r.req);
     } else if (r.state === 'HOOK' || r.state === 'UNHOOK') {
       r.timer += dt;
       if (r.timer >= (r.state === 'HOOK' ? CFG.crew.hookTime : CFG.crew.unhookTime)) {
         const req = r.req;
-        r.req = null; r.state = 'IDLE'; r.jobsDone++;
+        r.req = null; r.jobsDone++;
+        const doRopeOut = req.kind === 'unhook' && req.ropeOut && req.truck && crewEnabled();
+        if (doRopeOut) req.truck.ropeOuts = (req.truck.ropeOuts || 0) + 1;   // 先挂上取绳义务再放行天车（末吊复验等取绳清账）
         crewFinish(req);
+        if (doRopeOut) {   // 出库落车：放绳后天车即走，专职继续把捆内吊绳抽出收回（不挡天车，挡货车复验）
+          r.state = 'ROPE_OUT'; r.timer = 0;
+          r.ropeOut = { truck: req.truck, rec: req.recRef || null, spec: req.specName || '' };
+          if (CFG.crew.ropeOutTime > 0)
+            logEvent('crew', `${r.name} 取出吊绳：${req.specName || ''} @ 货车 ${req.truck.taskId}（出库钢材收回吊绳 · 约 ${Math.round(CFG.crew.ropeOutTime)}s）`);
+        } else {
+          r.state = 'IDLE';
+        }
+      }
+    } else if (r.state === 'ROPE_OUT') {   // 取绳中：把穿在出库钢材捆内的吊绳抽出收回
+      r.timer += dt;
+      if (r.timer >= CFG.crew.ropeOutTime) {
+        const ro = r.ropeOut;
+        r.ropeOut = null; r.state = 'IDLE';
+        crewStat.ropeOuts++;
+        if (ro) {
+          if (ro.rec) ro.rec.ropeOutAt = Math.round(simTime);   // 逐吊留痕第七时刻：取绳完成
+          if (ro.truck) {
+            ro.truck.ropeOuts = Math.max(0, (ro.truck.ropeOuts || 0) - 1);
+            logEvent('crew', `${r.name} 吊绳已取出收回：货车 ${ro.truck.taskId}${ro.truck.ropeOuts ? `（车上待取绳还剩 ${ro.truck.ropeOuts} 吊）` : '（车上吊绳全部收清）'}`);
+            maybeVerifyTruck(ro.truck, null);
+          }
+        }
       }
     }
   }
@@ -2746,10 +2827,14 @@ function updateCranes(dt) {
       }
       case 'MOVE_PICK':
         if (moveCrane(cr, dt)) {
-          if (crewEnabled()) {   // 人力环节：到位后等吊装工来挂绳（挂好才可起吊）
+          if (crewEnabled()) {   // 人力环节：到位后等吊运工来挂绳（挂好才可起吊）
+            const j = cr.job;
+            const truckSide = j.kind === 'in';   // 入库吊点在货车上：车端挂绳由该车专职吊运工负责（不上库位）
             cr.state = 'WAIT_HOOK'; cr.timer = 0;
-            const p = crewWorkPoint(cr.job.from.x, cr.job.from.y);
-            cr.crewReq = { kind: 'hook', crane: cr, point: p, since: simTime, by: null };
+            const p = truckSide
+              ? { x: j.task.truck.x + 3.2, y: j.task.truck.y, r: navRowOfY(j.task.truck.y), c: navColOfX(j.task.truck.x) }
+              : crewWorkPoint(j.from.x, j.from.y);
+            cr.crewReq = { kind: 'hook', crane: cr, point: p, since: simTime, by: null, truckSide, truck: truckSide ? j.task.truck : null, ropeOut: false };
           } else { cr.state = 'HOIST'; cr.timer = 0; }
         }
         break;
@@ -2863,27 +2948,29 @@ function updateCranes(dt) {
           }
           cr.jobsDone++;
           cr.carrying = null;
-          if (crewEnabled()) {   // 人力环节：落位后等吊装工来摘绳（吊绳取下天车才能走）；台账/吊数已在落位时刻结算
+          if (crewEnabled()) {   // 人力环节：落位后等吊运工自吊钩放绳（放完天车才能走）；台账/吊数已在落位时刻结算
+            const truckSide = j.kind === 'out';   // 出库落点在货车上：车端放绳 + 取出捆内吊绳由该车专职吊运工负责
+            const tk2 = truckSide ? j.task.truck : null;
             cr.state = 'WAIT_UNHOOK'; cr.timer = 0;
-            const p = crewWorkPoint(j.to.x, j.to.y);
-            cr.crewReq = { kind: 'unhook', crane: cr, point: p, since: simTime, by: null };
+            const p = truckSide
+              ? { x: tk2.x + 3.2, y: tk2.y, r: navRowOfY(tk2.y), c: navColOfX(tk2.x) }
+              : crewWorkPoint(j.to.x, j.to.y);
+            cr.crewReq = { kind: 'unhook', crane: cr, point: p, since: simTime, by: null, truckSide, truck: tk2, ropeOut: truckSide };
           } else {
-            pushCraneRecord(j);   // 人力环节关闭：落位即吊毕留痕
-            cr.job = null; cr.crewReq = null;
-            cr.state = 'IDLE'; cr.timer = 0;
+            finishCraneJob(cr);   // 人力环节关闭：落位即吊毕（含末吊货车转复验）
           }
         }
         break;
-      case 'WAIT_UNHOOK':   // 等人摘绳：摘绳完成由 crewFinish → finishCraneJob 收尾；中途关闭且无人承接时即刻收尾
+      case 'WAIT_UNHOOK':   // 等人放绳：放绳完成由 crewFinish → finishCraneJob 收尾；中途关闭且无人承接时即刻收尾
         if (cr.crewReq && !crewEnabled() && !cr.crewReq.by) finishCraneJob(cr);
         break;
     }
   }
 }
 
-function pushCraneRecord(j) { // 天车逐吊执行留痕：排队/开始/吊取/落位/取绳 五时刻（场次「天车作业明细」数据源，上限 4000 条环形淘汰）
+function pushCraneRecord(j) { // 天车逐吊执行留痕：排队/开始/挂绳/吊取/落位/放绳 六时刻 + 出库取绳回填（场次「天车作业明细」数据源，上限 4000 条环形淘汰）
   const t = j.task;
-  craneHistory.push({
+  const rec = {
     crane: j.crane, kind: j.kind, spec: j.spec ? j.spec.name : '',
     slot: j.kind === 'restack' ? `${j.slot.code}→${j.dest.code}` : j.slot.code,       // 倒垛吊：源垛→目标垛
     stack: j.kind === 'restack' ? `${j.fromStack + 1}→${j.destStack + 1}` : t.stackIdx + 1,
@@ -2895,9 +2982,12 @@ function pushCraneRecord(j) { // 天车逐吊执行留痕：排队/开始/吊取
     hookAt: j.hookAt != null ? Math.round(j.hookAt) : null,  // 挂绳完成（人力环节开启时；此后天车才起吊）
     hoistAt: Math.round(j.hoistAt || 0),                     // 吊起完成（离垛/离车）
     dropAt: Math.round(j.dropAt || 0),                       // 落位完成（入库落料 / 倒垛落位 / 出库落车）
-    unhookAt: j.unhookAt != null ? Math.round(j.unhookAt) : null,   // 摘绳完成（人力环节开启时 = 吊毕时刻；关闭时为空）
-  });
+    unhookAt: j.unhookAt != null ? Math.round(j.unhookAt) : null,   // 放绳完成（自吊钩取下；人力环节开启时 = 吊毕时刻；关闭时为空）
+    ropeOutAt: null,                                         // 取绳完成（仅出库落车：专职吊运工抽出捆内吊绳收回后回填；不挡天车、挡货车复验）
+  };
+  craneHistory.push(rec);
   if (craneHistory.length > 4000) { craneHistory.shift(); if (runCraneBase > 0) runCraneBase--; }
+  return rec;
 }
 
 /* ---------------- 任务流 ----------------
@@ -4279,11 +4369,11 @@ function drawCranes() { // 每跨 2 台架空桥式天车（大车沿 X，小车
     }
   }
 }
-function drawCrew() { // 吊装工（地面人员：挂绳 / 摘绳；步行前往作业点）
+function drawCrew() { // 吊运工（库区班组步行前往作业点 + 车上专职守在车侧：挂绳 / 放绳 / 出库取绳）
   const s = Math.max(5, Math.min(11, scale * 2.6));    // 人形图示尺寸（px）
-  for (const r of riggers) {
+  for (const r of crewActors()) {
     const px = mx(r.x), py = my(r.y);
-    const working = r.state === 'HOOK' || r.state === 'UNHOOK';
+    const working = r.state === 'HOOK' || r.state === 'UNHOOK' || r.state === 'ROPE_OUT';
     const walking = r.state === 'GO_HOOK' || r.state === 'GO_UNHOOK';
     const bob = walking ? Math.abs(Math.sin(r.walkPhase * Math.PI)) * s * 0.12 : 0;   // 步行起伏
     // 头（安全帽）
@@ -4302,9 +4392,9 @@ function drawCrew() { // 吊装工（地面人员：挂绳 / 摘绳；步行前�
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     ctx.fillStyle = '#fbbf24';
     ctx.fillText(r.name, px, py - s * 1.05 - bob);
-    // 挂/摘绳进度环
+    // 挂/放/取绳进度环
     if (working) {
-      const dur = r.state === 'HOOK' ? CFG.crew.hookTime : CFG.crew.unhookTime;
+      const dur = r.state === 'HOOK' ? CFG.crew.hookTime : r.state === 'UNHOOK' ? CFG.crew.unhookTime : CFG.crew.ropeOutTime;
       if (dur > 0) {
         const p = Math.min(1, r.timer / dur);
         ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = 2;
@@ -4679,7 +4769,7 @@ function assessScanCapacity(force = false) {
  * localStorage（steelSimRunsV1，环形保留最近 50 场）；台账每条带 runId 便于按场次深挖。 */
 const RUNS_KEY = 'steelSimRunsV1';
 let runId = null, runStartedOnce = false, runWallStart = null, runParamsStart = null, runArchived = false;
-let runStartSim = 0, runHistBase = 0, runCraneBase = 0, runRobotBase = null, runCrewBase = null;   // 场次切片起点：世界时钟 / 车辆留档下标 / 天车留档下标 / 机器狗·吊装工统计基线
+let runStartSim = 0, runHistBase = 0, runCraneBase = 0, runRobotBase = null, runCrewBase = null;   // 场次切片起点：世界时钟 / 车辆留档下标 / 天车留档下标 / 机器狗·吊运工统计基线
 function newRunId() {   // 场次号：真实时间（毫秒 36 进制尾缀）—— 不消耗 Math.random，不打乱自检种子随机流
   const d = new Date(), p = (n, w = 2) => String(n).padStart(w, '0');
   return `R${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${Date.now().toString(36).slice(-4)}`;
@@ -4695,9 +4785,9 @@ function snapshotRobotStats() {   // 机器狗累计统计基线（归档时按�
   for (const r of robots) m[r.name] = { scans: r.scans, tasksDone: r.tasksDone, distTotal: r.distTotal, busyTime: r.busyTime };
   return m;
 }
-function snapshotCrewStats() {     // 吊装工累计统计基线（同上：按差值计本场增量）
+function snapshotCrewStats() {     // 吊运工累计统计基线（同上：按差值计本场增量；含车上专职）
   const m = {};
-  for (const r of riggers) m[r.name] = { jobs: r.jobsDone, walk: r.walkDist, busy: r.busyTime };
+  for (const r of crewActors()) m[r.name] = { jobs: r.jobsDone, walk: r.walkDist, busy: r.busyTime };
   return m;
 }
 function markRunStarted() {   // 首次启动：定场次起点与启动时参数（库存数据库参数此时已加载）
@@ -4785,16 +4875,17 @@ function archiveSession(reason) {   // reason: 'end'（手动结束）| 'reset'�
     perCrane: Object.values(byCrane).map(b => ({ name: b.name, in: b.in, out: b.out, restack: b.restack,
       busy: Math.round(b.busy), busyPct: runSecs > 0 ? +(100 * b.busy / runSecs).toFixed(1) : null }))
       .sort((x, y) => x.name.localeCompare(y.name)),       // 按天车汇总（吊数分型 / 吊运作业时长 / 作业占比）
-    crew: (() => {   // 吊装工班组本场增量（挂/摘次数 + 天车等人时长 + 按人汇总；人数运行中可调：按姓名对齐差值）
-      const per = riggers.map(r => {
+    crew: (() => {   // 吊运工本场增量（挂/放/取绳次数 + 天车等人时长 + 按人汇总；人数运行中可调：按姓名对齐差值；含在场车上专职）
+      const per = crewActors().map(r => {
         const b = ((runCrewBase && runCrewBase.per) || {})[r.name] || { jobs: 0, walk: 0, busy: 0 };
-        return { name: r.name, jobs: r.jobsDone - b.jobs, walk: Math.round(r.walkDist - b.walk),
+        return { name: r.name, truck: !!r.truckSide, jobs: r.jobsDone - b.jobs, walk: Math.round(r.walkDist - b.walk),
           busyPct: runSecs > 0 ? +(100 * Math.max(0, r.busyTime - b.busy) / runSecs).toFixed(1) : null };
       }).sort((x, y) => x.name.localeCompare(y.name));
-      const s0 = (runCrewBase && runCrewBase.stat) || { hooked: 0, unhooked: 0, waitHook: 0, waitUnhook: 0 };
+      const s0 = (runCrewBase && runCrewBase.stat) || { hooked: 0, unhooked: 0, ropeOuts: 0, waitHook: 0, waitUnhook: 0 };
       return {
         count: riggers.length,
         hooked: crewStat.hooked - s0.hooked, unhooked: crewStat.unhooked - s0.unhooked,
+        ropeOuts: crewStat.ropeOuts - s0.ropeOuts,
         waitHook: Math.round(crewStat.waitHook - s0.waitHook), waitUnhook: Math.round(crewStat.waitUnhook - s0.waitUnhook),
         per,
       };
@@ -5133,26 +5224,36 @@ function refreshPanels() {
         <span class="badge-batt" style="color:#f472b6">${cr.jobsDone} 次</span>
       </div>
       <div class="rtask">${cr.job ? jobDesc(cr.job) : '空闲待命'}</div>
-      <div class="rstats">大车 ${CFG.crane.speed} · 小车 ${CFG.crane.trolleySpeed ?? 1} m/s · 吊取 ${CFG.crane.hoistTime}s / 放下 ${CFG.crane.lowerTime}s · 挂绳 ${CFG.crew.hookTime}s / 摘绳 ${CFG.crew.unhookTime}s（吊装工 ${riggers.length} 人） · 排队 ${craneJobs.length}</div>
+      <div class="rstats">大车 ${CFG.crane.speed} · 小车 ${CFG.crane.trolleySpeed ?? 1} m/s · 吊取 ${CFG.crane.hoistTime}s / 放下 ${CFG.crane.lowerTime}s（设备固有） · 挂绳 ${CFG.crew.hookTime}s / 放绳 ${CFG.crew.unhookTime}s / 出库取绳 ${CFG.crew.ropeOutTime}s（库区吊运工 ${riggers.length} 人） · 排队 ${craneJobs.length}</div>
     </div>`;
   }).join('');
-  const crewCards = riggers.length ? riggers.map(r => {
-    const busy = r.state !== 'IDLE';
-    const jobLine = r.req
-      ? `${r.req.kind === 'hook' ? '挂绳' : '摘绳'} · ${r.req.crane.name}${r.req.crane.job ? ' ' + r.req.crane.job.spec.name : ''}`
-      : (riggers.length && !crewEnabled() ? '人力环节关闭（天车自动挂摘绳）' : '原地待命');
-    return `<div class="rcard" style="border-color:rgba(251,191,36,.3)">
-      <div class="rhead">
-        <span class="rname" style="color:#fbbf24">◆ ${r.name}</span>
-        <span class="rnick">吊装工</span>
-        <span class="badge ${busy ? 'b-go' : ''}" ${busy ? 'style="color:#fbbf24;border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.08)"' : ''}>${CREW_STATE_TEXT[r.state]}</span>
-        <span class="badge-batt" style="color:#fbbf24">${r.jobsDone} 次</span>
-      </div>
-      <div class="rtask">${jobLine}</div>
-      <div class="rstats">行走 ${CFG.crew.walkSpeed} m/s · 挂绳 ${CFG.crew.hookTime}s / 摘绳 ${CFG.crew.unhookTime}s · 累计步行 ${Math.round(r.walkDist)} m</div>
-    </div>`;
-  }).join('') : `<div class="rcard"><div class="rtask">吊装工 0 人 —— 人力环节关闭：天车自动挂摘绳（「调度参数」页 crew 段可开启）</div></div>`;
-  // 按设备集群页签过滤：all = 机器狗 + 天车 + 吊装工
+  const crewCards = (() => {
+    const actors = crewActors();
+    if (!actors.length) return `<div class="rcard"><div class="rtask">吊运工 0 人 —— 人力环节关闭：天车自动挂/放绳（「调度参数」页吊运工段可开启）</div></div>`;
+    return actors.map(r => {
+      const busy = r.state !== 'IDLE';
+      const jobLine = r.state === 'ROPE_OUT' && r.ropeOut
+        ? `取绳 · ${r.ropeOut.spec} @ 货车 ${r.ropeOut.truck.taskId}（出库收回吊绳）`
+        : r.req
+          ? `${r.req.kind === 'hook' ? '挂绳' : '放绳'} · ${r.req.crane.name}${r.req.crane.job ? ' ' + r.req.crane.job.spec.name : ''}${r.truckSide && r.truck ? `（车上专职 · ${r.truck.plate}）` : ''}`
+          : (r.truckSide
+            ? `守车待命${r.truck ? `（${r.truck.plate} · 专管车上绳索）` : ''}`
+            : (!crewEnabled() ? '人力环节关闭（天车自动挂/放绳）' : '原地待命'));
+      return `<div class="rcard" style="border-color:rgba(251,191,36,.3)">
+        <div class="rhead">
+          <span class="rname" style="color:#fbbf24">◆ ${r.name}</span>
+          <span class="rnick">${r.truckSide ? '车上专职吊运工' : '库区吊运工'}</span>
+          <span class="badge ${busy ? 'b-go' : ''}" ${busy ? 'style="color:#fbbf24;border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.08)"' : ''}>${CREW_STATE_TEXT[r.state]}</span>
+          <span class="badge-batt" style="color:#fbbf24">${r.jobsDone} 次</span>
+        </div>
+        <div class="rtask">${jobLine}</div>
+        <div class="rstats">${r.truckSide
+          ? `车上专职 · 不上库位 · 挂绳 ${CFG.crew.hookTime}s / 放绳 ${CFG.crew.unhookTime}s / 取绳 ${CFG.crew.ropeOutTime}s`
+          : `行进 ${CFG.crew.walkSpeed} m/s · 挂绳 ${CFG.crew.hookTime}s / 放绳 ${CFG.crew.unhookTime}s / 取绳 ${CFG.crew.ropeOutTime}s · 累计步行 ${Math.round(r.walkDist)} m`}</div>
+      </div>`;
+    }).join('');
+  })();
+  // 按设备集群页签过滤：all = 机器狗 + 天车 + 吊运工
   elRobotCards.innerHTML = devTab === 'robot' ? dogCards
     : devTab === 'crane' ? craneCards
     : devTab === 'crew' ? crewCards
@@ -5835,7 +5936,7 @@ function init() {
   $('autoTask').checked = true;
   document.querySelectorAll('#speedSeg button').forEach(b => b.classList.toggle('on', +b.dataset.speed === 1));
   elLogList.innerHTML = '';
-  logEvent('system', `仿真沙盘启动：300m × 90m 三跨库区（+4 条 2m 横向通道）· ${CFG.robot.count} 台机器狗（扫码）+ 6 台天车（每跨 2 台）+ ${riggers.length} 名吊装工（挂绳/摘绳）· 91 库位（每库位 8 垛 × 400 捆 = 3200 捆）· 初始库存 ${occupiedCount} 捆`);
+  logEvent('system', `仿真沙盘启动：300m × 90m 三跨库区（+4 条 2m 横向通道）· ${CFG.robot.count} 台机器狗（扫码）+ 6 台天车（每跨 2 台）+ ${riggers.length} 名库区吊运工（挂绳/放绳/取绳 · 出入库货车另配车上专职）· 91 库位（每库位 8 垛 × 400 捆 = 3200 捆）· 初始库存 ${occupiedCount} 捆`);
   logEvent('system', `机器狗监测范围：${monitoredRegionText()}（监测跨决定作业范围——车辆/入库/出库限监测跨全部号区；跨内号区只限定扫描区，扫描列外转人工核对；货车停靠${truckSpanPolicyText()}）`);
   logEvent('system', `布局：铁姆肯区(1-2) · 大棒区域(3-13) · 大棒单支和长钢(14-16 整跨) · 中棒区域(17-33) · 竖向车辆通道 3 条（北端入口）· 横向通道 4×2m · 充电服务带（A 跨北端 · ${CFG.robot.chargerCount} 桩）`);
   logEvent('system', '作业流程：入库 = 货车进场停靠 -> 立柱摄像头识别车牌 -> 吊取运单 -> 天车吊运落料 -> 机器狗扫码入账；出库 = 机器狗扫码核验 -> 货车进场 -> 识别车牌吊取装车计划 -> 天车装车 -> 货车离场');

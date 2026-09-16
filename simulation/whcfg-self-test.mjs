@@ -217,8 +217,8 @@ check('二维预览画布已创建且完成绘制（DPR 尺寸已设置）', !!p
   `${pileCv?.width}x${pileCv?.height}`);
 const selEl = byId.get('specSel');
 check('规格选择器含 10 个规格且默认选中螺纹钢 Φ20', selEl?.children.length === 10 && selEl.value === '螺纹钢 Φ20', selEl?.value);
-check('捆数滑杆范围 = 当前垛容（Φ20：336）', byId.get('pileCount')?.max === 336, String(byId.get('pileCount')?.max));
-check('捆数读数显示当前/垛容', /336 \/ 336 捆/.test(byId.get('pileCountTxt')?.textContent || ''), byId.get('pileCountTxt')?.textContent);
+check('捆数滑杆范围 = 当前垛容（Φ20：每垛上限 100 收窄）', byId.get('pileCount')?.max === 100, String(byId.get('pileCount')?.max));
+check('捆数读数显示当前/垛容', /100 \/ 100 捆/.test(byId.get('pileCountTxt')?.textContent || ''), byId.get('pileCountTxt')?.textContent);
 const glErr = byId.get('glErr');
 check('无 three.js 时三维预览降级提示（页面其余功能不受影响）',
   glErr && glErr.style.display === 'block' && glErr.innerHTML.includes('三维预览不可用'), glErr?.style.display);
@@ -237,8 +237,8 @@ rackSlider.oninput({ target: rackSlider });
 check('限高恢复 3m：Φ600 垛容滑杆范围回到 12', byId.get('pileCount')?.max === 12, String(byId.get('pileCount')?.max));
 // 捆制表行点击 -> 预览规格联动
 tbodyOf(byId.get('rulesTbl')).children[0].onclick();
-check('点击捆制表首行：预览规格联动回 Φ20（滑杆 336）',
-  byId.get('specSel')?.value === '螺纹钢 Φ20' && byId.get('pileCount')?.max === 336, byId.get('specSel')?.value);
+check('点击捆制表首行：预览规格联动回 Φ20（滑杆 100）',
+  byId.get('specSel')?.value === '螺纹钢 Φ20' && byId.get('pileCount')?.max === 100, byId.get('specSel')?.value);
 
 // 支数覆盖：第 1 行（螺纹钢 Φ20）输入 10 -> 保存 -> 库内生效 + 越界警示展示
 const rodsInputs = tbodyOf(byId.get('rulesTbl')).children
@@ -280,7 +280,7 @@ check('重建时未保存的捆制规则编辑一并落库（圆钢 Φ50 -> 6 �
   rulesAfterRebuild.rules.find(x => x.spec === '圆钢 Φ50').rods === 6
   && rulesAfterRebuild.rules.find(x => x.spec === '圆钢 Φ50').source === 'override', '');
 const inv1 = (await (await fetch(`${API}/api/inventory`)).json()).totalBundles;
-check('装载比例 22% -> 90% 重建后库存显著上升（>2 倍）', inv1 > inv0 * 2, `${inv0} -> ${inv1}`);
+check('装载比例 22% -> 90% 重建后库存显著上升（每垛上限 100 下 ≥1.2 倍）', inv1 > inv0 * 1.2, `${inv0} -> ${inv1}`);
 const msgEl3 = documentStub.querySelector('.msg');
 check('重建回显新期初利用率', msgEl3 && /利用率 \d+(\.\d)?%/.test(msgEl3.textContent), msgEl3 && msgEl3.textContent.slice(0, 50));
 
@@ -311,11 +311,11 @@ check('/api/slots 下发 racks=4（旧期初高位存货保留显示，不丢账
 const spsSlider = spsInputs.find(e => e.type === 'range');
 spsSlider.value = '6';
 spsSlider.oninput({ target: spsSlider });
-check('全局 6 + 1-1 覆盖 4：页面总库容 KPI 即时联动（(90×6+4)×400）',
-  (byId.get('capKpis')?.children[0]?._html || '').includes('217,600'), byId.get('capKpis')?.children[0]?._html);
+check('全局 6 + 1-1 覆盖 4：页面总库容 KPI 即时联动（(90×6+4)×100）',
+  (byId.get('capKpis')?.children[0]?._html || '').includes('54,400'), byId.get('capKpis')?.children[0]?._html);
 await btnSave.onclick();
 let invR = (await (await fetch(`${API}/api/inventory`)).json());
-check('保存后 API 库容按逐库位垛数汇总（(90×6+4)×400）', invR.totalCapacity === (90 * 6 + 4) * 400, String(invR.totalCapacity));
+check('保存后 API 库容按逐库位垛数汇总（(90×6+4)×100）', invR.totalCapacity === (90 * 6 + 4) * 100, String(invR.totalCapacity));
 await btnRebuild.onclick();
 slotsNow = (await (await fetch(`${API}/api/slots`)).json()).slots;
 const s11b = slotsNow.find(s => s.code === '1-1'), s17b = slotsNow.find(s => s.code === '17-1');

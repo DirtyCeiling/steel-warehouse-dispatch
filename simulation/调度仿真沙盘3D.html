@@ -1003,7 +1003,7 @@ function syncRobots(now) {
  *   跨轨轨道（轨底板+轨头+两端车档+下方支撑立柱） -> 端梁（底面高轨顶 .42，大车轮下半外露如轮箱）
  *   -> 双箱形主梁（跨向）+ 梁顶小车轨道 -> 小车架（跨坐双梁）+ 卷筒/电机/减速机 + 小车轮
  *   起升穿绳：小车架四角四根起升绳 -> 滑轮钩块 + 锻钢大钩（双主梁间净空内升降）->
- *   吊装工把穿捆的两根缆绳收拢挂上钩尖（WAIT_HOOK 挂 / WAIT_UNHOOK 摘），钩起即吊运。
+ *   吊运工把穿捆的两根缆绳收拢挂上钩尖（WAIT_HOOK 挂 / WAIT_UNHOOK 放 / 出库另有取绳），钩起即吊运。
  *   大车轮随桥架行进滚动、小车轮随横移滚动、卷筒随吊具升降收放、作业中警示灯爆闪。 */
 const CRANE_Y = 8.6;   // 轨顶标高基准：跨轨轨顶 = CRANE_Y-.19，主梁底 = +.91，小车架底 = +2.42
 const CR_HOOK_LOW = 2.1, CR_HOOK_HIGH = CRANE_Y + .06;   // 吊钩行程：垛顶/车斗低位 ~ 主梁下高位（空钩钩块恒低于主梁底）
@@ -1113,7 +1113,7 @@ function makeCraneG(cr, fine) {   // fine = 真实模细部（两侧走台栏杆
   const beacon = new THREE.Mesh(geo('crBeacon', () => new THREE.CylinderGeometry(.1, .13, .24, 10)),
     new THREE.MeshStandardMaterial({ color: 0xffb020, emissive: 0xff9d00, emissiveIntensity: .25, roughness: .4 }));   // 各车独立材质：警示灯按车闪
   beacon.position.set(1.75, yTFrame + .42, .8); trolley.add(beacon);
-  /* 起升穿绳：四根起升绳 -> 滑轮钩块 + 锻钢大钩 -> 吊装工把穿捆的两根缆绳收拢挂上钩尖 */
+  /* 起升穿绳：四根起升绳 -> 滑轮钩块 + 锻钢大钩 -> 吊运工把穿捆的两根缆绳收拢挂上钩尖 */
   const ropeGeo = geo('craneRope', () => { const r = new THREE.CylinderGeometry(.05, .05, 1, 6); r.translate(0, -.5, 0); return r; });
   const ropeMat = mat('crRopeM', () => new THREE.MeshStandardMaterial({ color: 0x7d838d, metalness: .6, roughness: .45 }));
   const ropes = [];
@@ -1217,8 +1217,8 @@ function syncCranes() {
     const tz = WZ(cr.y);
     for (const w of C.wheelsT) w.rotation.x -= (tz - C.trolley.position.z) / .13;       // 小车轮随横移滚动
     C.trolley.position.z = tz;
-    // 吊具行程：人力环节下吊取=挂绳后纯起升、放下=纯下落（挂/摘绳独立成态）；无人力环节保留 V 形（下落到点即起升/放下即回升）；
-    // 等人挂绳/摘绳（WAIT_HOOK/WAIT_UNHOOK）钩子保持低位供吊装工作业；其余高位悬挂
+    // 吊具行程：人力环节下吊取=挂绳后纯起升、放下=纯下落（挂/放绳独立成态）；无人力环节保留 V 形（下落到点即起升/放下即回升）；
+    // 等人挂绳/放绳（WAIT_HOOK/WAIT_UNHOOK）钩子保持低位供吊运工作业；其余高位悬挂
     const dur = cr.state === 'HOIST' ? CFG.crane.hoistTime : cr.state === 'LOWER' ? CFG.crane.lowerTime : 0;
     let hookY = (cr.state === 'UNHOOK' || cr.state === 'WAIT_HOOK' || cr.state === 'WAIT_UNHOOK') ? CR_HOOK_LOW : CR_HOOK_HIGH;
     if (dur) {
@@ -1229,7 +1229,7 @@ function syncCranes() {
             : CR_HOOK_HIGH - (CR_HOOK_HIGH - CR_HOOK_LOW) * p)        // 吊运到位：纯下落
         : CR_HOOK_LOW + (CR_HOOK_HIGH - CR_HOOK_LOW) * Math.abs(Math.cos(Math.PI * p));
     }
-    // 渲染侧平滑：摘绳完成转待命等状态跳变处，吊钩以吊取速度匀速升降（不瞬移）
+    // 渲染侧平滑：放绳完成转待命等状态跳变处，吊钩以吊取速度匀速升降（不瞬移）
     const dtS = C.lastSimT == null ? 0 : Math.max(0, Math.min(5, simTime - C.lastSimT));
     C.lastSimT = simTime;
     if (C.hookShown == null) C.hookShown = hookY;
@@ -1279,7 +1279,7 @@ function syncCranes() {
     } else {
       C.strapL.visible = C.strapR.visible = false;
       const sp = cr.job && cr.job.spec;
-      if (cr.state === 'WAIT_UNHOOK' && sp) {   // 摘绳中：缆绳仍穿在已落位的捆上，吊装工自钩上取下
+      if (cr.state === 'WAIT_UNHOOK' && sp) {   // 放绳中：缆绳仍穿在已落位的捆上，吊运工自钩上取下
         const lenU = Math.min((cr.job && cr.job.len) || 9, BAR_MAX);
         const Hb = bundleH(sp), yBot = CR_HOOK_LOW - 1.15;
         const sX = lenU * .28;
@@ -1302,11 +1302,11 @@ function syncCranes() {
   }
 }
 
-/* ---------------- 吊装工（挂绳 / 摘绳 · 人因环节） ----------------
+/* ---------------- 吊运工（挂绳 / 放绳 / 出库取绳 · 人因环节） ----------------
  * 低多边形人形（≈1.75m × 1.5 图示放大）：工装裤 + 反光背心 + 安全帽 + 作业臂；
- * 行走摆腿（walkPhase 由仿真核心推进）、挂/摘绳双臂上举操作，脚下橙色作业环脉冲。
- * 数据源 = 仿真核心 riggers（行走/作业状态机见 shared/sandbox-core.mjs 吊装工模块）。 */
-const CREW_STATE_TXT3 = { IDLE: '待命', GO_HOOK: '前往挂绳', HOOK: '挂绳中', GO_UNHOOK: '前往摘绳', UNHOOK: '摘绳中' };
+ * 行走摆腿（walkPhase 由仿真核心推进；车上专职守在车侧不走路）、挂/放/取绳双臂上举操作，脚下橙色作业环脉冲。
+ * 数据源 = 仿真核心 crewActors()（库区班组 riggers + 车上专职 tk.rigger；状态机见 shared/sandbox-core.mjs 吊运工模块）。 */
+const CREW_STATE_TXT3 = { IDLE: '待命', GO_HOOK: '前往挂绳', HOOK: '挂绳中', GO_UNHOOK: '前往放绳', UNHOOK: '放绳中', ROPE_OUT: '取绳中' };
 const crewG = new Map();
 function makeCrewG(r) {
   const g = new THREE.Group();
@@ -1347,8 +1347,8 @@ function makeCrewG(r) {
   hat.position.y = 1.62; g.add(hat);
   const brim = new THREE.Mesh(geo('cwHatB', () => new THREE.CylinderGeometry(.185, .185, .022, 14)), hatM);
   brim.position.y = 1.63; g.add(brim);
-  // 头顶姓名标牌 + 脚下作业环（挂/摘绳时脉冲）
-  const name = makeLabel(r.name + ' 吊装工', '#b45309', 4);
+  // 头顶姓名标牌 + 脚下作业环（挂/放/取绳时脉冲）
+  const name = makeLabel(r.name + (r.truckSide ? ' 车上专职吊运工' : ' 吊运工'), '#b45309', 4);
   name.position.y = 2.35; g.add(name);
   const ring = new THREE.Mesh(geo('cwRing', () => new THREE.RingGeometry(.55, .68, 36)),
     new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
@@ -1359,21 +1359,21 @@ function makeCrewG(r) {
 }
 function syncCrew(now) {
   const seen = new Set();
-  for (const r of riggers) {
+  for (const r of crewActors()) {   // 库区班组 + 车上专职（每车 1 名，守在车侧、不上库位）
     seen.add(r.name);
     let C = crewG.get(r.name);
     if (!C) { C = makeCrewG(r); crewG.set(r.name, C); }
     C.g.position.set(WX(r.x), 0, WZ(r.y));
     C.g.rotation.y = -r.heading;
     const walking = r.state === 'GO_HOOK' || r.state === 'GO_UNHOOK';
-    const working = r.state === 'HOOK' || r.state === 'UNHOOK';
+    const working = r.state === 'HOOK' || r.state === 'UNHOOK' || r.state === 'ROPE_OUT';
     const wp = r.walkPhase * Math.PI;
     C.legs.forEach((hip, i) => {   // 行走摆腿（对相反位）；作业/待命时并腿微分回正
       const ph = wp + (i === 0 ? 0 : Math.PI);
       const sw = walking ? Math.sin(ph) * .55 : 0;
       hip.rotation.z += (sw - hip.rotation.z) * .4;
     });
-    C.arms.forEach((sh, i) => {    // 行走小幅前后摆；挂/摘绳双臂上举过头（够吊绳/吊具）带轻微操作起伏
+    C.arms.forEach((sh, i) => {    // 行走小幅前后摆；挂/放/取绳双臂上举过头（够吊绳/吊具）带轻微操作起伏
       const ph = wp + (i === 0 ? Math.PI : 0);
       let rot = walking ? Math.sin(ph) * .35 : 0;
       if (working) rot = -2.35 + Math.sin(now / 160 + i * 1.7) * .16;   // 上举（-Z 向上转）

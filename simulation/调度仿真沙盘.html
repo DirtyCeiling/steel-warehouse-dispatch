@@ -54,7 +54,7 @@ const rodDiaM = sp => SPEC_META[sp.name].dia / 1000;
   drawPaths();
   drawTargets();
   drawRobots();
-  drawCrew();         // 吊装工（地面人员，挂绳/摘绳）
+  drawCrew();         // 吊运工（库区班组 + 车上专职：挂绳/放绳/取绳）
   drawCranes();      // 天车架空，最后绘制
   drawScanScopes();  // 机器狗扫描区/人工核对区框显（监测范围≠全库时）
   const ft = focusTruck();

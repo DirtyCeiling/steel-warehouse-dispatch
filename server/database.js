@@ -12,7 +12,9 @@ import { paramDefaults, clampParam } from './params.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export const STACKS_PER_SLOT = 8;          // 每库位垛数（竖着排列）
-export const BUNDLES_PER_STACK = 400;      // 通用每垛捆数上限（总库容 91×8×400=291200；实际垛容按料架限高逐规格收窄，见 stackCap）
+export const BUNDLES_PER_STACK = 400;      // DB 硬上限（stacks 表 CHECK 约束用）；每垛捆数上限实为库房参数
+                                           // （warehouse.bundlesPerStack，默认 100、范围 10~100），实际垛容
+                                           // stackCap = min(参数上限, 并排×限高)，见 params.js / GEO_DEFAULTS
 export const DB_PATH = process.env.WAREHOUSE_DB || join(__dirname, 'warehouse.db');
 
 /** 打开（不存在则创建）数据库并建表；首次打开时自动灌入主应用数据 */
@@ -183,14 +185,15 @@ function migrate(db) {
 
 /* ================= 调度规划参数（sim_params 表） ================= */
 
-/** 读取调度参数：schema 默认值 + 库内覆盖值合并，返回 { sec: { key: value } } */
+/** 读取调度参数：schema 默认值 + 库内覆盖值合并（读取时按 schema 夹取，兼容历史越界值），返回 { sec: { key: value } } */
 export function getSimParams(db) {
   const values = paramDefaults();
   for (const r of db.prepare('SELECT key, value FROM sim_params').all()) {
     const dot = String(r.key).indexOf('.');
     if (dot < 0) continue;
     const sec = r.key.slice(0, dot), key = r.key.slice(dot + 1);
-    if (values[sec] && key in values[sec]) values[sec][key] = r.value;
+    const v = clampParam(sec, key, r.value);
+    if (values[sec] && v !== null) values[sec][key] = v;
   }
   return values;
 }
@@ -367,7 +370,7 @@ function rowsOf(rods) {
 export const GEO_DEFAULTS = {
   stacksPerSlot: 8,
   rackH: 3.0, pileW: 2.7, railTop: 0.41, packShim: 15, packGap: 30,
-  diaKw: 1.08, diaKh: 1.06, bundlesPerStack: 400, minDiaCm: 15, maxDiaCm: 50,
+  diaKw: 1.08, diaKh: 1.06, bundlesPerStack: 100, minDiaCm: 15, maxDiaCm: 50,
   fillRatio: 22,
 };
 let geoCfg = { ...GEO_DEFAULTS };
@@ -593,8 +596,9 @@ export function getSeedSlots(db = null) {
 
 /**
  * 重建数据：写入规格 + 91 库位 + 728 垛，并按分区专业化灌入实际钢材分布
- *（按限高可堆层数的「库容装载比例」铺层——默认 22%，约 4.7 万捆；可在
- *  「库房参数设计」页调整 fillRatio 后重建。总库容 291,200 捆（91×8×400 通用上限，
+ *（按限高可堆层数的「库容装载比例」铺层——默认 22%；可在
+ *  「库房参数设计」页调整 fillRatio 后重建。总库容按当前库房参数计：
+ *  91×每库位垛数×每垛捆数上限（默认 91×8×100=72,800 捆通用上限，
  *  实际垛容按规格限高收窄），均已扫码入账；保留少量空库位与未满垛作入库缓冲）。
  */
 export function seed(db) {

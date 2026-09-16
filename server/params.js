@@ -75,22 +75,21 @@ export const PARAM_SCHEMA = [
   },
   {
     sec: 'crane', secLabel: '天车（吊运装卸）',
-    desc: '6 台（每跨 2 台，TC-A1~TC-C2）：行进速度（大车）/ 小车运行速度 / 吊取 / 放下耗时（挂绳/摘绳由吊装工完成，见「吊装工」段）',
+    desc: '6 台（每跨 2 台，TC-A1~TC-C2）：行进速度（大车）/ 小车运行速度可调；吊取 2.0s / 放下 1.8s 为设备固有耗时（内置常数，不在本页调节）；挂绳 / 放绳 / 取绳由吊运工完成，见「吊运工」段',
     defs: [
       { key: 'speed',     label: '行进速度', min: 0.5, max: 10, step: 0.1, unit: 'm/s', def: 4.0 },
       { key: 'trolleySpeed', label: '小车运行速度', min: 0.2, max: 4, step: 0.1, unit: 'm/s', def: 1.0 },
-      { key: 'hoistTime', label: '吊取时间', min: 0.5, max: 180, step: 0.1, unit: '秒', def: 2.0 },
-      { key: 'lowerTime', label: '放下时间', min: 0.5, max: 180, step: 0.1, unit: '秒', def: 1.8 },
     ],
   },
   {
-    sec: 'crew', secLabel: '吊装工（挂绳 / 摘绳）',
-    desc: '钢材吊运需吊装工配合（人因环节）：吊运前人工把吊绳穿上钢材挂上吊具（挂绳）、卸货落位后人工把吊绳自钢材取下（摘绳）——入库卸车 / 出库装车 / 倒垛每吊两端各一次；天车到位后人未到须等待（等待时长入场次台账）。人数 0 = 关闭人力环节（天车自动挂摘绳，不等待）',
+    sec: 'crew', secLabel: '吊运工（挂绳 / 放绳 / 取绳）',
+    desc: '钢材吊运需吊运工配合（人因环节）：挂绳 = 吊运前把吊绳穿上钢材并挂上天车吊钩；放绳 = 落位后把吊绳自天车吊钩取下（入库/倒垛吊绳随捆留垛，供下次吊运直接挂钩）；取绳 = 出库落车后把吊绳自钢材捆中抽出收回（仅出库车端，不挡天车、挡货车复验离场）。库位侧作业由库区班组步行前往（人数 = 班组规模，0 = 关闭人力环节：天车自动挂/放绳、出库免取绳，不等待）；出入库货车每车自动配 1 名车上专职吊运工，专管车上钢材绳索取放，不上库位、不占班组人数。天车到位人未到须等待（等待时长入场次台账）',
     defs: [
-      { key: 'count',      label: '吊装工人数', min: 0,   max: 12,  step: 1,   unit: '人',   def: 6 },
-      { key: 'walkSpeed',  label: '行走速度',   min: 0.5, max: 3,   step: 0.1, unit: 'm/s',  def: 1.4 },
+      { key: 'count',      label: '库区吊运工人数', min: 0,   max: 12,  step: 1,   unit: '人',   def: 6 },
+      { key: 'walkSpeed',  label: '行进速度',   min: 0.5, max: 3,   step: 0.1, unit: 'm/s',  def: 1.4 },
       { key: 'hookTime',   label: '挂绳时间',   min: 0,   max: 300, step: 1,   unit: '秒',   def: 60 },
-      { key: 'unhookTime', label: '摘绳时间',   min: 0,   max: 300, step: 1,   unit: '秒',   def: 45 },
+      { key: 'unhookTime', label: '从钩子上放绳时间', min: 0, max: 300, step: 1, unit: '秒', def: 45 },
+      { key: 'ropeOutTime', label: '出库钢材取吊绳时间', min: 0, max: 300, step: 1, unit: '秒', def: 30 },
     ],
   },
   {
@@ -125,7 +124,7 @@ export const PARAM_SCHEMA = [
       { key: 'packGap',   label: '捆间通风缝',   min: 20,   max: 80,   step: 1,    unit: 'mm', def: 30 },
       { key: 'diaKw',     label: '截面宽向系数', min: 1.0,  max: 1.2,  step: 0.01, unit: '×',  def: 1.08 },
       { key: 'diaKh',     label: '截面高向系数', min: 1.0,  max: 1.2,  step: 0.01, unit: '×',  def: 1.06 },
-      { key: 'bundlesPerStack', label: '每垛捆数上限', min: 50, max: 400, step: 10, unit: '捆', def: 400 },
+      { key: 'bundlesPerStack', label: '每垛捆数上限', min: 10, max: 100, step: 10, unit: '捆', def: 100 },
       { key: 'minDiaCm',  label: '捆径下限',     min: 5,    max: 30,   step: 1,    unit: 'cm', def: 15 },
       { key: 'maxDiaCm',  label: '捆径上限',     min: 30,   max: 80,   step: 1,    unit: 'cm', def: 50 },
       { key: 'fillRatio', label: '库容装载比例', min: 10,   max: 95,   step: 1,    unit: '%',  def: 22 },

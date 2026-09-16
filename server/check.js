@@ -8,7 +8,7 @@ import {
   syncBundlePositions, getBundlePositions,
   bundleDiaCm, bundleRods, getBundleRules, applyBundleRules, getGeoCfg, deriveRods,
   getSlotRacks, applySlotRacks, effectiveRacks, setSimParams,
-  STACKS_PER_SLOT, BUNDLES_PER_STACK,
+  STACKS_PER_SLOT,
 } from './database.js';
 import { SPECS } from './layout.js';
 
@@ -40,9 +40,11 @@ const slots0 = getSlots(db);
 const stackCount = slots0.reduce((s, x) => s + x.racks, 0);
 check(`每库位 ${STACKS_PER_SLOT} 垛（默认全局）-> 垛位总数 ${91 * STACKS_PER_SLOT}`,
   stackCount === 91 * STACKS_PER_SLOT && slots0.every(x => x.racks === STACKS_PER_SLOT), String(stackCount));
-check(`总库容 91×${STACKS_PER_SLOT}×${BUNDLES_PER_STACK}=${91 * STACKS_PER_SLOT * BUNDLES_PER_STACK}`, inv.totalCapacity === 91 * STACKS_PER_SLOT * getGeoCfg().bundlesPerStack, String(inv.totalCapacity));
-check('初始库存为实际钢材分布（捆径 15~50cm 口径约 4.7 万捆，利用率 ~16%，均已入账）',
-  inv.totalBundles > 40000 && inv.totalBundles < 52000 && inv.utilization > 0.13 && inv.utilization < 0.2 && inv.pending === 0,
+const bps = getGeoCfg().bundlesPerStack;
+check(`总库容 91×${STACKS_PER_SLOT}×${bps}=${91 * STACKS_PER_SLOT * bps}`,
+  inv.totalCapacity === 91 * STACKS_PER_SLOT * bps, String(inv.totalCapacity));
+check('初始库存为实际钢材分布（每垛上限 100：约 4.6 万捆，利用率 ~64%，均已入账）',
+  inv.totalBundles > 40000 && inv.totalBundles < 52000 && inv.utilization > 0.55 && inv.utilization < 0.72 && inv.pending === 0,
   `${inv.totalBundles} 捆 · ${(inv.utilization * 100).toFixed(1)}%`);
 check('存在空闲库位（入库缓冲位）', inv.occupiedSlots < inv.slotCount, `${inv.slotCount - inv.occupiedSlots} 个空库位`);
 check('分区统计齐全', inv.perZone.length === 4, JSON.stringify(inv.perZone.map(z => `${z.zone}:${z.slots}`)));
@@ -80,7 +82,7 @@ check('getSlots 下发生效垛数（1-1 racks=4；旧期初高位存货保留�
 setSimParams(db, { warehouse: { stacksPerSlot: 6 } });
 check('全局垛数参数生效（无覆盖位 17-1 -> 6；覆盖位 1-1 仍 4）', effectiveRacks('17-1') === 6 && effectiveRacks('1-1') === 4, `17-1=${effectiveRacks('17-1')} 1-1=${effectiveRacks('1-1')}`);
 let invR = getInventory(db);
-check('库容按逐库位垛数汇总（90×6 + 1×4）× 400', invR.totalCapacity === (90 * 6 + 4) * getGeoCfg().bundlesPerStack, String(invR.totalCapacity));
+check(`库容按逐库位垛数汇总（90×6 + 1×4）× ${getGeoCfg().bundlesPerStack}`, invR.totalCapacity === (90 * 6 + 4) * getGeoCfg().bundlesPerStack, String(invR.totalCapacity));
 seed(db);   // 重建：期初按新垛数重灌（覆盖保留）
 s11 = getSlots(db).find(x => x.code === '1-1');
 const s171 = getSlots(db).find(x => x.code === '17-1');
