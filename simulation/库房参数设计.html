@@ -137,7 +137,7 @@
 <body>
 <header>
   <div class="brand">
-    <div class="logo">🏗</div>
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V9l9-5 9 5v12"/><path d="M7 21v-8h10v8"/><path d="M7 17h10"/></svg></div>
     <div><h1>库房参数设计</h1></div>
   </div>
   <nav data-sim-nav="whcfg" title="新标签打开，不打断各页面状态"></nav>
@@ -152,6 +152,7 @@
 <script src="./vendor/three.inline.js"></script>
 <script src="./shared/sim-common.js"></script>
 <script>
+/*@@stack-alloc@@*/
 'use strict';
 const { DB_API, SPEC_COLORS } = SIM;
 const app = document.getElementById('app');
@@ -182,7 +183,7 @@ let rackSaved = {};                      // 每库位垛数覆盖快照（{ code
 let rackEdits = {};                      // 覆盖编辑增量（{ code: 垛数|null }，null = 清除覆盖跟随全局）
 let inv = null;                          // /api/inventory 快照
 
-/* 每库位垛数（货架数）：生效值 = 编辑增量（null=清除）> 已存覆盖 > 全局参数；物理上限 8 垛层 */
+/* 每库位垛数（货架数）：生效值 = 编辑增量（null=清除）> 已存覆盖 > 全局参数；物理上限 10 垛层 */
 const rackLimit = v => Math.max(1, Math.min(8, Math.round(Number(v) || 8)));
 function effRacksOf(code) {
   let v = code in rackEdits ? rackEdits[code] : rackSaved[code];
@@ -192,41 +193,20 @@ function effRacksOf(code) {
 const globalRacks = () => rackLimit(values.warehouse?.stacksPerSlot);
 const racksDirty = () => Object.keys(rackEdits).length > 0;
 
-/* ---- 与 server/database.js 同口径的捆制几何（米制入参，cm 出参） ---- */
-const MANUAL_ROWS = { 1: [1], 4: [2, 2], 5: [3, 2] };
+/* ---- 捆制几何：公式唯一实现在 StackAlloc 垛位推荐算法包（/*@@stack-alloc@@* / 注入，
+ * 与 server/database.js、仿真沙盘同源同口径）；本页只保留（杆径,支数）级别的薄适配 ---- */
 const geo = () => values.warehouse || {};
-function rowsOf(rods) {
-  if (MANUAL_ROWS[rods]) return MANUAL_ROWS[rods];
-  const k = Math.floor((Math.sqrt(8 * rods + 1) - 1) / 2);
-  const rows = Array.from({ length: k }, (_, i) => k - i);
-  const rem = rods - k * (k + 1) / 2;
-  if (rem > 0) rows.unshift(rem);
-  return rows;
-}
+const rowsOf = rods => StackAlloc.rowsOf(rods);
 function bundleDiaCm(dia, rods) {
   if (!rods) return null;
-  if (rods === 1) return dia / 10;
-  const rows = rowsOf(rods), d = dia / 1000;
-  const w = Math.max(...rows) * d * geo().diaKw;
-  const h = rows.length * d * geo().diaKh + geo().packShim / 1000;
-  return Math.sqrt(w * w + h * h) * 100;
+  return rods === 1 ? dia / 10 : StackAlloc.bundleDiaOfRows(rowsOf(rods), dia, geo());
 }
 function deriveRods(dia) {
-  let lastBelow = null;
-  for (let k = 1; k <= 40; k++) {
-    const n = k * (k + 1) / 2;
-    const d = bundleDiaCm(dia, n);
-    if (d > geo().maxDiaCm) return lastBelow ? lastBelow.n : 1;
-    if (d >= geo().minDiaCm) return n;
-    lastBelow = { n };
-  }
-  return lastBelow ? lastBelow.n : 1;
+  return StackAlloc.deriveRods(dia, geo());
 }
 function pileDimsOf(dia, rods) {
-  const rows = rowsOf(rods), d = dia / 1000;
-  const across = Math.max(2, Math.floor(geo().pileW / (Math.max(...rows) * d * geo().diaKw + geo().packGap / 1000)));
-  const maxLayers = Math.floor(geo().rackH / (rows.length * d * geo().diaKh + geo().packShim / 1000));
-  return { across, maxLayers };
+  const p = StackAlloc.pileDimsOf(dia, rods, geo());
+  return { across: p.across, maxLayers: p.maxLayers };
 }
 /* 规则行当前生效支数：edit 覆盖 > 库内规则 > 预置 */
 function effRods(r) {
@@ -463,7 +443,7 @@ function renderDimsTbl() {
 /* ---- 卡片 3：垛位与库容 ---- */
 let rebuilding = false;
 function cardStack() {
-  const c = card(colYardParams, 'c-stack', '📦', '垛位与库容', '每库位垛数（货架）可设全局统一值、也可逐库位单独调整（1~8 垛 · 跨深 30m 内 3.75m 垛格）；每垛捆数上限收窄通用垛容；库容装载比例决定期初库存铺层');
+  const c = card(colYardParams, 'c-stack', '📦', '垛位与库容', '每库位垛数（货架）可设全局统一值、也可逐库位单独调整（1~10 垛 · 跨深 30m 内 3.0m 垛格）；每垛捆数上限收窄通用垛容；库容装载比例决定期初库存铺层');
   const s0 = subOf(c, '每库位垛数（货架）', '全局统一值作用于所有库位；个别库位在下方表格单独覆盖（如长钢位减垛、混装位加垛），留空 = 跟随全局');
   renderSliders(s0, 'warehouse', ['stacksPerSlot']);
   const rackScroll = document.createElement('div');
@@ -520,7 +500,7 @@ function cardStack() {
   s3.appendChild(row);
   const note = document.createElement('p');
   note.className = 'note';
-  note.innerHTML = '提示：<b>库容装载比例</b> = 期初每垛按物理垛容铺层的比例（±4% 抖动、每垛至少 3 层；大口径单支管 Φ200/400/600 保持满垛），仅在「重建库区」时生效；<b>每库位垛数</b>变更保存后库容/推荐即时按新垛数核算（期初重灌需重建）；仅修改<b>捆径口径 / 每垛上限 / 尺寸码放</b>时，入库推荐与沙盘运行时垛容即时生效，不必重建。';
+  note.innerHTML = '提示：<b>库容装载比例</b> = 期初每垛按物理垛容铺层的比例（±4% 抖动、每垛至少 2 层；大口径单支管 Φ200/400/600 保持满垛），仅在「重建库区」时生效；<b>每库位垛数</b>变更保存后库容/推荐即时按新垛数核算（期初重灌需重建）；仅修改<b>捆径口径 / 每垛上限 / 尺寸码放</b>时，入库推荐与沙盘运行时垛容即时生效，不必重建。';
   s3.appendChild(note);
 }
 
@@ -694,11 +674,11 @@ function pileLayout(dia, rods, count) {   // count 捆 -> { across, layers:[每�
   for (let i = 0; i < count; i++) seats.push([Math.floor(i / across), order[i % across]]);
   return { across, maxLayers: p.maxLayers, seats };
 }
-/* 料架几何：与三维沙盘 buildRack / stackCell3 完全同口径（普通库位垛格 8.333×3.75m）。
+/* 料架几何：与三维沙盘 buildRack / stackCell3 完全同口径（普通库位垛格 8.333×3.0m）。
  * 捆沿 X（库区长向）横放、座位沿 Z（垛格深向）在铺宽内居中展开；立柱在垛格四角，
  * 垫梁沿 Z 两道、位于捆端下方（X=±rx），底层捆坐垫梁顶（railTop）。 */
 function rackDimsOf(len) {
-  const cw = 300 / 36, cd = 30 / 8;            // 垛格宽 = 库位列宽，垛格深 = 跨深/8
+  const cw = 300 / 36, cd = 30 / 10;           // 垛格宽 = 库位列宽，垛格深 = 跨深/10
   const px = cw / 2 - 0.45, pz = cd / 2 - 0.35;
   return {
     cw, cd, px, pz,
@@ -782,7 +762,7 @@ function renderPreview2D() {
   const shape = r.shape;
   const len = SPEC_LENS[r.spec] || 9;
 
-  /* ===== 左：俯视（垛格 8.333×3.75m，长材悬出与沙盘一致） ===== */
+  /* ===== 左：俯视（垛格 8.333×3.0m，长材悬出与沙盘一致） ===== */
   const LW = W * 0.46;
   const rd2 = rackDimsOf(len);
   ctx.fillStyle = '#93a8cc';
@@ -791,7 +771,7 @@ function renderPreview2D() {
   ctx.fillText('俯视（垛格 + 底层落位）', 16, 22);
   const topScale = Math.min((LW - 50) / (Math.max(len, rd2.cw) + 1.2), (H - 120) / (rd2.cd + 1.0));
   const tx0 = 16, ty0 = 60;
-  // 垛格外框（沙盘垛格：宽 CELL_L=8.333m × 深 3.75m），捆居中、长材超格悬出
+  // 垛格外框（沙盘垛格：宽 CELL_L=8.333m × 深 3.0m），捆居中、长材超格悬出
   const cellX = tx0 + (Math.max(len, rd2.cw) - rd2.cw) / 2 * topScale;
   const pileX = tx0 + (Math.max(len, rd2.cw) - len) / 2 * topScale;
   ctx.strokeStyle = '#1f3a6b';
@@ -800,7 +780,7 @@ function renderPreview2D() {
   ctx.setLineDash([]);
   ctx.fillStyle = '#7288b3';
   ctx.font = '10px "Microsoft YaHei",sans-serif';
-  ctx.fillText('垛格 8.33×3.75m', cellX + 4, ty0 + 12);
+  ctx.fillText('垛格 8.33×3.0m', cellX + 4, ty0 + 12);
   // 垫梁位置（沙盘口径：沿 Z 两道，X=±rx 捆端下方）
   ctx.setLineDash([4, 4]);
   ctx.strokeStyle = 'rgba(138,98,56,.8)';
@@ -843,7 +823,7 @@ function renderPreview2D() {
   ctx.strokeStyle = '#33507f';
   ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(RX + 6, groundY); ctx.lineTo(RX + frontW - 6, groundY); ctx.stroke();
-  // 料架立柱（沙盘口径：Z 向间距 = 垛格深 3.75 − 2×0.35 = 3.05m）
+  // 料架立柱（沙盘口径：Z 向间距 = 垛格深 3.0 − 2×0.35 = 2.30m）
   const postW = 0.14 * fs;
   ctx.fillStyle = '#7a838d';
   for (const sx of [-1, 1]) {
@@ -863,7 +843,7 @@ function renderPreview2D() {
   ctx.textAlign = 'right';
   ctx.fillText(`限高 ${geo().rackH.toFixed(1)}m`, RX + frontW - 6, groundY - geo().rackH * fs - 6);
   ctx.textAlign = 'left';
-  // 垫梁截面（正视看到的两侧垫梁重合：0.20m 高 × 2.55m 深，位于捆端下方 y 0.21~0.41）
+  // 垫梁截面（正视看到的两侧垫梁重合：0.20m 高 × 1.8m 深，位于捆端下方 y 0.21~0.41）
   ctx.fillStyle = '#8a6238';
   ctx.fillRect(cx - rd2.beamD / 2 * fs, groundY - geo().railTop * fs, rd2.beamD * fs, Math.max(3, rd2.beamH * fs));
   // 捆：逐层逐位（居中铺开）
@@ -1341,8 +1321,8 @@ function cardRo() {
     ['横向通道', '4 条 × 2m（不含充电服务带）'],
     ['充电服务带', '3m（厂房外 C 跨一路）'],
     ['库位', '91 个（含 14~16 整跨合并位 3 个）'],
-    ['垛格（物理）', '每库位最多 8 垛层 × 3.75m（跨深 30m）'],
-    ['每库位垛数', '可在「垛位与库容」按全局/逐库位配置 1~8 垛'],
+    ['垛格（物理）', '每库位最多 10 垛层 × 3.0m（跨深 30m）'],
+    ['每库位垛数', '可在「垛位与库容」按全局/逐库位配置 1~10 垛'],
     ['库区分区', '铁姆肯区(1-2) · 大棒区域(3-13) · 大棒单支和长钢(14-16) · 中棒区域(17-33)'],
     ['天车', '6 台（每跨 2 台，TC-A1~TC-C2）'],
   ];

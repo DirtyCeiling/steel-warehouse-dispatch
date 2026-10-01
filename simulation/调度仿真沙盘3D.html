@@ -306,9 +306,9 @@ const slotGeo3 = s => ({
 const SLOT_GAP = 1.8;
 const STACK_W = M.CELL_L - SLOT_GAP;         // 6.53m：料架横向占地
 const BAR_MAX = STACK_W - 0.3;               // 捆示意长度上限 6.23m：捆端不越入空道（真实长度见库存三维特写）
-const stackCell3 = (s, i) => {   // 与库存三维视图相同的垛格划分：8 垛沿跨向纵深竖排
+const stackCell3 = (s, i) => {   // 与库存三维视图相同的垛格划分：10 垛沿跨向纵深竖排
   const g = slotGeo3(s), dEff = Math.min(g.d, 40);
-  return { x: g.x, z: g.z + (i - 3.5) * (dEff / 8), cw: g.w, cd: dEff / 8, dEff };
+  return { x: g.x, z: g.z + (i - (STACKS_PER_SLOT - 1) / 2) * (dEff / STACKS_PER_SLOT), cw: g.w, cd: dEff / STACKS_PER_SLOT, dEff };
 };
 const zoneTint = zone => parseInt(ZONES[zone].tint.split(',').map(x => (+x).toString(16).padStart(2, '0')).join(''), 16);
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -515,7 +515,7 @@ function buildEnv() {
   const capMat = mat('rackCap', () => new THREE.MeshStandardMaterial({ color: 0xfbbf24, emissive: 0x7a5200, roughness: .5 }));
   const baseGeo = geo('stackBase', () => new THREE.BoxGeometry(1, .2, 1));
   const baseMat = mat('stackBase', () => new THREE.MeshStandardMaterial({ color: 0xb6bcc4, roughness: .85 }));
-  const posts = [], caps = [], bases = [], beams = { '3.75': [], '5': [] };
+  const posts = [], caps = [], bases = [], beams = new Map();   // 垫梁按垛格深分组（普通位 3.0 / 合并位 4.0）
   const plateGeoCache = new Map();
   for (const s of storages) {
     const g = slotGeo3(s), dEff = Math.min(g.d, 40);
@@ -529,14 +529,16 @@ function buildEnv() {
     const lb = makeLabel(s.code, ZONES[s.zone].label, 6.5);
     lb.position.set(WX(g.x), RACK_H + 1.6, WZ(g.z) - dEff / 2 - 1.4);
     envGroup.add(lb);
-    for (let i = 0; i < s.stacks.length; i++) {   // 每库位按生效垛数建料架（垛层划分仍固定 8 层）
+    for (let i = 0; i < s.stacks.length; i++) {   // 每库位按生效垛数建料架（垛层划分仍固定 STACKS_PER_SLOT 层）
       const cell = stackCell3(s, i);
       const px = STACK_W / 2 - .07, pz = cell.cd / 2 - .35;   // 立柱外缘贴料架边界：相邻两列柱间净距 = 1.8m 空道
       for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
         posts.push([WX(cell.x) + sx * px, RACK_H / 2, WZ(cell.z) + sz * pz]);
         caps.push([WX(cell.x) + sx * px, RACK_H + .05, WZ(cell.z) + sz * pz]);
       }
-      beams[cell.cd > 4 ? '5' : '3.75'].push(
+      const bk = cell.cd.toFixed(1);
+      if (!beams.has(bk)) beams.set(bk, []);
+      beams.get(bk).push(
         [WX(cell.x) - 2.6, (RAIL_TOP + .21) / 2, WZ(cell.z)], [WX(cell.x) + 2.6, (RAIL_TOP + .21) / 2, WZ(cell.z)]);
       bases.push([WX(cell.x), .12, WZ(cell.z), STACK_W - .2, cell.cd - .5]);
     }
@@ -551,9 +553,9 @@ function buildEnv() {
   };
   mkInst(postGeo, postMat, posts, (m4, p) => m4.makeTranslation(p[0], p[1], p[2]));
   mkInst(capGeo, capMat, caps, (m4, p) => m4.makeTranslation(p[0], p[1], p[2]));
-  for (const cd of ['3.75', '5']) {
+  for (const [cd, list] of beams) {
     mkInst(geo('rackBeam' + cd, () => new THREE.BoxGeometry(.16, RAIL_TOP - .21, +cd - 1.2)), postMat,
-      beams[cd], (m4, p) => m4.makeTranslation(p[0], p[1], p[2]));
+      list, (m4, p) => m4.makeTranslation(p[0], p[1], p[2]));
   }
   mkInst(baseGeo, baseMat, bases, (m4, p) => { m4.makeScale(p[3], 1, p[4]); m4.setPosition(p[0], p[1], p[2]); });
   // 跨标注（西墙外）+ 充电服务带标注
@@ -1863,7 +1865,7 @@ cv3.addEventListener('click', e => {
   const hs = stackAtWorld(p, cell);
   showStackCard(st, hs ? hs.si : -1, e);
 });
-function stackAtWorld(p, cell) {   // 地面交点 -> 具体垛（垛层划分固定 8 层，与 stackCell3 一致；未设货架层返回 si=-1）
+function stackAtWorld(p, cell) {   // 地面交点 -> 具体垛（垛层划分固定 STACKS_PER_SLOT 层，与 stackCell3 一致；未设货架层返回 si=-1）
   const t = tiles[cell.r][cell.c];
   if (t.type !== 'storage') return null;
   const st = storages[t.slotId];

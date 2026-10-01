@@ -6,36 +6,22 @@
 // 权重优化规则（感知机式微调）：对被人工改动的组，分别在推荐落点与实际落点上
 // 复算各评分维度，人工选择在某维度上更优则该维度权重 +STEP、更劣则 -STEP，
 // 按 schema 夹取——下一次同类取舍时算法即偏向管理工的选择。
+// 推荐引擎（评分/整组分配/候选列表/学习方向）与监测范围判定均在垛位推荐算法包
+// （StackAlloc，经 ./stack-alloc.js 接入），本文件只做 DB 台账与视图适配。
 import {
-  getSimParams, setSimParams, SPEC_FAMILY, stackCap,
+  getSimParams, setSimParams, SPEC_FAMILY, stackCap, getGeoCfg, getSpecRules,
 } from './database.js';
 import { PARAM_SCHEMA } from './params.js';
+import {
+  monitoredScopesOf, regionRestrictedOf, slotInOpScope,
+  recommendAllocation as saRecommendAllocation, listCandidates as saListCandidates,
+  learnDeltas as saLearnDeltas,
+} from './stack-alloc.js';
 
 export const SPAN_LABELS = ['A跨', 'B跨', 'C跨', '整跨合并'];
 const MILLS = ['承德建龙', '新兴铸管', '唐山瑞丰', '敬业集团', '首钢迁安', '石钢京诚'];
 const PROVINCES = ['冀', '京', '津', '鲁', '豫', '晋', '辽', '陕', '蒙'];
 
-/* ================= 监测范围（与仿真沙盘 robot 参数同口径） =================
- * 调度参数 robot 段配置监测跨与跨内号区范围，两级口径：
- * 「监测 X 跨」开关决定作业范围（跨级）——监测范围为全库真子集时，入库落点只在监测跨的
- * 【全部号区】内推荐/放行（跨内号区只限定机器狗扫描区，区外转人工核对）；全关 = 全库免检。 */
-function monitoredScopesOf(W) {
-  const r = W.robot || {};
-  const mk = (on, si) => {
-    if (!on) return null;
-    const f = +r['from' + 'ABC'[si]] || 1, t = +r['to' + 'ABC'[si]] || 33;
-    return { span: si, lo: Math.max(1, Math.min(f, t)), hi: Math.min(33, Math.max(f, t)) };
-  };
-  return [mk(r.spanA, 0), mk(r.spanB, 1), mk(r.spanC, 2)].filter(Boolean);
-}
-function regionRestrictedOf(ms) {   // 监测范围是否为全库真子集（部分跨关闭，或任一跨限定为跨内号区范围）
-  if (ms.length < 3) return ms.length > 0;
-  return ms.some(m => m.lo > 1 || m.hi < 33);
-}
-function slotInOpScope(st, ms) {    // 作业范围（跨级）：普通库位所在跨被监测即可（跨内全部号区均可）；整跨合并位纵贯 A~C，任一跨监测即可荐
-  if (st.merged || st.span >= 3) return ms.length > 0;
-  return ms.some(m => m.span === st.span);
-}
 function scopeWarnText(ms) {
   return ms.map(m => `${SPAN_LABELS[m.span]}${m.lo > 1 || m.hi < 33 ? `（${m.lo}~${m.hi} 号区）` : ''}`).join('、');
 }
@@ -93,21 +79,16 @@ for (const s of PARAM_SCHEMA) {
   if (s.sec === 'placement') for (const d of s.defs) PLACEMENT_LABELS[d.key] = d.label;
 }
 
-/** 学习维度 -> 对应权重 key：人工选择在该维度更优 => 权重向该方向微调 */
-const LEARN_DIMS = [
-  ['sameSpec', 'sameSpecBase'],   // 同规格归堆 vs 空垛兜底的取向
-  ['empty',    'emptyBase'],
-  ['family',   'famBonus'],       // 库位同质/异族
-  ['near',     'nearBonus'],      // 邻位聚簇
-  ['pend',     'pendPenalty'],    // 扫码干扰规避
-];
 const LEARN_STEP = 2;             // 单次确认每个维度的最大步长（分）
 
 const nowIso = () => new Date().toISOString();
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const randint = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
-/* ================= 归堆推荐引擎（与仿真沙盘评分口径一致的服务端移植） ================= */
+/* ================= 归堆推荐引擎（垛位推荐算法包 StackAlloc） =================
+ * 评分/整组贪心分配/候选列表/落点复算/学习方向均由算法包实现（与仿真沙盘同一源码），
+ * 此处把 DB 行适配成算法包的库位/垛视图（垛视图带 no = stack_no），并按
+ * 「锁定库位 + 监测范围」先行过滤候选库位（进厂确认页口径：整跨合并位任一跨监测即可荐）。 */
 
 function loadYard(db) {
   const slots = db.prepare('SELECT * FROM storage_slots ORDER BY id').all()
@@ -115,80 +96,23 @@ function loadYard(db) {
   const byId = new Map(slots.map(s => [s.id, s]));
   for (const k of db.prepare('SELECT * FROM stacks ORDER BY slot_id, stack_no').all()) {
     const st = byId.get(k.slot_id);
-    if (st) st.stacks.push(k);
+    if (st) st.stacks.push({ ...k, no: k.stack_no });
   }
   return slots;
 }
 
-/** 库位级统计：空垛/同族/异族/待扫码垛数 + 邻位聚簇数（供评分各维度） */
-function analyzeYard(yard, spec) {
-  const fam = SPEC_FAMILY[spec];
-  const an = new Map();
-  for (const s of yard) {
-    let emptyN = 0, famN = 0, mixN = 0, pendN = 0;
-    for (const k of s.stacks) {
-      if (k.pending > 0) pendN++;
-      if (k.count === 0 && k.pending === 0) { emptyN++; continue; }
-      if (k.spec === spec || (k.spec && SPEC_FAMILY[k.spec] === fam)) famN++;
-      else if (k.spec) mixN++;
-    }
-    an.set(s.id, { emptyN, famN, mixN, pendN });
-  }
-  const nearOf = new Map();
-  for (const s of yard) {
-    let nearN = 0;
-    for (const o of yard) {
-      if (o === s || Math.abs(o.area - s.area) > 1) continue;
-      for (const k of o.stacks) if (k.spec === spec && k.count > 0) nearN++;
-    }
-    nearOf.set(s.id, nearN);
-  }
-  return { an, nearOf };
-}
+/** 算法包入参：库房几何参数 + 捆制规则覆盖（与垛容/捆径核算同源同口径） */
+const allocCtx = () => ({ geo: getGeoCfg(), rules: getSpecRules() });
 
-/**
- * 单个候选（库位,垛）的评分与分维得分；不合法落点返回 null。
- * comps 各维度独立记录，供人工调整后的权重学习对比。
- */
-function scoreStack(W, st, k, ctx, spec, spanHint) {
-  const cap = stackCap(spec);                                    // 物理垛容（与沙盘 stackCap 同口径，Φ200/400=30、Φ600=12）
-  const fill = k.count;
-  if (fill >= cap || k.pending > 0) return null;                 // 满垛/待扫码垛不作落点
-  if (fill > 0 && k.spec !== spec) return null;                  // 硬规则：同垛不混异规格
-  const { an, nearOf } = ctx;
-  const agg = an.get(st.id);
-  const nearN = nearOf.get(st.id);
-  const comps = {
-    sameSpec: 0, empty: 0, family: 0, near: 0, pend: 0,
+/** 候选库位过滤：库位锁定出局；监测范围受限时范围外出局 */
+function candidateSlots(db) {
+  const P = getSimParams(db);
+  const ms = monitoredScopesOf(P), restricted = regionRestrictedOf(ms);
+  const yard = loadYard(db);
+  return {
+    W: P.placement, yard,
+    slots: yard.filter(st => st.state !== 'locked' && !(restricted && !slotInOpScope(st, ms))),
   };
-  const parts = [];
-  if (fill > 0) {                                                // ① 同规格归堆（按填充率加励）
-    comps.sameSpec = W.sameSpecBase + Math.round(W.sameSpecFill * fill / cap);
-    parts.push(`同规格归堆 ${comps.sameSpec}（${fill}/${cap}）`);
-  } else {                                                       // ② 空垛兜底（空垛多则惜用）
-    comps.empty = Math.max(0, W.emptyBase - agg.emptyN * W.emptyPenalty);
-    parts.push(`空垛兜底 ${comps.empty}`);
-  }
-  comps.family = agg.famN * W.famBonus - agg.mixN * W.mixPenalty;              // ③ 库位同质性
-  if (agg.famN) parts.push(`库位同族 ${agg.famN * W.famBonus}`);
-  if (agg.mixN) parts.push(`库位异族 -${agg.mixN * W.mixPenalty}`);
-  comps.near = Math.min(nearN * W.nearBonus, W.nearCap);                       // ④ 邻位聚簇
-  if (comps.near) parts.push(`邻位聚簇 ${comps.near}`);
-  comps.pend = -agg.pendN * W.pendPenalty;                                     // ⑤ 扫码干扰
-  if (agg.pendN) parts.push(`扫码干扰 -${agg.pendN * W.pendPenalty}`);
-  const spanMatch = spanHint != null && !st.merged && st.span === spanHint;
-  const spanBonus = spanMatch ? W.spanBonus : 0;                               // ⑥ 跨匹配
-  if (spanBonus) parts.push(`跨匹配 ${spanBonus}`);
-  const score = comps.sameSpec + comps.empty + comps.family + comps.near + comps.pend + spanBonus;
-  return { score, parts, comps };
-}
-
-/** 在指定落点上复算评分（学习对比用）；落点已不合法返回 null */
-function scoreAt(db, W, yard, spec, slotId, stackNo) {
-  const st = yard.find(s => s.id === slotId);
-  const k = st && st.stacks.find(x => x.stack_no === stackNo);
-  if (!st || !k || st.state === 'locked') return null;
-  return scoreStack(W, st, k, analyzeYard(yard, spec), spec, null);
 }
 
 /**
@@ -196,68 +120,28 @@ function scoreAt(db, W, yard, spec, slotId, stackNo) {
  * 贪心取最优候选垛，装满后再荐次优（同车同规格集中码放、垛满另荐），返回分配数组。
  */
 export function recommendAllocation(db, spec, bundles) {
-  const P = getSimParams(db);
-  const W = P.placement;
-  const ms = monitoredScopesOf(P), restricted = regionRestrictedOf(ms);   // 监测范围受限：落点只在范围内
-  const yard = loadYard(db);
-  const ctx = analyzeYard(yard, spec);
-  const out = [];
-  const claimed = new Map();   // 本轮已占用量（slotId,stackNo）-> 捆数
-  let left = bundles;
-  while (left > 0) {
-    const cands = [];
-    for (const st of yard) {
-      if (st.state === 'locked') continue;
-      if (restricted && !slotInOpScope(st, ms)) continue;
-      for (const k of st.stacks) {
-        const r = scoreStack(W, st, k, ctx, spec, null);
-        if (!r) continue;
-        const free = stackCap(spec) - k.count - (claimed.get(`${st.id}:${k.stack_no}`) || 0);
-        if (free <= 0) continue;
-        cands.push({ st, k, ...r, free });
-      }
-    }
-    if (!cands.length) break;                       // 全库无合法落点（库满）
-    cands.sort((a, b) => b.score - a.score);
-    const best = cands[0];
-    const take = Math.min(left, best.free);
-    claimed.set(`${best.st.id}:${best.k.stack_no}`, (claimed.get(`${best.st.id}:${best.k.stack_no}`) || 0) + take);
-    out.push({
-      slotId: best.st.id, code: best.st.code, zone: best.st.zone,
-      area: best.st.area, span: best.st.span, stackNo: best.k.stack_no,
-      bundles: take, score: best.score, parts: best.parts,
-    });
-    left -= take;
-  }
-  return { allocations: out, shortfall: left };
+  const { W, yard, slots } = candidateSlots(db);
+  const r = saRecommendAllocation({ slots, nearSlots: yard, spec, bundles, W, ...allocCtx() });
+  return {
+    allocations: r.allocations.map(a => ({
+      slotId: a.slot.id, code: a.slot.code, zone: a.slot.zone,
+      area: a.slot.area, span: a.slot.span, stackNo: a.stack.no,
+      bundles: a.bundles, score: a.score, parts: a.parts,
+    })),
+    shortfall: r.shortfall,
+  };
 }
 
-/** 候选落点列表（调整下拉框用）：按综合分降序，含剩余容量与评分分解 */
+/** 候选落点列表（调整下拉框用）：先「容量够整组」后综合分降序，含剩余容量与评分分解 */
 export function listCandidates(db, spec, bundles, limit = 20) {
-  const P = getSimParams(db);
-  const W = P.placement;
-  const ms = monitoredScopesOf(P), restricted = regionRestrictedOf(ms);
-  const yard = loadYard(db);
-  const ctx = analyzeYard(yard, spec);
-  const cands = [];
-  for (const st of yard) {
-    if (st.state === 'locked') continue;
-    if (restricted && !slotInOpScope(st, ms)) continue;
-    for (const k of st.stacks) {
-      const r = scoreStack(W, st, k, ctx, spec, null);
-      if (!r) continue;
-      const free = stackCap(spec) - k.count;
-      if (free <= 0) continue;
-      cands.push({
-        slotId: st.id, stackNo: k.stack_no, code: st.code, zone: st.zone,
-        area: st.area, span: st.span, merged: !!st.merged,
-        spanLabel: st.merged ? SPAN_LABELS[3] : SPAN_LABELS[st.span],
-        score: r.score, parts: r.parts, free, enough: free >= bundles,
-      });
-    }
-  }
-  cands.sort((a, b) => (b.enough - a.enough) || (b.score - a.score));
-  return cands.slice(0, limit);
+  const { W, yard, slots } = candidateSlots(db);
+  return saListCandidates({ slots, nearSlots: yard, spec, bundles, W, limit, ...allocCtx() })
+    .map(c => ({
+      slotId: c.slot.id, stackNo: c.stack.no, code: c.slot.code, zone: c.slot.zone,
+      area: c.slot.area, span: c.slot.span, merged: !!c.slot.merged,
+      spanLabel: c.slot.merged ? SPAN_LABELS[3] : SPAN_LABELS[c.slot.span],
+      score: c.score, parts: c.parts, free: c.free, enough: c.enough,
+    }));
 }
 
 /* ================= 车辆进厂（车牌/运单识别模拟） ================= */
@@ -307,29 +191,78 @@ function insertVehicleWithLoads(db, v) {
   })();
 }
 
+function hasVehicleIdentity(db, plate, waybill) {
+  return !!db.prepare('SELECT id FROM inbound_vehicles WHERE plate=? AND waybill=? LIMIT 1').get(plate, waybill);
+}
+
+/** 登记一辆仿真沙盘本地进厂车（本地排产模式下沙盘生成即登记，保证操作端 P10 待办/
+ *  P3 入库单与沙盘进厂车同源一致）；按车牌+运单去重（重开沙盘页不产生重复台账）。
+ *  返回车辆视图（含推荐垛位），非法入参返回 null。 */
+export function registerIncomingVehicle(db, v) {
+  if (!v || !v.plate || !v.waybill || !Array.isArray(v.groups) || !v.groups.length) return null;
+  for (const g of v.groups) {
+    if (!g || !g.spec || !(g.bundles > 0)) return null;
+  }
+  if (hasVehicleIdentity(db, v.plate, v.waybill)) {
+    const row = db.prepare('SELECT id FROM inbound_vehicles WHERE plate=? AND waybill=? LIMIT 1').get(v.plate, v.waybill);
+    return getVehicleView(db, row.id);
+  }
+  const id = insertVehicleWithLoads(db, { plate: v.plate, waybill: v.waybill, mill: v.mill || '—', groups: v.groups });
+  return getVehicleView(db, id);
+}
+
+/** 消费物流源下一条进厂车事件并登记为待确认车辆（跳过空配载；按 车牌+运单 去重，
+ *  数据源重置重放同一段流时不产生重复台账），游标先推进再落库。
+ *  返回 { inserted: 车辆视图 } | { duplicate: true } | { exhausted: true } | null（数据源不可达）。 */
+async function ingestNextSourceVehicle(db) {
+  let src = await nextSourceVehicle(db);
+  while (src && src.skip) {                       // 空/契约外事件：跳过并推进游标再取
+    setFeedCursor(db, src.skip.seq);
+    src = await nextSourceVehicle(db);
+  }
+  if (!src) return null;                          // fetch 失败（数据源离线）
+  if (src.exhausted) return { exhausted: true };
+  setFeedCursor(db, src.event.seq);
+  if (hasVehicleIdentity(db, src.plate, src.waybill)) return { duplicate: true };
+  const id = insertVehicleWithLoads(db, src);
+  return { inserted: getVehicleView(db, id) };
+}
+
 /**
  * 模拟一车进厂：车牌/运单识别 —— 优先取车辆物流数据源（LogisticsData_Sim）的下一辆
- * 未消费进厂车（与仿真沙盘同一条事件流，各持独立游标）；源离线回退本地随机，
+ * 未消费进厂车（与仿真沙盘同一条事件流，与后台自动进厂轮询共用同一游标）；源离线回退本地随机，
  * 源在线但事件流消费完则明确报错（保持「车辆数据只有一个来源」）。
  */
 export async function spawnIncomingVehicle(db) {
   try {
-    let src = await nextSourceVehicle(db);
-    while (src && src.skip) {                       // 空/契约外事件：跳过并推进游标再取
-      setFeedCursor(db, src.skip.seq);
-      src = await nextSourceVehicle(db);
-    }
-    if (src && src.event) {
-      const id = insertVehicleWithLoads(db, src);
-      setFeedCursor(db, src.event.seq);
-      return { ...getVehicleView(db, id), source: `logistics:${LOGI_API}` };
-    }
-    if (src && src.exhausted) {
+    const r = await ingestNextSourceVehicle(db);
+    if (r && r.inserted) return { ...r.inserted, source: `logistics:${LOGI_API}` };
+    if (r && r.exhausted) {
       return { error: `物流数据源（${LOGI_API}）暂无待处理进厂车辆 —— 可在数据源控制台手动注入或等待排产` };
     }
   } catch (e) { /* 数据源离线：回退本地随机模拟 */ }
   const id = insertVehicleWithLoads(db, { ...spawnLocalVehicle(db) });
   return { ...getVehicleView(db, id), source: 'local-fallback' };
+}
+
+/**
+ * 后台自动进厂（进厂确认/车辆记录两页与三维仿真车辆同源同步的核心）：
+ * 持续把物流源进厂车事件登记进确认队列，沙盘（?feed 模式）消费同一条流——
+ * 两个消费端各自持游标，事件 1:1 对应，按车牌+运单匹配确认单执行。
+ * 每次调用最多连取 cap 条（防事件积压时单次调用过重）；源离线/消费完静默返回 0。
+ */
+export async function pollInboundFromSource(db, cap = 8) {
+  let n = 0;
+  try {
+    for (let i = 0; i < cap; i++) {
+      const r = await ingestNextSourceVehicle(db);
+      if (!r || r.exhausted) break;
+      if (r.duplicate) continue;
+      n++;
+      console.log(`[进厂确认] 物流源车辆自动进厂：${r.inserted.plate} / ${r.inserted.waybill}（${r.inserted.bundles} 捆），待管理工确认`);
+    }
+  } catch { /* 物流源不可达：下轮轮询重试，不打断服务 */ }
+  return n;
 }
 
 /* ================= 视图 / 校验 ================= */
@@ -425,23 +358,22 @@ export function adjustLoad(db, vehicleId, loadId, slotId, stackNo) {
   return { vehicle: getVehicleView(db, vehicleId) };
 }
 
-/** 在当前权重下对比推荐落点与人工落点的分维差异，累计各权重的微调方向 */
+/** 在当前权重下对比推荐落点与人工落点的分维差异，累计各权重的微调方向（算法包 learnDeltas） */
 function learnDeltas(db, yard, adjustedLoads) {
   if (!adjustedLoads.length) return [];
   const W = getSimParams(db).placement;
-  const acc = {};                                    // key -> 方向票数
-  for (const l of adjustedLoads) {
-    const rec = scoreAt(db, W, yard, l.spec, l.rec_slot_id, l.rec_stack_no);
-    const fin = scoreAt(db, W, yard, l.spec, l.slot_id, l.stack_no);
-    if (!rec || !fin) continue;                      // 推荐落点已被占用等场景：跳过本次学习
-    for (const [dim, key] of LEARN_DIMS) {
-      const d = fin.comps[dim] - rec.comps[dim];
-      if (d !== 0) acc[key] = (acc[key] || 0) + Math.sign(d);
-    }
-  }
-  return Object.entries(acc)
-    .filter(([, dir]) => dir !== 0)
-    .map(([key, dir]) => ({ key, dir }));
+  const idxOf = (slotId, stackNo) => {
+    const st = yard.find(s => s.id === slotId);
+    return st ? st.stacks.findIndex(x => x.no === stackNo) : -1;
+  };
+  return saLearnDeltas({
+    slots: yard, W, ...allocCtx(),
+    adjusted: adjustedLoads.map(l => ({
+      spec: l.spec,
+      rec: { slotId: l.rec_slot_id, stackIdx: idxOf(l.rec_slot_id, l.rec_stack_no) },
+      fin: { slotId: l.slot_id, stackIdx: idxOf(l.slot_id, l.stack_no) },
+    })),
+  });
 }
 
 /** 管理工确认：校验全部组 -> 留痕 -> 人工调整沉淀为权重优化 -> 置已确认 */

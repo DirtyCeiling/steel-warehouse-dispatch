@@ -119,7 +119,7 @@ check('捆截面为类圆形密排（圆钢/螺纹钢排距 √3·r，方钢平�
   }));
 check('垛格坐标有限且落在库区范围内（含合并库位）',
   (() => {
-    for (const s of dbg.slotList) for (let si = 0; si < 8; si++) {
+    for (const s of dbg.slotList) for (let si = 0; si < 10; si++) {
       const c = dbg.stackCell(s, si);
       if (!isFinite(c.x) || !isFinite(c.z) || c.x < 0 || c.x > 300 || c.z < 0 || c.z > 101) return false;
       if (Math.abs(c.x - s.x) > s.w / 2 + .1 || Math.abs(c.z - s.z) > s.d / 2 + .1) return false;

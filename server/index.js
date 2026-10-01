@@ -11,10 +11,14 @@ import {
 } from './database.js';
 import { PARAM_SCHEMA } from './params.js';
 import {
-  spawnIncomingVehicle, listInboundVehicles, getVehicleView, listVehicleViews,
+  spawnIncomingVehicle, registerIncomingVehicle, listInboundVehicles, getVehicleView, listVehicleViews,
   adjustLoad, confirmVehicle, deleteVehicle, listCandidates, feedbackStats,
-  matchConfirmedVehicle, completeVehicle, autoConfirmExpired,
+  matchConfirmedVehicle, completeVehicle, autoConfirmExpired, pollInboundFromSource,
 } from './inbound.js';
+import {
+  getFrontendSnapshot, bumpRev, appendEvents, listEvents, latestEventSeq,
+  setTelemetry, createCommand, listCommands, finishCommand,
+} from './frontend.js';
 
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 3001);
@@ -54,6 +58,51 @@ export function startServer({ host = HOST, port = PORT } = {}) {
     try {
       if (req.method === 'OPTIONS') return json(res, 204, {});
       if (req.method === 'GET' && p === '/api/health') return json(res, 200, { ok: true, db: DB_PATH });
+      // 操作端快照（kg-dispatch-frontend 2s 轮询）：轻量垛级数据 + 车辆 + 汇总；
+      // ?with=bundles 附带捆级明细（前端比对 rev 变化才重拉全量）
+      if (req.method === 'GET' && p === '/api/frontend/snapshot') {
+        return json(res, 200, getFrontendSnapshot(db, { withBundles: url.searchParams.get('with') === 'bundles' }));
+      }
+
+      // —— P2 事件流（沙盘回推 / 操作端游标拉取，协议同 LogisticsData_Sim）——
+      if (req.method === 'GET' && p === '/api/events') {
+        if (url.searchParams.get('latest') === '1') return json(res, 200, { seq: latestEventSeq(db) });
+        const after = Number(url.searchParams.get('after')) || 0;
+        const limit = Number(url.searchParams.get('limit')) || 50;
+        return json(res, 200, { events: listEvents(db, after, limit) });
+      }
+      if (req.method === 'POST' && p === '/api/events') {
+        const body = await readBody(req);
+        return json(res, 200, { appended: appendEvents(db, body.events || []) });
+      }
+
+      // —— P2 遥测（沙盘 1Hz 回推天车/机器狗实时状态；内存驻留，快照携带下发）——
+      if (req.method === 'POST' && p === '/api/telemetry') {
+        const body = await readBody(req);
+        setTelemetry(body, m => console.log(m));
+        return json(res, 200, { ok: true });
+      }
+
+      // —— P3 命令通道：操作端写入 → 沙盘认领执行 → finish 回写 ——
+      if (req.method === 'POST' && p === '/api/frontend/commands') {
+        const body = await readBody(req);
+        const cmd = createCommand(db, { kind: body.kind, refId: body.refId, payload: body.payload });
+        return cmd ? json(res, 200, cmd) : json(res, 400, { error: '缺少 kind' });
+      }
+      if (req.method === 'GET' && p === '/api/frontend/commands') {
+        const r = listCommands(db, {
+          status: url.searchParams.get('status') || 'pending',
+          claim: url.searchParams.get('claim') === '1',
+          limit: Number(url.searchParams.get('limit')) || 10,
+        });
+        return json(res, 200, { commands: r });
+      }
+      const mCmd = p.match(/^\/api\/frontend\/commands\/(\d+)\/finish$/);
+      if (mCmd && req.method === 'POST') {
+        const body = await readBody(req);
+        const r = finishCommand(db, +mCmd[1], body || {});
+        return r ? json(res, 200, r) : json(res, 404, { error: '命令不存在' });
+      }
       if (req.method === 'GET' && p === '/api/inventory') return json(res, 200, getInventory(db));
       // ?variant=seed：期初种子分布（纯函数重建，与 /api/slots 行形状一致）——
       // 沙盘 ?feed=all 全量回放以此为期初，避免在数据库当前值上重放历史事件导致重复计数
@@ -121,7 +170,15 @@ export function startServer({ host = HOST, port = PORT } = {}) {
       }
       if (req.method === 'POST' && p === '/api/inbound/spawn') {
         const r = await spawnIncomingVehicle(db);   // 优先取物流数据源下一辆进厂车，离线回退本地随机
+        bumpRev();
         return json(res, 200, r);
+      }
+      // 沙盘本地进厂车登记（本地排产模式）：生成即登记，操作端 P10 待办与沙盘车辆同源一致
+      if (req.method === 'POST' && p === '/api/inbound/register') {
+        const body = await readBody(req);
+        const r = registerIncomingVehicle(db, body || {});
+        if (r) bumpRev();
+        return r ? json(res, 200, r) : json(res, 400, { error: '缺少 plate/waybill/groups 或规格非法' });
       }
       if (req.method === 'GET' && p === '/api/inbound/stats') {
         return json(res, 200, feedbackStats(db));
@@ -139,21 +196,25 @@ export function startServer({ host = HOST, port = PORT } = {}) {
       const mUnload = p.match(/^\/api\/inbound\/(\d+)\/unload$/);
       if (mUnload && req.method === 'POST') {
         const r = completeVehicle(db, +mUnload[1]);
+        if (!r.error) bumpRev();
         return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r);
       }
       const mLoad = p.match(/^\/api\/inbound\/(\d+)\/loads\/(\d+)$/);
       if (req.method === 'PUT' && mLoad) {
         const body = await readBody(req);
         const r = adjustLoad(db, +mLoad[1], +mLoad[2], Number(body.slotId), Number(body.stackNo));
+        if (!r.error) bumpRev();
         return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r.vehicle);
       }
       const mInbound = p.match(/^\/api\/inbound\/(\d+)$/);
       if (mInbound && req.method === 'POST') {
         const r = confirmVehicle(db, +mInbound[1]);
+        if (!r.error) bumpRev();
         return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r);
       }
       if (mInbound && req.method === 'DELETE') {
         const r = deleteVehicle(db, +mInbound[1]);
+        if (!r.error) bumpRev();
         return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r);
       }
 
@@ -214,6 +275,7 @@ export function startServer({ host = HOST, port = PORT } = {}) {
       if (req.method === 'PUT' && mStack) {
         const body = await readBody(req);
         const s = setStack(db, +mStack[1], +mStack[2], body);
+        if (s) bumpRev();
         return s ? json(res, 200, s) : json(res, 404, { error: '垛位不存在' });
       }
 
@@ -229,10 +291,13 @@ export function startServer({ host = HOST, port = PORT } = {}) {
       }
       if (req.method === 'POST' && p === '/api/positions') {
         const body = await readBody(req);
-        return json(res, 200, syncBundlePositions(db, body || {}));
+        const r = syncBundlePositions(db, body || {});
+        bumpRev();
+        return json(res, 200, r);
       }
       if (req.method === 'POST' && p === '/api/reset') {
         seed(db);
+        bumpRev();
         return json(res, 200, { ok: true, ...getInventory(db) });
       }
       json(res, 404, { error: '接口不存在' });
@@ -245,6 +310,7 @@ export function startServer({ host = HOST, port = PORT } = {}) {
     server.listen(port, host, () => {
       console.log(`[库存数据库] 已启动：http://${host}:${port}  （库文件 ${DB_PATH}）`);
       startAutoConfirmTimer(db);
+      startInboundFeedPoller(db);
       resolve(server);
     });
   });
@@ -270,6 +336,21 @@ function startAutoConfirmTimer(db) {
     }
   }, 15000);
   timer.unref();   // 不阻塞进程退出（测试环境起停服务时）
+}
+
+/** 物流源自动进厂轮询：每 2s 从 LogisticsData_Sim 增量拉取进厂车事件，登记为待确认车辆。
+ *  沙盘（?feed 模式）消费同一条事件流——确认队列/车辆记录与三维仿真因此同源同步；
+ *  与「模拟车辆进厂」按钮共用 inbound-confirm 游标，互不重复。源离线时空转（静默）。 */
+function startInboundFeedPoller(db) {
+  let busy = false;   // 上一轮未返回（源响应慢）时跳过本轮，防重入
+  const timer = setInterval(async () => {
+    if (busy) return;
+    busy = true;
+    try { await pollInboundFromSource(db); }
+    catch { /* pollInboundFromSource 内部已兜底，此处双保险 */ }
+    finally { busy = false; }
+  }, 2000);
+  timer.unref();
 }
 
 // 直接运行本文件则启动服务（跨平台判断：import.meta.url 与 argv[1] 转成同一 file:// 形式比较）

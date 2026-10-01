@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>钢厂棒材库 · 库存三维查看</title>
 <!--
-  库存三维查看页（与《调度仿真沙盘.html》同一布局/库容模型：91 库位 × 8 垛 × 400 捆）
+  库存三维查看页（与《调度仿真沙盘.html》同一布局/库容模型：91 库位 × 10 垛 × 400 捆）
   · 左侧 Three.js 三维视图：库区总览 -> 库位 -> 垛 -> 捆 四级下钻，点击/悬停联动
   · 点击垛位：详情卡列出该垛全部捆明细（可再下钻单捆），右侧列表同步聚焦本垛
   · 捆体按类圆形打捆（圆钢/螺纹钢六方密排、方钢平铺），垛内按金字塔嵌槽自然码放
@@ -32,10 +32,15 @@
   .brand { display: flex; align-items: center; gap: 12px; }
   .logo {
     width: 40px; height: 40px; border-radius: 10px; flex: none;
-    background: linear-gradient(135deg, #0ea5e9, #1d4ed8);
-    display: flex; align-items: center; justify-content: center; font-size: 20px;
-    box-shadow: 0 0 18px rgba(56, 189, 248, .35);
+    background:
+      linear-gradient(160deg, rgba(255, 255, 255, .25), rgba(255, 255, 255, 0) 55%),
+      linear-gradient(135deg, #0ea5e9, #1d4ed8);
+    display: flex; align-items: center; justify-content: center; color: #fff;
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, .14),
+      0 2px 14px rgba(56, 189, 248, .3);
   }
+  .logo svg { width: 21px; height: 21px; display: block; }
   .brand h1 { font-size: 17px; font-weight: 700; letter-spacing: .5px; }
   .brand p { font-size: 11px; color: var(--dim); margin-top: 2px; }
   #crumb { display: flex; align-items: center; gap: 6px; font-size: 13px; margin-left: 6px; }
@@ -220,10 +225,10 @@
 <body>
 <header>
   <div class="brand">
-    <div class="logo">🧱</div>
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></div>
     <div>
       <h1>库存三维查看</h1>
-      <p>棒材库快照 · 91 库位 × 8 垛 × 400 捆 · 捆级明细（钢种 / 长度 / 直径 / 支数）</p>
+      <p>棒材库快照 · 91 库位 × 10 垛 × 400 捆 · 捆级明细（钢种 / 长度 / 直径 / 支数）</p>
     </div>
   </div>
   <nav id="crumb"></nav>
@@ -246,12 +251,12 @@
   </section>
   <aside>
     <div class="kpis">
-      <div class="kpi"><div class="kl">库存捆数</div><div class="kv c1" id="kBundles">–</div><div class="ks">总库容 291,200 捆</div></div>
+      <div class="kpi"><div class="kl">库存捆数</div><div class="kv c1" id="kBundles">–</div><div class="ks">总库容 364,000 捆</div></div>
       <div class="kpi"><div class="kl">累计支数</div><div class="kv c2" id="kRods">–</div><div class="ks">Σ 每捆支数</div></div>
       <div class="kpi"><div class="kl">库存吨位</div><div class="kv c4" id="kTons">–</div><div class="ks">吨（按捆累计）</div></div>
       <div class="kpi"><div class="kl">有料库位</div><div class="kv c3" id="kSlots">–</div><div class="ks">共 91 库位</div></div>
-      <div class="kpi"><div class="kl">有料垛位</div><div class="kv c5" id="kStacks">–</div><div class="ks">共 728 垛</div></div>
-      <div class="kpi"><div class="kl">库容利用率</div><div class="kv c6" id="kUtil">–</div><div class="ks">捆数 ÷ 291,200</div></div>
+      <div class="kpi"><div class="kl">有料垛位</div><div class="kv c5" id="kStacks">–</div><div class="ks">共 910 垛</div></div>
+      <div class="kpi"><div class="kl">库容利用率</div><div class="kv c6" id="kUtil">–</div><div class="ks">捆数 ÷ 364,000</div></div>
     </div>
     <div class="panel specp">
       <h2>规格库存分布（按吨位）<span class="cnt" id="specCnt"></span></h2>
@@ -300,7 +305,7 @@ window.addEventListener('error', e => {
  * 钢厂棒材库 · 库存三维查看
  * 布局 / 库容模型与《调度仿真沙盘.html》同源：
  *   300m × 90m 三跨（A/B/C 各 30m）+ 4 条 2m 横向通道 + 3 条竖向车辆通道
- *   91 库位（每库位 8 垛 × 每垛 400 捆 = 3200 捆）-> 全库 291,200 捆
+ *   91 库位（每库位 10 垛 × 每垛 400 捆 = 4000 捆）-> 全库 364,000 捆
  * 本页为独立库存快照（捆级明细），three.js 不可用时自动降级为纯列表模式。
  * ===================================================================== */
 
@@ -317,7 +322,7 @@ const cellCX = c => (c - 1.5) * M.CELL_L;
 const SPAN_ROWS = [1, 3, 5];
 const SPAN_NAMES = ['一跨 A', '二跨 B', '三跨 C'];
 const LANE_COLS = [7, 19, 31];
-const STACKS_PER_SLOT = 8, BUNDLES_PER_STACK = 400;
+const STACKS_PER_SLOT = 10, BUNDLES_PER_STACK = 400;
 const TOTAL_BUNDLE_CAP = M.SLOTS * STACKS_PER_SLOT * BUNDLES_PER_STACK;
 const MAP_BOT = rowY(7) + M.SVC_W;                  // 101m（含充电服务带）
 const WX = x => x - M.L / 2;                        // 米制 x -> 世界 x（居中）
@@ -378,7 +383,7 @@ function pileRows(n, maxB = 3) {
   if (tri <= maxB) {
     for (let w = tri; w >= 1 && rem > 0; w--) { const t = Math.min(w, rem); rows.push(t); rem -= t; }
   } else {
-    for (let i = 0; rem > 0; i++) { const w = i % 2 ? maxB - 1 : maxB; const t = Math.min(w, rem); rows.push(t); rem -= t; }
+    for (let i = 0; rem > 0; i++) { const w = maxB <= 1 ? 1 : (i % 2 ? maxB - 1 : maxB); const t = Math.min(w, rem); rows.push(t); rem -= t; }
   }
   return rows;
 }
@@ -426,13 +431,13 @@ const slots = [];
   }
 })();
 const spanName = s => s.merged ? '整跨合并' : SPAN_NAMES[SPAN_ROWS.indexOf(s.spanRow)];
-/* 垛在库位内的网格：1 列(宽向) × 8 排(深向，竖着排列，与主视图一致)；垛内捆沿宽度横放堆叠 */
+/* 垛在库位内的网格：1 列(宽向) × N 排(深向，竖着排列，与主视图一致)；垛内捆沿宽度横放堆叠 */
 function stackCell(s, i) {
   const dEff = Math.min(s.d, 40);
   return {
     x: s.x,
-    z: s.z + (i - 3.5) * (dEff / 8),
-    cw: s.w, cd: dEff / 8,
+    z: s.z + (i - (STACKS_PER_SLOT - 1) / 2) * (dEff / STACKS_PER_SLOT),
+    cw: s.w, cd: dEff / STACKS_PER_SLOT,
   };
 }
 const stackCount = st => st ? st.bundles.length : 0;
@@ -447,7 +452,7 @@ const bundleById = new Map();
   for (const s of occ) {
     s.state = 'occupied';
     const nSt = ri(2, 6);
-    const idxs = shuffle([0, 1, 2, 3, 4, 5, 6, 7]).slice(0, nSt);
+    const idxs = shuffle(Array.from({ length: STACKS_PER_SLOT }, (_, i) => i)).slice(0, nSt);
     for (const si of idxs) {
       const specIdx = ri(0, SPECS.length - 1), sp = SPECS[specIdx];
       const grade = rp(sp.grades), len = rp(sp.lengths);
@@ -598,8 +603,8 @@ function renderDetail() {
       <h3>库位 ${s.code} <span class="tag">${s.state === 'occupied' ? '有料' : '空库位'}</span></h3>
       <div class="dgrid">
         <span class="dl">分区</span><span class="dv">${s.zone} · ${spanName(s)}</span>
-        <span class="dl">垛位</span><span class="dv">8 垛（${occ} 垛有料）</span>
-        <span class="dl">在库</span><span class="dv">${nb} 捆 <i>/ 上限 160</i></span>
+        <span class="dl">垛位</span><span class="dv">${s.stacks.length} 垛（${occ} 垛有料）</span>
+        <span class="dl">在库</span><span class="dv">${nb} 捆 <i>/ 上限 ${s.stacks.length * 20}</i></span>
       </div>
       <div class="sub">${specMix(s).length ? '规格构成：<br>' + specMix(s).join('<br>') : '空库位——无在库钢材'}</div>
       <div class="ops"><button data-act="back">← 返回库区</button><span style="color:var(--dim);font-size:11px">点击垛位查看全垛捆明细</span></div>`;
@@ -1083,7 +1088,7 @@ function buildYardView() {
     plate.userData = { kind: 'slot', slot: s };
     g.add(pickable(plate));
   }
-  /* 垛位底座：每库位 8 个垛位（含空垛）全部显示，竖着一排 */
+  /* 垛位底座：每库位 10 个垛位（含空垛）全部显示，竖着一排 */
   const posInst = new THREE.InstancedMesh(
     new THREE.BoxGeometry(1, 1, 1),
     T.mat('stackPosBase', () => new THREE.MeshStandardMaterial({ color: 0x0c1a33, roughness: .85 })),
@@ -1146,7 +1151,7 @@ function buildSlotView() {
   const lbSlot = makeLabel(`库位 ${s.code} · ${s.zone}`, ZONES[s.zone].label, 15);
   lbSlot.position.set(WX(s.x), 1.2, WZ(s.z) - dEff / 2 - 3);
   g.add(lbSlot);
-  /* 8 垛：基座 + 捆束堆（金字塔嵌槽码放）+ 序号标注 + 拾取代理盒 */
+  /* 10 垛：基座 + 捆束堆（金字塔嵌槽码放）+ 序号标注 + 拾取代理盒 */
   for (let si = 0; si < STACKS_PER_SLOT; si++) {
     const cell = stackCell(s, si), st = s.stacks[si];
     const pg = st ? pileGeom(st) : null;
@@ -1257,7 +1262,7 @@ function hoverInfo(res, hitPoint) {   // -> { lines: [[label,value]…], box:[x,
     const s = res.slot, nb = slotBundles(s), occ = s.stacks.filter(Boolean).length;
     const hMax = Math.max(.8, ...s.stacks.filter(Boolean).map(st => pileGeom(st).h), .8);
     return {
-      html: `<b>库位 ${s.code}</b><br><span class="tt-dim">${s.zone} · ${spanName(s)}</span><br>${nb} 捆 · ${occ}/8 垛有料` +
+      html: `<b>库位 ${s.code}</b><br><span class="tt-dim">${s.zone} · ${spanName(s)}</span><br>${nb} 捆 · ${occ}/${s.stacks.length} 垛有料` +
         (nb ? `<br><span class="tt-dim">${specMix(s).slice(0, 2).join('<br>')}</span>` : ''),
       box: [WX(s.x), .4, WZ(s.z), s.w, .8, Math.min(s.d, 40)],
     };

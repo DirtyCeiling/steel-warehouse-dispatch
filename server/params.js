@@ -59,7 +59,7 @@ export const PARAM_SCHEMA = [
       { key: 'chargerC2',   label: '充电桩#2 列位', min: 1, max: 37, step: 1, unit: '列', def: 5 },
       { key: 'chargerC3',   label: '充电桩#3 列位', min: 1, max: 37, step: 1, unit: '列', def: 7 },
       { key: 'speed',       label: '行进速度',     min: 1,   max: 10, step: 0.1, unit: 'm/s',  def: 5.0 },
-      { key: 'scanTime',    label: '扫码核验时间', min: 0.5, max: 60, step: 0.1, unit: '秒',   def: 60 },
+      { key: 'scanTime',    label: '扫码核验时间', min: 0.5, max: 300, step: 1, unit: '秒',   def: 120 },
       { key: 'endurance',   label: '满电续航',     min: 0.5, max: 8,  step: 0.5, unit: '小时', def: 3 },
       { key: 'chargeMin',   label: '充满电时间',   min: 0,   max: 180, step: 5,  unit: '分钟', def: 120 },
       { key: 'spanA',       label: '监测 A 跨',   min: 0,   max: 1,  step: 1,   unit: '开/关', def: 1, toggle: true },
@@ -116,7 +116,7 @@ export const PARAM_SCHEMA = [
     sec: 'warehouse', secLabel: '库房参数',
     desc: '库房尺寸/码放/垛容（「库房参数设计」页提供完整编辑与捆制规则）：料架限高与垛内铺宽实时改变垛容与落位；捆径口径 = 一捆合起来的外接圆直径上下限（细棒材自动增支成大捆、超上限自动单支吊运）；「每库位垛数」为全局统一值（可在该页按库位单独覆盖），与「每垛捆数上限」「库容装载比例」一样变更后在「库房参数设计」页重建库区生效',
     defs: [
-      { key: 'stacksPerSlot', label: '每库位垛数',   min: 1,    max: 8,    step: 1,    unit: '垛',  def: 8 },
+      { key: 'stacksPerSlot', label: '每库位垛数',   min: 1,    max: 10,   step: 1,    unit: '垛',  def: 10 },
       { key: 'rackH',     label: '料架限高',     min: 2,    max: 6,    step: 0.1,  unit: 'm',  def: 3.0 },
       { key: 'pileW',     label: '垛内铺宽',     min: 1.5,  max: 4,    step: 0.05, unit: 'm',  def: 2.7 },
       { key: 'railTop',   label: '垫梁顶标高',   min: 0,    max: 1,    step: 0.01, unit: 'm',  def: 0.41 },

@@ -8,22 +8,35 @@
 <link rel="stylesheet" href="./shared/base.css">
 <style>
   body { min-width: 960px; }
+  .logo svg { width: 15px; height: 15px; }
   /* ---- 分类页签 ---- */
   .tabs {
-    display: flex; gap: 6px; padding: 8px 16px; flex: none; flex-wrap: wrap;
+    display: flex; gap: 6px; padding: 8px 16px; flex: none; flex-wrap: wrap; align-items: center;
     border-bottom: 1px solid var(--line); background: rgba(6, 13, 30, .85);
     position: sticky; top: 0; z-index: 5; backdrop-filter: blur(4px);
   }
   .tabs button { border-radius: 999px; padding: 4px 14px; font-size: 12px; color: var(--dim); }
+  .tabs button .cnt { font-size: 10px; opacity: .6; margin-left: 3px; font-family: var(--mono); }
   .tabs button.on { color: #04121f; font-weight: 700; border-color: transparent; }
+  .tabs button.on .cnt { opacity: .75; }
   .tabs button.on.c-ops { background: var(--amber); }
   .tabs button.on.c-device { background: var(--cyan); }
   .tabs button.on.c-algo { background: var(--violet); }
   .tabs button.on.c-abnormal { background: var(--red); }
   .tabs button.on.c-all { background: var(--teal); }
-  main { padding: 16px 16px 40px; }
+  .tabs .search { margin-left: auto; position: relative; display: flex; align-items: center; }
+  .tabs .search .ico { position: absolute; left: 10px; font-size: 11px; color: var(--dim); pointer-events: none; }
+  .tabs .search input {
+    width: 210px; background: rgba(5, 11, 26, .8); border: 1px solid var(--line2);
+    border-radius: 999px; color: var(--text); font-size: 12px; padding: 4px 12px 4px 27px;
+    outline: none; font-family: inherit; transition: width .15s, border-color .15s;
+  }
+  .tabs .search input:focus { border-color: var(--cyan); width: 270px; }
+  .tabs .search input::placeholder { color: var(--dim); }
+  main { padding: 16px 16px 110px; }
   .wrap { max-width: 900px; margin: 0 auto; }
   .desc code { font-family: var(--mono); color: var(--cyan); }
+  .search-info { color: var(--teal); }
   /* ---- 分类卡片 ---- */
   .cat { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 16px; overflow: hidden; background: rgba(11, 23, 48, .55); }
   .cat-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 18px 10px; border-left: 3px solid; }
@@ -34,13 +47,42 @@
   .cat.c-device .cat-head { border-color: var(--cyan); }
   .cat.c-algo .cat-head { border-color: var(--violet); }
   .cat.c-abnormal .cat-head { border-color: var(--red); }
+  .cat.c-wh .cat-head { border-color: var(--green); }
   .sub { padding: 4px 18px 12px; border-top: 1px dashed rgba(22, 41, 79, .7); }
-  .sub h3 { font-size: 13px; font-weight: 700; margin-top: 10px; }
+  .sub h3 {
+    font-size: 13px; font-weight: 700; margin-top: 10px; cursor: pointer; user-select: none;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .sub h3 .chev { font-size: 10px; color: var(--dim); transition: transform .15s; }
+  .sub.folded h3 .chev { transform: rotate(-90deg); }
+  .sub h3 .cnt { font-size: 10px; font-weight: 400; color: var(--dim); font-family: var(--mono); }
+  .sub.folded .fold { display: none; }
   .sub .sdesc { font-size: 11px; color: var(--dim); margin: 3px 0 2px; line-height: 1.6; }
   .row { display: flex; align-items: center; gap: 14px; padding: 7px 0; border-bottom: 1px solid rgba(22, 41, 79, .45); }
-  .sub .row:last-child { border-bottom: none; }
+  .sub .fold .row:last-of-type { border-bottom: none; }
+  .row .flag { display: none; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 6px var(--amber); flex: none; }
+  .row.dirty .flag { display: block; }
+  .row.dirty .lab { color: var(--amber); }
   .row .lab { width: 150px; flex: none; font-size: 12.5px; color: var(--text); }
-  .row input[type=range] { flex: 1; accent-color: var(--cyan); }
+  /* ---- 滑杆（带填充轨道） ---- */
+  .row input[type=range] {
+    flex: 1; -webkit-appearance: none; appearance: none; height: 14px;
+    background: transparent; outline: none; cursor: pointer;
+  }
+  .row input[type=range]::-webkit-slider-runnable-track {
+    height: 4px; border-radius: 2px;
+    background: linear-gradient(to right, var(--cyan) var(--p, 50%), rgba(31, 58, 107, .9) var(--p, 50%));
+  }
+  .row input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 13px; height: 13px; margin-top: -4.5px; border-radius: 50%;
+    background: #e8f4ff; border: 2px solid var(--cyan); box-shadow: 0 0 8px rgba(56, 189, 248, .45);
+  }
+  .row input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; background: rgba(31, 58, 107, .9); }
+  .row input[type=range]::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--cyan); }
+  .row input[type=range]::-moz-range-thumb {
+    width: 12px; height: 12px; border-radius: 50%; background: #e8f4ff;
+    border: 2px solid var(--cyan); box-shadow: 0 0 8px rgba(56, 189, 248, .45);
+  }
   .row .num { display: flex; align-items: center; gap: 5px; flex: none; }
   .row input[type=number] {
     width: 76px; background: rgba(5, 11, 26, .8); border: 1px solid var(--line2);
@@ -48,7 +90,15 @@
     padding: 3px 7px; text-align: right; outline: none;
   }
   .row input[type=number]:focus { border-color: var(--cyan); }
-  .row .unit { font-size: 11px; color: var(--dim); width: 38px; }
+  .row.dirty input[type=number] { border-color: rgba(251, 191, 36, .45); color: var(--amber); }
+  .row .unit { font-size: 11px; color: var(--dim); width: 40px; }
+  .row .revert { display: none; border: none; background: none; color: var(--dim); font-size: 13px; padding: 2px 5px; flex: none; }
+  .row .revert:hover { color: var(--amber); box-shadow: none; }
+  .row.dirty .revert { display: inline-block; }
+  /* 只读行（库房参数汇总卡） */
+  .row.ro .val { font-family: var(--mono); font-size: 12.5px; color: var(--cyan); }
+  .wh-link { display: inline-block; margin: 12px 0 4px; color: var(--cyan); font-size: 12px; text-decoration: none; }
+  .wh-link:hover { text-decoration: underline; }
   .tog {
     border: 1px solid var(--line2); background: var(--panel2); color: var(--dim);
     border-radius: 6px; padding: 4px 16px; font-size: 12px; cursor: pointer; transition: all .15s;
@@ -58,12 +108,31 @@
   .note { font-size: 11px; color: var(--dim); background: rgba(14, 29, 58, .6); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; margin: 8px 0 4px; line-height: 1.7; }
   .note b { color: var(--violet); font-weight: 600; }
   .hint { text-align: center; color: var(--dim); font-size: 12.5px; padding: 60px 0; }
+  /* ---- 吸底保存栏（有未保存修改时出现） ---- */
+  #savebar {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 30;
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(10, 20, 42, .94); border: 1px solid var(--line2); border-radius: 999px;
+    padding: 7px 9px 7px 18px; box-shadow: 0 8px 30px rgba(0, 0, 0, .5); backdrop-filter: blur(6px);
+  }
+  #savebar[hidden] { display: none; }   /* display:flex 会压过 hidden 属性，需显式还原 */
+  #savebar .txt { font-size: 12px; color: var(--amber); white-space: nowrap; }
+  #savebar .txt b { font-size: 14px; font-family: var(--mono); }
+  #savebar button.primary { background: var(--cyan); color: #04121f; font-weight: 700; border-color: transparent; }
+  #savebar button.primary:hover { box-shadow: 0 0 14px rgba(56, 189, 248, .45); }
+  /* ---- 轻提示 toast（不推挤布局） ---- */
+  .msg.toast {
+    position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 40;
+    max-width: min(780px, 92vw); box-shadow: 0 12px 32px rgba(0, 0, 0, .5);
+    animation: drop .18s ease-out;
+  }
+  @keyframes drop { from { opacity: 0; transform: translate(-50%, -10px); } }
 </style>
 </head>
 <body>
 <header>
   <div class="brand">
-    <div class="logo">⚙</div>
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg></div>
     <div><h1>调度参数</h1></div>
   </div>
   <nav data-sim-nav="params" title="新标签打开，不打断各页面状态"></nav>
@@ -73,8 +142,15 @@
   </div>
 </header>
 <script src="./shared/nav.js"></script>
-<div class="tabs" id="tabs"></div>
+<div class="tabs" id="tabs">
+  <div class="search"><span class="ico">🔍</span><input id="q" placeholder="搜索参数名 / 分组说明…" spellcheck="false"></div>
+</div>
 <main><div class="wrap" id="app"><p class="hint"><span class="spin">◌</span> 正在从数据库加载调度参数…</p></div></main>
+<div id="savebar" hidden>
+  <span class="txt"><b id="sbN">0</b> 项参数已修改，尚未保存</span>
+  <button id="sbRevert">↺ 还原全部</button>
+  <button id="sbSave" class="primary">✓ 保存修改</button>
+</div>
 
 <script src="./shared/sim-common.js"></script>
 <script>
@@ -82,8 +158,13 @@
 const { DB_API } = SIM;
 const app = document.getElementById('app');
 const tabsEl = document.getElementById('tabs');
+const qEl = document.getElementById('q');
 const btnSave = document.getElementById('btnSave');
 const btnReset = document.getElementById('btnReset');
+const savebar = document.getElementById('savebar');
+const sbN = document.getElementById('sbN');
+const sbSave = document.getElementById('sbSave');
+const sbRevert = document.getElementById('sbRevert');
 
 /* 分类：schema 的 sec -> 展示分类（顺序即展示顺序） */
 const CATEGORIES = [
@@ -99,154 +180,260 @@ const SEC_CAT = {
   abnormal: 'abnormal',
 };
 
+/* 各分组提示（sec -> HTML）；库房参数不在本页编辑，单独只读展示 */
+const NOTES = {
+  robot: '提示：<b>监测跨开关决定作业范围（跨级）</b>——仅开启部分监测跨时，所有货车只派往监测跨装卸，物资也只在监测跨内入库/出库，且覆盖监测跨的<b>全部号区</b>（天车/货车整跨作业；如仅开「监测 A 跨」：<b>所有运输车辆均前往一跨 A</b>，入库卸货与出库装车都在 A 跨全列；监测跨库位满或暂无该规格可出库存时相应任务暂缓，待库存回补，不会转到未监测跨）。<b>「X 跨监测起始/截止号区」只决定机器狗扫描范围（列级）</b>（1~33 号区，起始大于截止时自动交换）——如 A 跨 17~33 = 右侧中棒区域、18~25 = 中棒区域的局部区段；机器狗只扫该号区范围，同跨扫描列之外的库位物资照常入/出库，扫码环节转<b>人工核对</b>（沙盘上青框=扫描区、琥珀虚框=人工核对区）；未监测跨不作业、免检直通。三跨全开整跨（默认 1~33）或全关时不限范围。保存后运行中的沙盘数秒内自动生效。',
+  task: '提示：<b>严格先进先出选捆</b> = 出库目标捆取全库最早已扫码捆——老捆垫在垛底被压时，天车先把上方压货逐吊倒往其他垛位再装车（钢材捆堆叠不稳定：只抽走正上方一列，同层旁捆会塌陷滚压过来，故上方每个更高层整层倒走，倒货捆数 = 上方各层捆数总和；目标捆同层旁捆不动），这是真实库房执行先进先出的倒库代价；关闭后目标捆恒为垛顶捆（直取免倒垛，理想化对照）。目标捆上方压货等不到倒垛落点时装车排队，超过「倒垛等待上限」自动作废该吊并换配次老捆（该捆冷却同时长，防止反复选中），库位随即释放，不会锁死。出库台账逐捆记录「倒垛吊数」，主页 KPI 透出倒库率（倒库吊数 ÷ 出库吊数）。',
+  placement: '提示：同车同规格始终归并同一垛（垛满才另荐）；其余入库按上述权重综合评分。<b>「进厂确认」页的每次人工改垛都会逐维度对比并自动微调这些权重</b>，无需手动反复试参。',
+  assess: '提示：机器狗扫描能力按「需求 vs 能力」实时评估——需求 = 每日进厂 + 出厂吊数铺到日时长；能力 = 单捆服务周期（扫码 + 行进 + 固定开销）× 台数 × 充电占空比。利用率或忙碌占比超「紧张」线显示 ⚠️，利用率或扫码延时 P95 超「不满足」线显示 ❌；结论随参数调整即时变化，并留档到「仿真场次」页。',
+};
+
 let schema = [];            // [{sec, secLabel, desc, defs:[{key,label,min,max,step,unit,def,toggle?}]}]
 let values = {};            // 当前编辑值 { sec: { key: value } }
 let saved = {};             // 已保存值（脏判断基准）
 let activeCat = 'all';      // 当前筛选分类
+let searchQ = '';           // 搜索关键字（非空时全局检索，忽略分类页签）
+const folded = new Set();   // 折叠的分组 sec
+const rowSync = new Map();  // 'sec.key' -> 同步该行显示的函数（滑杆填充/开关文案/脏标记）
 
 const defaultsOf = sch => Object.fromEntries(
   sch.map(s => [s.sec, Object.fromEntries(s.defs.map(d => [d.key, d.def]))]));
-const isDirty = () => JSON.stringify(values) !== JSON.stringify(saved);
+const dirtyCount = () => {
+  let n = 0;
+  for (const sec in values) for (const key in values[sec]) if (values[sec][key] !== saved[sec][key]) n++;
+  return n;
+};
 
 function setVal(sec, key, v) {
   const d = schema.find(s => s.sec === sec).defs.find(x => x.key === key);
   v = Math.min(d.max, Math.max(d.min, Number.isFinite(v) ? v : d.min));
   values[sec][key] = v;
-  document.querySelectorAll(`[data-sec="${sec}"][data-key="${key}"]`).forEach(el => { el.value = v; });
+  rowSync.get(sec + '.' + key)?.();
   refreshButtons();
 }
 
 function refreshButtons() {
-  const dirty = isDirty();
-  btnSave.disabled = !dirty;
-  btnSave.textContent = dirty ? '✓ 保存修改' : '已保存';
+  const n = dirtyCount();
+  btnSave.disabled = !n;
+  btnSave.textContent = n ? `✓ 保存修改 (${n})` : '已保存';
+  sbSave.disabled = false;
+  sbSave.textContent = '✓ 保存修改';
+  sbN.textContent = n;
+  savebar.hidden = !n;
 }
 
-function renderMsg(ok, text, retry) {
-  const old = document.querySelector('.msg');
-  if (old) old.remove();
+function paintAll() { for (const fn of rowSync.values()) fn(true); refreshButtons(); }
+
+/* 轻提示：成功 4 秒自动消失；失败常驻直至下一次操作 */
+function toast(ok, text) {
+  document.querySelectorAll('.msg.toast').forEach(t => t.remove());
   if (!text) return;
   const div = document.createElement('div');
-  div.className = 'msg ' + (ok ? 'ok' : 'err');
+  div.className = 'msg toast ' + (ok ? 'ok' : 'err');
   div.textContent = text;
-  if (retry) {
-    const b = document.createElement('button');
-    b.textContent = '重试';
-    b.onclick = load;
-    div.appendChild(b);
-  }
-  app.prepend(div);
+  document.body.appendChild(div);
+  if (ok) setTimeout(() => div.remove(), 4000);
 }
 
-/* ---- 分类页签 ---- */
+/* ---- 分类页签（按钮插在搜索框之前） ---- */
 function renderTabs() {
   const items = [{ id: 'all', cls: 'c-all', ico: '☰', name: '全部' }, ...CATEGORIES];
-  tabsEl.innerHTML = '';
+  const search = tabsEl.querySelector('.search');
+  tabsEl.querySelectorAll('button').forEach(b => b.remove());
   for (const c of items) {
+    const n = schema.filter(s => c.id === 'all' ? SEC_CAT[s.sec] : SEC_CAT[s.sec] === c.id)
+      .reduce((a, s) => a + s.defs.length, 0);
     const b = document.createElement('button');
     b.className = c.cls + (activeCat === c.id ? ' on' : '');
-    b.textContent = `${c.ico} ${c.name}`;
+    b.innerHTML = `${c.ico} ${c.name} <span class="cnt">${n}</span>`;
     b.onclick = () => { activeCat = c.id; renderTabs(); renderGroups(); };
-    tabsEl.appendChild(b);
+    tabsEl.insertBefore(b, search);
   }
 }
 
-/* ---- 参数行 ---- */
+/* ---- 参数行（可编辑） ---- */
 function buildRow(sec, d) {
   const row = document.createElement('div');
   row.className = 'row';
+  const flag = document.createElement('i');
+  flag.className = 'flag';
+  flag.title = '已修改，尚未保存';
   const lab = document.createElement('span');
   lab.className = 'lab';
   lab.textContent = d.label;
-  row.appendChild(lab);
+  row.append(flag, lab);
+  const rev = document.createElement('button');
+  rev.type = 'button';
+  rev.className = 'revert';
+  rev.textContent = '↺';
+  rev.onclick = () => { values[sec][d.key] = saved[sec][d.key]; sync(true); refreshButtons(); };
+
+  const els = { range: null, num: null, tog: null };
   if (d.toggle) {   // 开关型参数：0/1 渲染为按钮；未指定文案时回退「✓ 监测 / ✕ 不监测」
     const tog = document.createElement('button');
     tog.type = 'button';
     tog.className = 'tog';
-    const paint = () => {
-      const on = !!values[sec][d.key];
-      tog.textContent = on ? (d.onText || '✓ 监测') : (d.offText || '✕ 不监测');
-      tog.classList.toggle('on', on);
-    };
-    paint();
-    tog.onclick = () => { setVal(sec, d.key, values[sec][d.key] ? 0 : 1); paint(); };
+    tog.onclick = () => setVal(sec, d.key, values[sec][d.key] ? 0 : 1);
+    els.tog = tog;
     row.appendChild(tog);
-    return row;
+  } else {
+    const range = document.createElement('input');
+    Object.assign(range, { type: 'range', min: d.min, max: d.max, step: d.step, value: values[sec][d.key] });
+    range.dataset.sec = sec; range.dataset.key = d.key;
+    range.oninput = e => setVal(sec, d.key, Number(e.target.value));
+    els.range = range;
+    const num = document.createElement('div');
+    num.className = 'num';
+    const number = document.createElement('input');
+    Object.assign(number, { type: 'number', min: d.min, max: d.max, step: d.step, value: values[sec][d.key] });
+    number.dataset.sec = sec; number.dataset.key = d.key;
+    // 输入过程不夹取回写（避免「12.」「空串」被立即改成 min）；失焦/回车时再夹取
+    number.oninput = e => {
+      const raw = e.target.value.trim();
+      if (raw !== '' && Number.isFinite(Number(raw))) setVal(sec, d.key, Number(raw));
+    };
+    number.onchange = () => setVal(sec, d.key, Number(number.value));
+    number.onkeydown = e => { if (e.key === 'Enter') number.blur(); };
+    els.num = number;
+    num.append(number, Object.assign(document.createElement('span'), { className: 'unit', textContent: d.unit }));
+    row.append(range, num);
   }
-  const range = document.createElement('input');
-  Object.assign(range, { type: 'range', min: d.min, max: d.max, step: d.step, value: values[sec][d.key] });
-  range.dataset.sec = sec; range.dataset.key = d.key;
-  range.oninput = e => setVal(sec, d.key, Number(e.target.value));
-  const num = document.createElement('div');
-  num.className = 'num';
-  const number = document.createElement('input');
-  Object.assign(number, { type: 'number', min: d.min, max: d.max, step: d.step, value: values[sec][d.key] });
-  number.dataset.sec = sec; number.dataset.key = d.key;
-  number.oninput = e => setVal(sec, d.key, Number(e.target.value));
-  const unit = document.createElement('span');
-  unit.className = 'unit';
-  unit.textContent = d.unit;
-  num.append(number, unit);
-  row.append(range, num);
+  row.appendChild(rev);
+
+  const sync = force => {
+    const v = values[sec][d.key];
+    const changed = v !== saved[sec][d.key];
+    row.classList.toggle('dirty', changed);
+    rev.style.display = changed ? '' : 'none';
+    rev.title = '还原为已保存值 ' + saved[sec][d.key] + (d.unit ? ' ' + d.unit : '');
+    if (els.tog) {
+      const on = !!v;
+      els.tog.textContent = on ? (d.onText || '✓ 监测') : (d.offText || '✕ 不监测');
+      els.tog.classList.toggle('on', on);
+    }
+    if (els.range) {
+      els.range.value = v;
+      els.range.style.setProperty('--p', ((v - d.min) / (d.max - d.min) * 100).toFixed(1) + '%');
+      els.range.title = `${d.label}：${d.min} ~ ${d.max}${d.unit ? ' ' + d.unit : ''}，步进 ${d.step}`;
+      // 打字中不打断输入框；还原/全量重绘（force）时强制回写
+      if (force || document.activeElement !== els.num) els.num.value = v;
+    }
+  };
+  rowSync.set(sec + '.' + d.key, sync);
+  sync();
   return row;
 }
 
-/* ---- 分类卡片 ---- */
+/* 只读子分组行（库房参数汇总） */
+function buildRoRow(d, v) {
+  const row = document.createElement('div');
+  row.className = 'row ro';
+  row.append(Object.assign(document.createElement('span'), { className: 'lab', textContent: d.label }));
+  row.append(Object.assign(document.createElement('span'), { className: 'val', textContent: v + (d.unit ? ' ' + d.unit : '') }));
+  return row;
+}
+
+/* ---- 主体渲染：先收集匹配（搜索 / 分类），再建卡片 ---- */
 function renderGroups() {
+  rowSync.clear();
   app.innerHTML = '';
+  const q = searchQ.trim().toLowerCase();
+  const secHit = s => !q || s.secLabel.toLowerCase().includes(q) || (s.desc || '').toLowerCase().includes(q);
+  const defHit = (s, d) => !q || d.label.toLowerCase().includes(q) || d.key.toLowerCase().includes(q) || (d.unit || '').toLowerCase().includes(q);
+
   const desc = document.createElement('p');
   desc.className = 'desc';
   desc.innerHTML = '调度规划系统参数，持久化在本地库存数据库（' + DB_API + '），全站同源：' +
     '修改保存后运行中的仿真沙盘数秒内自动同步生效；' +
-    '「进厂确认」页的人工调整也会自动微调归堆权重。';
+    '「进厂确认」页的人工调整也会自动微调归堆权重。' +
+    '支持顶部搜索定位、点击分组标题折叠、改动行单独 ↺ 还原。';
   app.appendChild(desc);
 
+  // 收集：分类卡（可编辑）+ 库房只读汇总
+  const plans = [];
+  let hits = 0;
   for (const cat of CATEGORIES) {
-    if (activeCat !== 'all' && activeCat !== cat.id) continue;
-    const secs = schema.filter(s => SEC_CAT[s.sec] === cat.id);
-    if (!secs.length) continue;
+    if (q === '' && activeCat !== 'all' && activeCat !== cat.id) continue;
+    const secs = [];
+    for (const s of schema) {
+      if (SEC_CAT[s.sec] !== cat.id) continue;
+      const defs = s.defs.filter(d => secHit(s) || defHit(s, d));
+      if (!defs.length) continue;
+      hits += defs.length;
+      secs.push({ s, defs });
+    }
+    if (secs.length) plans.push({ cat, secs });
+  }
+  // 库房参数：完整编辑在「库房参数设计」页（重建库区生效），本页只读汇总当前生效值
+  const wh = schema.find(s => s.sec === 'warehouse');
+  const whDefs = wh ? (q ? wh.defs.filter(d => secHit(wh) || defHit(wh, d))
+                          : activeCat === 'all' ? wh.defs : []) : [];
+  hits += whDefs.length;
+
+  if (q && hits) {
+    app.appendChild(Object.assign(document.createElement('p'),
+      { className: 'desc search-info', textContent: `搜索「${searchQ.trim()}」：${hits} 项匹配（含只读库房参数）` }));
+  }
+  if (!plans.length && !whDefs.length) {
+    app.appendChild(Object.assign(document.createElement('div'),
+      { className: 'empty', innerHTML: '<div class="big">🔍</div>没有匹配的参数，换个关键字试试' }));
+    return;
+  }
+
+  for (const { cat, secs } of plans) {
     const card = document.createElement('section');
     card.className = 'cat ' + cat.cls;
     const head = document.createElement('div');
     head.className = 'cat-head';
     head.innerHTML = `<span class="ico">${cat.ico}</span><h2>${cat.name}</h2><span class="cdesc">${cat.desc}</span>`;
     card.appendChild(head);
-    for (const s of secs) {
+    for (const { s, defs } of secs) {
       const sub = document.createElement('div');
-      sub.className = 'sub';
+      sub.className = 'sub' + (folded.has(s.sec) && !q ? ' folded' : '');
       const h3 = document.createElement('h3');
-      h3.textContent = s.secLabel;
+      h3.title = '点击折叠 / 展开该组';
+      h3.append(Object.assign(document.createElement('span'), { className: 'chev', textContent: '▾' }),
+        document.createTextNode(s.secLabel),
+        Object.assign(document.createElement('span'), { className: 'cnt', textContent: ` ${s.defs.length} 项` }));
+      h3.onclick = () => {
+        if (q) return;
+        folded.has(s.sec) ? folded.delete(s.sec) : folded.add(s.sec);
+        sub.classList.toggle('folded');
+      };
       const sd = document.createElement('p');
       sd.className = 'sdesc';
       sd.textContent = s.desc || '';
-      sub.append(h3, sd);
-      for (const d of s.defs) sub.appendChild(buildRow(s.sec, d));
-      if (s.sec === 'robot') {
+      const fold = document.createElement('div');
+      fold.className = 'fold';
+      for (const d of defs) fold.appendChild(buildRow(s.sec, d));
+      if (NOTES[s.sec]) {
         const note = document.createElement('p');
         note.className = 'note';
-        note.innerHTML = '提示：<b>监测跨开关决定作业范围（跨级）</b>——仅开启部分监测跨时，所有货车只派往监测跨装卸，物资也只在监测跨内入库/出库，且覆盖监测跨的<b>全部号区</b>（天车/货车整跨作业；如仅开「监测 A 跨」：<b>所有运输车辆均前往一跨 A</b>，入库卸货与出库装车都在 A 跨全列；监测跨库位满或暂无该规格可出库存时相应任务暂缓，待库存回补，不会转到未监测跨）。<b>「X 跨监测起始/截止号区」只决定机器狗扫描范围（列级）</b>（1~33 号区，起始大于截止时自动交换）——如 A 跨 17~33 = 右侧中棒区域、18~25 = 中棒区域的局部区段；机器狗只扫该号区范围，同跨扫描列之外的库位物资照常入/出库，扫码环节转<b>人工核对</b>（沙盘上青框=扫描区、琥珀虚框=人工核对区）；未监测跨不作业、免检直通。三跨全开整跨（默认 1~33）或全关时不限范围。保存后运行中的沙盘数秒内自动生效。';
-        sub.appendChild(note);
+        note.innerHTML = NOTES[s.sec];
+        fold.appendChild(note);
       }
-      if (s.sec === 'task') {
-        const note = document.createElement('p');
-        note.className = 'note';
-        note.innerHTML = '提示：<b>严格先进先出选捆</b> = 出库目标捆取全库最早已扫码捆——老捆垫在垛底被压时，天车先把上方压货逐吊倒往其他垛位再装车（钢材捆堆叠不稳定：只抽走正上方一列，同层旁捆会塌陷滚压过来，故上方每个更高层整层倒走，倒货捆数 = 上方各层捆数总和；目标捆同层旁捆不动），这是真实库房执行先进先出的倒库代价；关闭后目标捆恒为垛顶捆（直取免倒垛，理想化对照）。目标捆上方压货等不到倒垛落点时装车排队，超过「倒垛等待上限」自动作废该吊并换配次老捆（该捆冷却同时长，防止反复选中），库位随即释放，不会锁死。出库台账逐捆记录「倒垛吊数」，主页 KPI 透出倒库率（倒库吊数 ÷ 出库吊数）。';
-        sub.appendChild(note);
-      }
-      if (s.sec === 'placement') {
-        const note = document.createElement('p');
-        note.className = 'note';
-        note.innerHTML = '提示：同车同规格始终归并同一垛（垛满才另荐）；其余入库按上述权重综合评分。<b>「进厂确认」页的每次人工改垛都会逐维度对比并自动微调这些权重</b>，无需手动反复试参。';
-        sub.appendChild(note);
-      }
-      if (s.sec === 'assess') {
-        const note = document.createElement('p');
-        note.className = 'note';
-        note.innerHTML = '提示：机器狗扫描能力按「需求 vs 能力」实时评估——需求 = 每日进厂 + 出厂吊数铺到日时长；能力 = 单捆服务周期（扫码 + 行进 + 固定开销）× 台数 × 充电占空比。利用率或忙碌占比超「紧张」线显示 ⚠️，利用率或扫码延时 P95 超「不满足」线显示 ❌；结论随参数调整即时变化，并留档到「仿真场次」页。';
-        sub.appendChild(note);
-      }
+      sub.append(h3, sd, fold);
       card.appendChild(sub);
     }
+    app.appendChild(card);
+  }
+
+  if (whDefs.length) {
+    const card = document.createElement('section');
+    card.className = 'cat c-wh';
+    const head = document.createElement('div');
+    head.className = 'cat-head';
+    head.innerHTML = `<span class="ico">🏗</span><h2>库房参数（只读汇总）</h2><span class="cdesc">${wh.desc}</span>`;
+    const sub = document.createElement('div');
+    sub.className = 'sub';
+    for (const d of whDefs) sub.appendChild(buildRoRow(d, values[wh.sec][d.key]));
+    const link = document.createElement('a');
+    link.className = 'wh-link';
+    link.href = '/whcfg';
+    link.target = '_blank';
+    link.textContent = '前往「库房参数设计」页编辑（尺寸/码放/捆制规则与重建库区）→';
+    sub.appendChild(link);
+    card.append(head, sub);
     app.appendChild(card);
   }
   refreshButtons();
@@ -264,15 +451,14 @@ async function load() {
     renderTabs();
     renderGroups();
   } catch {
-    app.innerHTML = '';
-    renderMsg(false, '调度参数加载失败：数据库服务未启动（请先执行 npm run db:serve 或 npm run sim）。', true);
+    app.innerHTML = '<div class="empty"><div class="big">⚠️</div>调度参数加载失败：数据库服务未启动<br>（请先执行 npm run db:serve 或 npm run sim）<br><br><button onclick="load()">↻ 重试</button></div>';
   }
 }
 
-btnReset.onclick = () => { values = defaultsOf(schema); renderGroups(); };
-btnSave.onclick = async () => {
-  btnSave.disabled = true;
-  btnSave.textContent = '保存中…';
+/* ---- 保存 / 还原（页头与吸底栏共用） ---- */
+async function doSave() {
+  btnSave.disabled = sbSave.disabled = true;
+  btnSave.textContent = sbSave.textContent = '保存中…';
   try {
     const res = await fetch(DB_API + '/api/params', {
       method: 'PUT',
@@ -283,13 +469,36 @@ btnSave.onclick = async () => {
     const r = await res.json();
     values = r.values;
     saved = JSON.parse(JSON.stringify(r.values));
-    renderGroups();
-    renderMsg(true, '已保存到数据库。运行中的仿真沙盘会在数秒内自动同步生效（机器狗台数变更会自动重建机队）。');
+    paintAll();   // 就地清脏标记，不打断当前搜索/折叠状态
+    toast(true, '已保存到数据库。运行中的仿真沙盘会在数秒内自动同步生效（机器狗台数变更会自动重建机队）。');
   } catch {
-    renderMsg(false, '保存失败：数据库服务不可达（请先执行 npm run db:serve 或 npm run sim）。');
+    toast(false, '保存失败：数据库服务不可达（请先执行 npm run db:serve 或 npm run sim）。');
     refreshButtons();
   }
+}
+function doResetAll() {
+  const n = dirtyCount();
+  if (n && !confirm(`将放弃 ${n} 项未保存修改，把全部参数恢复为出厂默认值？`)) return;
+  values = defaultsOf(schema);
+  paintAll();
+  if (n) toast(true, '已在本页恢复为默认值，点击「保存修改」写入数据库。');
+}
+
+btnSave.onclick = doSave;
+sbSave.onclick = doSave;
+btnReset.onclick = doResetAll;
+sbRevert.onclick = doResetAll;
+
+qEl.oninput = e => { searchQ = e.target.value; renderGroups(); };
+qEl.onkeydown = e => {
+  if (e.key === 'Escape') { qEl.value = ''; searchQ = ''; renderGroups(); }
+  if (e.key === 'Enter') qEl.blur();
 };
+
+/* 有未保存修改时离开页面先提醒 */
+window.addEventListener('beforeunload', e => {
+  if (dirtyCount()) { e.preventDefault(); e.returnValue = ''; }
+});
 
 load();
 </script>

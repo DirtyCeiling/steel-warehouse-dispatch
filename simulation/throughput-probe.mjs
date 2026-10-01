@@ -192,5 +192,5 @@ for (const s of scope) for (const k of s.stacks) {
   else if (k.count < 20) sameSpecRoom++;
   else fullish++;
 }
-console.log(`A跨垛况（${scope.length} 库位 × 8 垛）：空垛 ${empty} · 未满(<20捆) ${sameSpecRoom} · 满/超容(≥20捆) ${fullish} · 共 ${bundles} 捆`);
+console.log(`A跨垛况（${scope.length} 库位 × 10 垛）：空垛 ${empty} · 未满(<20捆) ${sameSpecRoom} · 满/超容(≥20捆) ${fullish} · 共 ${bundles} 捆`);
 console.log(`全程零错误: ${D.errs.length === 0 ? '是' : '否 ' + D.errs.slice(0, 3).join('|')}`);

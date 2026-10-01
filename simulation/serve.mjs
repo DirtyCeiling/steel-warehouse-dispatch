@@ -9,6 +9,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { join, normalize, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliCompressSync, gzipSync } from 'node:zlib';
+import { buildBrowserBundle, stackAllocStamp } from '../../StackAlloc/browser.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.SIM_PORT || 5199);
@@ -46,6 +47,8 @@ const PAGES = {
   '/params.html': '/调度参数.html',
   '/whcfg': '/库房参数设计.html',
   '/whcfg.html': '/库房参数设计.html',
+  '/dogflow': '/机器狗工作流设计.html',
+  '/dogflow.html': '/机器狗工作流设计.html',
 };
 
 /* 静态文件缓存：路径 -> { mtimeMs, size, etag, raw, br, gz }
@@ -54,32 +57,44 @@ const PAGES = {
 const fileCache = new Map();
 /* 沙盘去重注入：页面内 / *@@core-seg-N@@* / 占位由 shared/sandbox-core.mjs 对应片段原位替换
  * （tool-split-sandbox.mjs 生成产物后自动生效；未含占位符的页面零开销走原路径）。
- * 注意：core 文件本身含段分隔标记，必须跳过注入，否则 loadFile(corePath) 无限递归。 */
+ * 注意：core 文件本身含段分隔标记，必须跳过注入，否则 loadFile(corePath) 无限递归。
+ * 另：/*@@stack-alloc@@* / 占位原位注入垛位推荐算法包浏览器版（StackAlloc 独立项目，
+ * 现算现注入，包源码变更经 stackAllocStamp 失效页面缓存）。 */
 const corePath = join(ROOT, 'shared', 'sandbox-core.mjs');
 async function injectCoreSegs(raw, file) {
   if (file === corePath) return raw;
-  const src = typeof raw === 'string' ? raw : raw.toString('utf8');
-  if (!src.includes('/*@@core-seg-')) return raw;
-  const core = await loadFile(corePath);
-  const text = core.raw.toString('utf8');
-  const parts = text.split(/\/\*@@core-seg-(\d+)@@\*\//);
-  const map = new Map();
-  for (let i = 1; i < parts.length; i += 2) map.set(+parts[i], parts[i + 1]);
-  return Buffer.from(src.replace(/\/\*@@core-seg-(\d+)@@\*\//g, (m, n) => map.get(+n) ?? ''), 'utf8');
+  let src = typeof raw === 'string' ? raw : raw.toString('utf8');
+  let changed = false;
+  if (src.includes('/*@@core-seg-')) {
+    const core = await loadFile(corePath);
+    const text = core.raw.toString('utf8');
+    const parts = text.split(/\/\*@@core-seg-(\d+)@@\*\//);
+    const map = new Map();
+    for (let i = 1; i < parts.length; i += 2) map.set(+parts[i], parts[i + 1]);
+    src = src.replace(/\/\*@@core-seg-(\d+)@@\*\//g, (m, n) => map.get(+n) ?? '');
+    changed = true;
+  }
+  if (src.includes('/*@@stack-alloc@@*/')) {
+    src = src.replace(/\/\*@@stack-alloc@@\*\//g, () => buildBrowserBundle());
+    changed = true;
+  }
+  return changed ? Buffer.from(src, 'utf8') : raw;
 }
 async function loadFile(file) {
   const st = await stat(file);
   const hit = fileCache.get(file);
-  // core 依赖：页面缓存命中须同时核对 core 的 mtime（core 修改后页面注入产物即时失效）
+  // core / 算法包依赖：页面缓存命中须同时核对二者 mtime（修改后页面注入产物即时失效）
   const coreMt = (await stat(corePath).catch(() => null))?.mtimeMs ?? 0;
-  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size && hit.coreMt === coreMt) return hit;
+  const allocMt = stackAllocStamp();
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size && hit.coreMt === coreMt && hit.allocMt === allocMt) return hit;
   const raw = await injectCoreSegs(await readFile(file), file);
   const compressible = COMPRESSIBLE.has(extname(file)) && raw.length > 1024;
   const entry = {
     mtimeMs: st.mtimeMs,
     size: raw.length,
     coreMt,
-    etag: `W/"${raw.length.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}-${Math.floor(coreMt).toString(16)}"`,
+    allocMt,
+    etag: `W/"${raw.length.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}-${Math.floor(coreMt).toString(16)}-${Math.floor(allocMt).toString(16)}"`,
     raw,
     br: compressible ? brotliCompressSync(raw) : null,
     gz: compressible ? gzipSync(raw) : null,

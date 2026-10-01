@@ -4,7 +4,7 @@
 //   npm run db:init-app  灌入主应用（三维库区）数据：库区/跨/库位/钢卷/任务
 //   npm run db:inspect   打印库存汇总与抽样库位
 //   npm run db:serve     启动本地 HTTP API 服务
-import { openDb, seed, seedAppData, getInventory, getSlot, getAppData, DB_PATH } from './database.js';
+import { openDb, seed, seedAppData, getInventory, getSlot, getAppData, DB_PATH, STACKS_PER_SLOT } from './database.js';
 import { startServer } from './index.js';
 
 const cmd = process.argv[2] || 'help';
@@ -12,7 +12,7 @@ const cmd = process.argv[2] || 'help';
 function printSummary(db) {
   const inv = getInventory(db);
   console.log(`库文件：${DB_PATH}`);
-  console.log(`库位 ${inv.slotCount} 个 · 垛位 ${inv.slotCount * 8} 个 · 总库容 ${inv.totalCapacity} 捆`);
+  console.log(`库位 ${inv.slotCount} 个 · 垛位 ${inv.slotCount * STACKS_PER_SLOT} 个 · 总库容 ${inv.totalCapacity} 捆`);
   console.log(`当前库存 ${inv.totalBundles} 捆（待扫码 ${inv.pending}）· 占用库位 ${inv.occupiedSlots} 个 · 利用率 ${(inv.utilization * 100).toFixed(2)}%`);
   console.log('分区统计：');
   for (const z of inv.perZone) {
@@ -36,7 +36,7 @@ switch (cmd) {
     const db = openDb();
     seed(db);
     db.close();
-    console.log('已初始化数据库（91 库位 × 8 垛 × 400 捆 + 分区专业化实际钢材分布）');
+    console.log(`已初始化数据库（91 库位 × ${STACKS_PER_SLOT} 垛 × 400 捆 + 分区专业化实际钢材分布）`);
     printSummary(openDb());
     break;
   }

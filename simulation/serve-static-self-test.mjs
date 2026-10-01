@@ -11,6 +11,7 @@ process.env.WAREHOUSE_DB = join(mkdtempSync(join(tmpdir(), 'opt-verify-')), 't.d
 process.env.PORT = '3311';
 process.env.SIM_PORT = '5998';
 
+const { STACKS_PER_SLOT } = await import('../server/database.js');
 const { startServer } = await import('../server/index.js');
 await startServer();
 const API = 'http://127.0.0.1:3311';
@@ -28,8 +29,8 @@ check('POST /api/reset 灌库成功', reset.slotCount === 91, String(reset.slotC
 // 1) /api/slots 形状与排序不变（getSlots 重写）
 const slots = (await (await fetch(`${API}/api/slots`)).json()).slots;
 check('GET /api/slots 返回 91 库位', slots.length === 91, String(slots.length));
-check('每库位 8 垛且按 stack_no 升序',
-  slots.every(s => s.stacks.length === 8 && s.stacks.every((k, i) => k.stack_no === i + 1)));
+check('每库位 10 垛且按 stack_no 升序',
+  slots.every(s => s.stacks.length === STACKS_PER_SLOT && s.stacks.every((k, i) => k.stack_no === i + 1)));
 const inv = await (await fetch(`${API}/api/inventory`)).json();
 check('GET /api/inventory 正常', inv.slotCount === 91 && inv.totalBundles > 3000, `${inv.totalBundles} 捆`);
 
@@ -71,8 +72,8 @@ check('Φ600 候选余量 ≤ 物理垛容（stackCap 口径与沙盘一致）',
   cands600.candidates.length > 0 && cands600.candidates.every(c => c.free <= stackCap('管材 Φ600')),
   cands600.candidates.length ? `maxFree=${Math.max(...cands600.candidates.map(c => c.free))}/cap=${stackCap('管材 Φ600')}` : '无候选');
 const seedSlots = await (await fetch(`${API}/api/slots?variant=seed`)).json();
-check('seed 变体：91 库位 × 8 垛，形状与 /api/slots 一致',
-  seedSlots.slots.length === 91 && seedSlots.slots.every(s => s.stacks.length === 8)
+check('seed 变体：91 库位 × 10 垛，形状与 /api/slots 一致',
+  seedSlots.slots.length === 91 && seedSlots.slots.every(s => s.stacks.length === STACKS_PER_SLOT)
   && seedSlots.slots.every((s, i) => s.code === slots[i].code),
   `${seedSlots.slots.length} 库位`);
 check('seed 分布大口径单支管不超物理垛容（Φ200/Φ400/Φ600 = stackCap 口径）',

@@ -131,7 +131,7 @@ check('路径长度为有限米数', isFinite(pl) && pl > 100 && pl < 600, pl.to
 
 console.log('== 阶段零点五：机器狗通行规则（横向廊道机动 + 库位间空道入跨，不进库位内部） ==');
 const nd = sandbox.__dbg.navDims;
-check('导航栅格 75 列 × 29 行（库位列/空道列交替 · 每跨 8 垛层行）', nd.cols === 75 && nd.rows === 29, JSON.stringify(nd));
+check('导航栅格 75 列 × 35 行（库位列/空道列交替 · 每跨 10 垛层行）', nd.cols === 75 && nd.rows === 35, JSON.stringify(nd));
 const sstates = sandbox.__dbg.storageStates;
 const occSt = sstates.find(s => s.state === 'occupied');
 const freeSt = sstates.find(s => s.state === 'free');
@@ -143,7 +143,7 @@ check('空闲库位垛位本体同样不可穿行（cost=∞）',
   freeSt && sandbox.navBaseCost(bodyR(freeSt), freeSt.goalC * 2) === Infinity, freeSt && freeSt.code);
 check('库位间空道列跨内可通行（cost=1 · 机器狗入跨通道）',
   sandbox.navBaseCost(5, 21) === 1 && sandbox.navBaseCost(15, 41) === 1, '');
-check('横向通道廊道 cost=1', sandbox.navBaseCost(0, 20) === 1 && sandbox.navBaseCost(27, 20) === 1, '');
+check('横向通道廊道 cost=1', sandbox.navBaseCost(0, 20) === 1 && sandbox.navBaseCost(nd.rows - 2, 20) === 1, '');
 check('竖向车辆通道 cost=1', sandbox.navBaseCost(4, 14) === 1 && sandbox.navBaseCost(22, 62) === 1, '');
 const p033 = sandbox.findPath(sandbox.navOf(7, 19), sandbox.approachCell(st33, 0, null));
 check('规划路径全程走通道/空道/服务带（途经格均可通行）',
@@ -165,8 +165,8 @@ check('站位不占横向人行通道（普通库位垛层行，跨内）',
   !!ap0 && ![0, 9, 18, 27].includes(ap0.r), st0 && st0.code);
 check('站位在库位分界线上（与垛位列中心横向相距半列 4.17m）',
   !!ap0 && Math.abs(Math.abs(sandbox.navCX(ap0.c) - sandbox.navCX(st0.goalC * 2)) - 300 / 36 / 2) < 0.01, '');
-check('全部 91 库位 × 8 垛均有库位间空道站位（站位列=空道 · 行=垛心所在行，含合并库位）',
-  sandbox.__dbg.storages.every(s => [0, 1, 2, 3, 4, 5, 6, 7].every(k => {
+check('全部 91 库位 × 10 垛均有库位间空道站位（站位列=空道 · 行=垛心所在行，含合并库位）',
+  sandbox.__dbg.storages.every(s => Array.from({ length: 10 }, (_, k) => k).every(k => {
     const ap = sandbox.approachCell(s, k, sandbox.navOf(6, 10));
     if (!ap || ap.c % 2 !== 1) return false;
     const cy = sandbox.stackCenterY(s, k);
@@ -271,7 +271,7 @@ check('存在 6-10 吊的满车次（一车多吊）', batchLoads.some(n => n >=
 check('所有车次吊数 1..10（一车不超过 10 吊）', batchLoads.every(n => n >= 1 && n <= 10), '');
 const inv = el('kpiInv').textContent;
 const invN = parseInt(inv);
-check('库存在合理区间（捆，总库容 72800）', invN >= 1 && invN <= 72800, inv);
+check('库存在合理区间（捆，总库容 91000）', invN >= 1 && invN <= 91000, inv);
 check('利用率已统计', el('kpiUtil').textContent.includes('%'), el('kpiUtil').textContent);
 check('平均任务时长已统计', /^\d{2}:\d{2}$/.test(el('kpiAvg').textContent.trim()), el('kpiAvg').textContent);
 check('流程链路条渲染', el('flowStrip').innerHTML.includes('库存更新'), '');
@@ -482,8 +482,18 @@ check('扫描范围调度策略快照（受限 · 仅 A 跨）',
   sandbox.__dbg.truckSpanPolicy.text);
 sandbox.forceDispatchBatches();   // 派车推进在组车次：让扫码/人工核对判定落到调度器
 const znMark = t => t.scanSkipped ? (t.scanManual ? '人工核对' : '免检') : (t.robot ? '机器狗扫码' : '待派');
-for (let i = 0; i < 60 && !znIn.some(t => t.scanSkipped); i++) await pump(5);   // 泵进仿真时间：落料就位后调度器即对扫描区外任务直通
+// 泵进仿真时间：落料就位后调度器即对扫描区外任务直通。窗口预留充足（通道排队时 znIn 车次可能靠后进场），
+// 任一任务直通即提前退出；同垛批量扫码改变事件时序后，本阶段各车次进场先后会随之平移
+for (let i = 0; i < 150 && !znIn.some(t => t.scanSkipped); i++) await pump(5);
+// 每库位垛数改变事件时序后车次进场更晚：扫描区外任务尚未落料时再等其就位（直通判定在落料后触发）
+for (let i = 0; i < 180 && znIn.some(t => t.slot.area < 17 && !t.scanSkipped
+  && !t.materialReady && t.state !== 'done'); i++) await pump(5);
 const znLow = znIn.filter(t => t.slot.area < 17 && (t.materialReady || t.state === 'done'));
+if (!znLow.length || !znLow.every(t => t.scanSkipped)) {   // 失败时输出现场快照（车道排队/吊认领/互让死锁诊断）
+  console.log('  [dbg] trucks:', sandbox.__dbg.trucks.map(tk => `${tk.taskId}@${tk.state}:lane${tk.lane}:rem${tk.remaining}`).join(' '));
+  console.log('  [dbg] jobs:', sandbox.__dbg.craneJobsDebug.map(j => `${j.taskId}:${j.kind}[${j.x0}-${j.x1}]truck=${j.truck}:owner=${j.owner}:by=${j.servableBy.join('/')}`).join(' '));
+  console.log('  [dbg] cranePos:', sandbox.__dbg.cranePos.map(c => `${c.name}@x${c.x}:${c.state}`).join(' '));
+}
 const znHigh = znIn.filter(t => t.slot.area >= 17);
 check('A 跨扫描 17~33：扫描区外（1~16 号区）入库任务跳过机器狗、标记人工核对',
   znLow.length > 0 && znLow.every(t => t.scanSkipped && t.scanManual === true),
@@ -614,6 +624,7 @@ console.log('== 阶段八b：待扫描任务面板积压渲染（机器狗耗尽
 const rbSave = sandbox.__dbg.robots.map(r => ({ r, battery: r.battery }));
 for (const r of sandbox.__dbg.robots) r.battery = 0;   // 电量不足即不可派单，任务具备扫码条件后原地排队
 for (let i = 0; i < 60 && sandbox.__dbg.scanBacklog === 0; i++) await pump(3);   // 最多 180 仿真秒：等天车落料/吊走使任务具备扫码条件
+await pump(1);   // 面板 0.2s 节流刷新：等首页「待扫描任务」卡片同步出首帧
 const sqQ = sandbox.__dbg.scanQueue;
 check('机器狗耗尽后待扫描队列形成（>0）', sqQ.length > 0, '积压 ' + sqQ.length);
 check('面板行渲染：类型徽标（入库/出库/倒垛）+ 等待时长', sqQ.length > 0

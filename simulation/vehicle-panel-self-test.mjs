@@ -130,6 +130,13 @@ if (el('vehDetail').innerHTML.includes('暂无车辆')) {
   sandbox.forceDispatchBatches();
   for (let i = 0; i < 120 && !sandbox.__dbg.truckHistory.some(t => t.inScene && t.done > 0); i++) pump(5);
 }
+// 默认选中的可能是刚进场、尚无完成吊的车：切到下拉里「已有完成吊」的车（车次时序随参数变化会平移）
+for (let i = 0; i < 60; i++) {
+  const ids = [...el('vehSelect').innerHTML.matchAll(/value="(B-[\d-]+)"/g)].map(m => m[1]);
+  const pick = sandbox.__dbg.truckHistory.find(x => x.done > 0 && ids.includes(x.taskId));
+  if (pick) { if (el('vehSelect').value !== pick.taskId) { el('vehSelect').value = pick.taskId; el('vehSelect').onchange(); } break; }
+  pump(5);   // 等下拉中的车完成至少一吊
+}
 sandbox.renderVehiclePanel();   // 面板按 0.2 仿真秒节流刷新：采样前强制重渲染，保证面板与任务状态同拍（出库免倒垛后装车节奏更快，节流窗内易差一吊）
 const detailHtml = el('vehDetail').innerHTML;
 check('明细含完成状态（已卸货/已装车）', detailHtml.includes('已卸货') || detailHtml.includes('已装车'), '');

@@ -1,5 +1,5 @@
 // 本地库存数据库（Node + SQLite / better-sqlite3）
-// 存储钢厂棒材库区库存/库位数据：库位 -> 垛 1~8 个（全局参数 stacksPerSlot + 逐库位覆盖
+// 存储钢厂棒材库区库存/库位数据：库位 -> 垛 1~10 个（全局参数 stacksPerSlot + 逐库位覆盖
 // slot_racks 表，「库房参数设计」页编辑）-> 每垛 ≤ 400 捆（通用上限，实际按限高收窄）
 // 另含主应用（三维库区）数据：库区/跨/库位/钢卷/调度任务
 import Database from 'better-sqlite3';
@@ -8,10 +8,18 @@ import { dirname, join } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
 import { generateSlots, SPECS } from './layout.js';
 import { paramDefaults, clampParam } from './params.js';
+/* 垛位推荐算法包（独立项目 StackAlloc）：规格族/杆径/捆制几何/垛容的唯一实现。
+ * 本文件保留 geoCfg / specRulesCache 两个参数状态（sim_params / spec_rules 表同步），
+ * 计算公式全部委托算法包，保证「推荐、校验、落位三处同口径」。 */
+import {
+  SPEC_FAMILY, SPEC_DIMS, GEO_DEFAULTS,
+  rowsOf, deriveRods as saDeriveRods, bundleRods as saBundleRods,
+  bundleDiaCm as saBundleDiaCm, pileDims as saPileDims, stackCap as saStackCap,
+} from './stack-alloc.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export const STACKS_PER_SLOT = 8;          // 每库位垛数（竖着排列）
+export const STACKS_PER_SLOT = 10;         // 每库位垛数（竖着排列）
 export const BUNDLES_PER_STACK = 400;      // DB 硬上限（stacks 表 CHECK 约束用）；每垛捆数上限实为库房参数
                                            // （warehouse.bundlesPerStack，默认 100、范围 10~100），实际垛容
                                            // stackCap = min(参数上限, 并排×限高)，见 params.js / GEO_DEFAULTS
@@ -26,6 +34,7 @@ export function openDb(path = DB_PATH) {
   syncGeoCfg(db);     // 库房几何/捆制参数：sim_params warehouse 段 -> geoCfg
   syncSpecRules(db);  // 捆制规则覆盖 -> specRulesCache
   syncRackOverrides(db);   // 每库位垛数覆盖 -> slotRacksCache
+  fillStackRows(db);      // 生效垛数调大后补齐空垛行（raw 查询按行取垛，须与生效垛数一致）
   if (!hasAppData(db)) {
     try { seedAppData(db); } catch { /* 种子 JSON 缺失时保持空库 */ }
   }
@@ -50,7 +59,7 @@ function migrate(db) {
     -- 重建库区会清空重灌 storage_slots，覆盖配置须保留
     CREATE TABLE IF NOT EXISTS slot_racks (
       code  TEXT PRIMARY KEY,
-      racks INTEGER NOT NULL CHECK (racks BETWEEN 1 AND 8)
+      racks INTEGER NOT NULL CHECK (racks BETWEEN 1 AND ${STACKS_PER_SLOT})
     );
     CREATE TABLE IF NOT EXISTS storage_slots (
       id     INTEGER PRIMARY KEY,
@@ -181,6 +190,28 @@ function migrate(db) {
   // 轻量迁移：历史库文件补列（CREATE TABLE IF NOT EXISTS 不会给已存在的表加新列）
   try { db.prepare('SELECT departed_time FROM inbound_vehicles LIMIT 1').get(); }
   catch { db.exec('ALTER TABLE inbound_vehicles ADD COLUMN departed_time TEXT'); }
+  // 每库位垛数上限调整（8 -> 10 等）：旧库文件的 CHECK 约束写死在建表语句里，
+  // SQLite 改约束必须重建表（建新表 -> 拷数据 -> 换名），否则写入第 9/10 垛会被拒
+  widenStackChecks(db);
+}
+
+/** 上限不一致时按当前 STACKS_PER_SLOT 重建表（保留数据；列名/语义完全一致） */
+function widenStackChecks(db) {
+  const plans = [
+    { name: 'slot_racks', pat: /racks\s+INTEGER NOT NULL CHECK \(racks BETWEEN 1 AND (\d+)\)/ },
+    { name: 'stacks', pat: /stack_no\s+INTEGER NOT NULL CHECK \(stack_no BETWEEN 1 AND (\d+)\)/ },
+    { name: 'bundle_positions', pat: /stack_no\s+INTEGER NOT NULL CHECK \(stack_no BETWEEN 1 AND (\d+)\)/ },
+  ];
+  for (const { name, pat } of plans) {
+    const sql = db.prepare(`SELECT sql s FROM sqlite_master WHERE type='table' AND name=?`).get(name)?.s;
+    if (!sql) continue;
+    const m = sql.match(pat);
+    if (!m || Number(m[1]) === STACKS_PER_SLOT) continue;
+    db.exec(`ALTER TABLE ${name} RENAME TO ${name}_old;
+      ${sql.replace(new RegExp(`BETWEEN 1 AND ${m[1]}`), `BETWEEN 1 AND ${STACKS_PER_SLOT}`)};
+      INSERT INTO ${name} SELECT * FROM ${name}_old;
+      DROP TABLE ${name}_old;`);
+  }
 }
 
 /* ================= 调度规划参数（sim_params 表） ================= */
@@ -335,45 +366,13 @@ const ZONE_SPEC_POOL = {
   '大棒单支和长钢':   ['方钢 40×40', '管材 Φ200', '管材 Φ400', '管材 Φ600'],
   '中棒区域':         ['圆钢 Φ50', '圆钢 Φ60', '螺纹钢 Φ25', '管材 Φ50', '管材 Φ100'],
 };
-const SPEC_FAMILY = {   // 规格族（形状）：同族视为"相似货物"，允许同库位邻垛混放
-  '螺纹钢 Φ20': 'rebar', '螺纹钢 Φ25': 'rebar',
-  '圆钢 Φ50': 'round', '圆钢 Φ60': 'round',
-  '方钢 40×40': 'square',
-  '管材 Φ50': 'pipe', '管材 Φ100': 'pipe', '管材 Φ200': 'pipe', '管材 Φ400': 'pipe', '管材 Φ600': 'pipe',
-};
-/* 垛内码放物理模型（与沙盘 SPEC_META/ROD_ROWS 同口径，米制）：
- * 捆径（一捆合起来的外接圆直径）上下限、料架限高、垛内铺宽、垫木/通风缝/截面系数、
- * 每垛捆数上限均为可调参数（sim_params warehouse 段 -> geoCfg，「库房参数设计」页编辑），
- * 此处为默认值（与历史常量一致）；每规格每捆支数 = spec_rules 覆盖 > 预置值 > 引擎自动推导。 */
-const SPEC_DIMS = {
-  '螺纹钢 Φ20': { dia: 20, rods: 21 }, '螺纹钢 Φ25': { dia: 25, rods: 15 },
-  '圆钢 Φ50': { dia: 50, rods: 4 },   '圆钢 Φ60': { dia: 60, rods: 3 },
-  '方钢 40×40': { dia: 40, rods: 5 },
-  '管材 Φ50': { dia: 50, rods: 6 },   '管材 Φ100': { dia: 100, rods: 6 },
-  '管材 Φ200': { dia: 200, rods: 1 }, '管材 Φ400': { dia: 400, rods: 1 }, '管材 Φ600': { dia: 600, rods: 1 },
-};
-/* 捆内支数排布：仅保留非三角数的手工排布（4=2+2 平铺、5=3+2）；三角数 k(k+1)/2
- * （1,3,6,10,15,21…）由 rowsOf() 通用生成金字塔 [k..1]。 */
-const ROD_ROWS = { 1: [1], 4: [2, 2], 5: [3, 2] };
-/** 捆内支数 -> 自下而上每层支数：三角数生成金字塔；非三角数在金字塔顶补余数 */
-function rowsOf(rods) {
-  if (ROD_ROWS[rods]) return ROD_ROWS[rods];
-  const k = Math.floor((Math.sqrt(8 * rods + 1) - 1) / 2);
-  const rows = Array.from({ length: k }, (_, i) => k - i);
-  const rem = rods - k * (k + 1) / 2;
-  if (rem > 0) rows.unshift(rem);
-  return rows;
-}
+/* 规格族 SPEC_FAMILY / 规格杆径 SPEC_DIMS / 捆内支数排布 rowsOf / 库房几何默认 GEO_DEFAULTS
+ * 均已上移到垛位推荐算法包（StackAlloc），本文件经 import 同源使用（见文件头）。 */
 
-/* 库房几何参数（默认 = 历史常量；openDb / setSimParams / 规则保存时与 sim_params 同步）
+/* 库房几何参数（默认 = StackAlloc GEO_DEFAULTS；openDb / setSimParams / 规则保存时与 sim_params 同步）
  * fillRatio = 库容装载比例（%）：仅期初灌库（seed/buildSeedSlots）按此比例铺层，重建库区生效 */
-export const GEO_DEFAULTS = {
-  stacksPerSlot: 8,
-  rackH: 3.0, pileW: 2.7, railTop: 0.41, packShim: 15, packGap: 30,
-  diaKw: 1.08, diaKh: 1.06, bundlesPerStack: 100, minDiaCm: 15, maxDiaCm: 50,
-  fillRatio: 22,
-};
 let geoCfg = { ...GEO_DEFAULTS };
+export { GEO_DEFAULTS };
 /** 当前库房几何参数快照（只读副本） */
 export function getGeoCfg() { return { ...geoCfg }; };
 function syncGeoCfg(db) {
@@ -385,17 +384,39 @@ let specRulesCache = new Map();
 function syncSpecRules(db) {
   specRulesCache = new Map(db.prepare('SELECT spec, rods FROM spec_rules').all().map(r => [r.spec, r.rods]));
 }
+/** 捆制规则覆盖缓存（Map：规格 -> 支数，0=引擎自动推导）：垛位推荐算法包的 rules 入参 */
+export function getSpecRules() { return specRulesCache; }
+
+/** 补齐垛行：全局/逐库位垛数调大后，缺的垛号补空行（inbound/落位等按行取垛的路径与生效垛数一致）；
+ *  只补不删——调小后仍有存货的高位垛保留（见 shapeSlotStacks）。须在 syncGeoCfg/syncRackOverrides 之后调用。 */
+function fillStackRows(db) {
+  const slots = db.prepare('SELECT id, code FROM storage_slots').all();
+  if (!slots.length) return 0;
+  const have = new Set(db.prepare('SELECT slot_id || :sep || stack_no k FROM stacks').all({ sep: '\0' }).map(r => r.k));
+  const ins = db.prepare('INSERT INTO stacks (slot_id, stack_no) VALUES (?, ?)');
+  let added = 0;
+  const tx = db.transaction(() => {
+    for (const s of slots) {
+      for (let n = 1; n <= effectiveRacks(s.code); n++) {
+        const k = s.id + '\0' + n;
+        if (!have.has(k)) { ins.run(s.id, n); added++; }
+      }
+    }
+  });
+  tx();
+  return added;
+}
 
 /* ================= 每库位垛数（货架数）：全局统一值 + 逐库位覆盖 =================
  * 生效垛数 = slot_racks 覆盖 > sim_params warehouse.stacksPerSlot（geoCfg 同步）。
- * 物理栅格固定 8 垛层（跨深 30m ÷ 3.75m 垛格），故取值 1~8；
+ * 物理栅格固定 10 垛层（跨深 30m ÷ 3.0m 垛格），故取值 1~10；
  * 调小后仍有存货的高位垛保留（垛清空即自然收敛），getSlots 按此合成垛行。 */
 let slotRacksCache = new Map();
 function syncRackOverrides(db) {
   slotRacksCache = new Map(db.prepare('SELECT code, racks FROM slot_racks').all().map(r => [r.code, r.racks]));
 }
 const rackLimit = n => Math.max(1, Math.min(STACKS_PER_SLOT, Math.round(Number(n) || STACKS_PER_SLOT)));
-/** 全局统一垛数（sim_params warehouse.stacksPerSlot，已夹取 1~8） */
+/** 全局统一垛数（sim_params warehouse.stacksPerSlot，已夹取 1~10） */
 export function globalStacksPerSlot() { return rackLimit(geoCfg.stacksPerSlot); }
 /** 生效垛数（不含在货兜底）：覆盖 > 全局参数 */
 export function effectiveRacks(code) {
@@ -435,57 +456,29 @@ export function applySlotRacks(db, racks = {}) {
   return { racks: Object.fromEntries(slotRacksCache), global: rackLimit(geoCfg.stacksPerSlot), changed };
 }
 
-/** 捆制规则引擎：给定杆径(mm)，按三角数支数（1,3,6,10,15,21…）推导使捆径落入
- *  [minCm, maxCm] 的最小支数；单支即达标 -> 1（单支吊运）；单支仍超上限（如 Φ600）
- *  也返回 1——单支是物理下限，由调用方警示。 */
+/* ---- 捆制/垛容几何：公式在 StackAlloc 算法包，此处注入当前库房参数与捆制规则转发 ---- */
+
+/** 捆制规则引擎：给定杆径(mm)，按三角数支数推导使捆径落入 [minCm, maxCm] 的最小支数；
+ *  单支即达标 -> 1；单支仍超上限（如 Φ600）也返回 1——单支是物理下限，由调用方警示。 */
 export function deriveRods(diaMm, minCm = geoCfg.minDiaCm, maxCm = geoCfg.maxDiaCm) {
-  let lastBelow = null;
-  for (let k = 1; k <= 40; k++) {
-    const n = k * (k + 1) / 2;
-    const d = k === 1 ? diaMm / 10 : bundleDiaFromRows(rowsOf(n), diaMm);
-    if (d > maxCm) return lastBelow ? lastBelow.n : 1;
-    if (d >= minCm) return n;
-    lastBelow = { n };
-  }
-  return lastBelow ? lastBelow.n : 1;
-}
-/** 捆径核算（cm）：矩形截面取对角线；单支吊运即管径本身 */
-function bundleDiaFromRows(rows, diaMm) {
-  const dia = diaMm / 1000;
-  const w = Math.max(...rows) * dia * geoCfg.diaKw;
-  const h = rows.length * dia * geoCfg.diaKh + geoCfg.packShim / 1000;
-  return Math.sqrt(w * w + h * h) * 100;
+  return saDeriveRods(diaMm, { ...geoCfg, minDiaCm: minCm, maxDiaCm: maxCm });
 }
 /** 每捆支数：spec_rules 覆盖（>0=手工覆盖 / 0=引擎自动）> 预置值 > 自动推导；未知规格返回 0 */
 export function bundleRods(specName) {
-  const d = SPEC_DIMS[specName];
-  if (!d) return 0;
-  const rule = specRulesCache.get(specName);
-  if (rule != null) return rule > 0 ? rule : deriveRods(d.dia);
-  return d.rods;
+  return saBundleRods(specName, geoCfg, specRulesCache);
 }
 /** 捆径（一捆合起来的外接圆直径，cm）：打捆件（支数>1）口径须落在 min~max 上下限内 */
 export function bundleDiaCm(specName) {
-  const d = SPEC_DIMS[specName];
-  if (!d) return null;
-  const rods = bundleRods(specName);
-  if (!rods) return null;
-  return rods === 1 ? d.dia / 10 : bundleDiaFromRows(rowsOf(rods), d.dia);
+  return saBundleDiaCm(specName, geoCfg, specRulesCache);
 }
 /** 规格码放几何：{ across 每层并排数, maxLayers 限高可堆层数, geo 物理垛容 }；未知规格返回 null */
 export function pileDims(specName) {
-  const d = SPEC_DIMS[specName];
-  if (!d) return null;
-  const rows = rowsOf(bundleRods(specName)), dia = d.dia / 1000;
-  const across = Math.max(2, Math.floor(geoCfg.pileW / (Math.max(...rows) * dia * geoCfg.diaKw + geoCfg.packGap / 1000)));
-  const maxLayers = Math.floor(geoCfg.rackH / (rows.length * dia * geoCfg.diaKh + geoCfg.packShim / 1000));
-  return { across, maxLayers, geo: across * maxLayers };
+  return saPileDims(specName, geoCfg, specRulesCache);
 }
 /** 垛容量（捆）：min(每垛通用上限, 每层并排 × 限高层数)——与仿真沙盘 stackCap 完全同口径。
  *  进厂确认的推荐/校验若超此口径，分配单会超出物理垛容、与沙盘实际落位背离。 */
 export function stackCap(specName) {
-  const p = pileDims(specName);
-  return p ? Math.min(geoCfg.bundlesPerStack, p.geo) : geoCfg.bundlesPerStack;
+  return saStackCap(specName, geoCfg, specRulesCache);
 }
 /** 全量捆制规则（含几何核算与来源）：供 GET /api/bundle-rules 与规则页展示 */
 export function getBundleRules(db) {
@@ -563,7 +556,7 @@ export function buildSeedSlots(rackOverrides = null) {
     const primary = occupied ? pool[(s.area + s.span) % pool.length] : null;  // 按号区成带，相邻库位连片聚簇
     const nRacks = rackOverrides && rackOverrides[s.code] != null
       ? rackLimit(rackOverrides[s.code]) : effectiveRacks(s.code);   // 每库位垛数：覆盖 > 全局
-    const usedStacks = occupied ? Math.min(nRacks, 7 + (rnd() < 0.8 ? 1 : 0)) : 0;   // 高密度：尽量铺满（八成满垛），余下留空垛
+    const usedStacks = occupied ? Math.min(nRacks, nRacks - 1 + (rnd() < 0.8 ? 1 : 0)) : 0;   // 高密度：尽量铺满（八成满垛），余下留空垛
     const stacks = [];
     for (let n = 1; n <= nRacks; n++) {
       if (n > usedStacks) { stacks.push({ stack_no: n, spec: null, count: 0, pending: 0, in_time: null }); continue; }
@@ -572,14 +565,14 @@ export function buildSeedSlots(rackOverrides = null) {
         spec = pool[(s.area + s.span + 1) % pool.length];
       }
       const dim = pileDims(spec);
-      // 铺层策略：按限高可堆层数的「库容装载比例」（geoCfg.fillRatio，%）±4% 抖动铺放、每垛至少 3 层
-      //（垛体稳定下限，低比例时以 3 层为准）；铺层比例随机流按垛均匀消耗（与规格无关，
+      // 铺层策略：按限高可堆层数的「库容装载比例」（geoCfg.fillRatio，%）±4% 抖动铺放、每垛至少 2 层
+      //（垛体稳定下限，低比例时以 2 层为准）；铺层比例随机流按垛均匀消耗（与规格无关，
       //  保证空库位数量稳定）；大口径单支管（Φ200/Φ400/Φ600，单支吊运）保持满垛，
       //  作为「限高收窄」样例。默认 22% 即原 18~26% 区间，随机流逐次调用不变、分布可复现。
       const fillF = Math.min(1, Math.max(0.05, geoCfg.fillRatio / 100 - 0.04 + 0.08 * rnd()));
       const count = (spec === '管材 Φ200' || spec === '管材 Φ400' || spec === '管材 Φ600')
         ? stackCap(spec)
-        : Math.min(dim.across * Math.max(3, Math.round(dim.maxLayers * fillF)), stackCap(spec));
+        : Math.min(dim.across * Math.max(2, Math.round(dim.maxLayers * fillF)), stackCap(spec));
       const inTime = -(600 + Math.floor(rnd() * 85800)); // 期初入账（前一日的负时刻，FIFO 基准）
       stacks.push({ stack_no: n, spec, count, pending: 0, in_time: inTime });
     }
@@ -595,10 +588,10 @@ export function getSeedSlots(db = null) {
 }
 
 /**
- * 重建数据：写入规格 + 91 库位 + 728 垛，并按分区专业化灌入实际钢材分布
+ * 重建数据：写入规格 + 91 库位 + 910 垛，并按分区专业化灌入实际钢材分布
  *（按限高可堆层数的「库容装载比例」铺层——默认 22%；可在
  *  「库房参数设计」页调整 fillRatio 后重建。总库容按当前库房参数计：
- *  91×每库位垛数×每垛捆数上限（默认 91×8×100=72,800 捆通用上限，
+ *  91×每库位垛数×每垛捆数上限（默认 91×10×100=91,000 捆通用上限，
  *  实际垛容按规格限高收窄），均已扫码入账；保留少量空库位与未满垛作入库缓冲）。
  */
 export function seed(db) {
@@ -698,7 +691,7 @@ export function getSpecs(db) {
 
 /**
  * 更新某一垛（spec/count/pending/in_time），并同步库位状态。
- * 行不存在时按需补插（调大每库位垛数后未重建即可投用，序号 1~8 受表约束）。
+ * 行不存在时按需补插（调大每库位垛数后未重建即可投用，序号 1~10 受表约束）。
  * 垛清零时强制清空 spec 与 pending，并删除该垛全部捆级落位坐标；
  * 库位所有垛清零后状态置 free。垛序号超物理上限返回 null。
  */

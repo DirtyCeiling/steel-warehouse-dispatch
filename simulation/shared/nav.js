@@ -15,6 +15,7 @@
     ['inbound', '/inbound', '🚚 进厂确认'],
     ['vehicles', '/vehicles', '📋 车辆记录'],
     ['scans', '/scans', '⏱ 扫描时效'],
+    ['dogflow', '/dogflow', '🐕 工作流设计'],
     ['params', '/params', '⚙ 调度参数'],
     ['whcfg', '/whcfg', '🏗 库房参数'],
     ['runs', '/runs', '📊 仿真场次'],

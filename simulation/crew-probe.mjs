@@ -114,11 +114,11 @@ let sawWaitHook = null;          // {crane, tEnter}
 let sawRiggerWork = false;       // 有人进入 HOOK（挂绳作业中）
 let sawTruckHook = false;        // 入库车端挂绳由车上专职吊运工承接
 let hookSpan = null;             // WAIT_HOOK 进入 → HOIST 的仿真时长（下界：挂绳 ≥ hookTime；库位侧另含行走）
-const capSec = 420;              // 最多 420s 实时观察（16× ≈ 112 分钟仿真秒，1s 抽样）
+const capSec = 420;              // 最多 420s 实时观察（16× ≈ 112 分钟仿真秒；HOIST 仅 2 仿真秒，逐帧抽样不漏看）
 const t0 = sandbox.__dbg.simTime;
 let crewBusySeen = 0;
-for (let s = 0; s < capSec && (hookSpan == null || !sawRiggerWork || !sawTruckHook); s += 1) {
-  await pump(1);
+for (let f = 0; f < capSec * 30 && (hookSpan == null || !sawRiggerWork || !sawTruckHook); f += 1) {
+  await pump(1 / 30);   // 逐帧抽样（1 帧 = 1/30s 实时 = 0.53 仿真秒 @16×），确保抓到 2s 的 HOIST 态
   for (const cr of sandbox.__dbg.craneStates) {
     if (cr.state === 'WAIT_HOOK' && !sawWaitHook) sawWaitHook = { name: cr.name, tEnter: sandbox.__dbg.simTime };
     if (sawWaitHook && cr.name === sawWaitHook.name && cr.state === 'HOIST' && hookSpan == null)
@@ -144,6 +144,7 @@ check('事件日志含吊运工挂绳', logText().includes('挂绳'));
 
 console.log('== ③ 落位等人放绳 → 放完才收尾；④ 入/出/倒垛三种吊均含挂/放绳；出库落车另有专职取绳 ==');
 let sawWaitUnhook = false, restackWithCrew = false, sawRopeOut = false, ropeOutTruckWorking = true;
+let ropeLogSeen = false;   // 取绳日志现场快照：日志窗口 260 条会被后续吊挤出，ROPE_OUT 当帧即取
 for (let s = 0; s < 420 && !(sawWaitUnhook && restackWithCrew && sawRopeOut); s += 1 / 30) {
   now += 1000 / 30;
   const q = rafQueue.splice(0);
@@ -151,6 +152,8 @@ for (let s = 0; s < 420 && !(sawWaitUnhook && restackWithCrew && sawRopeOut); s 
   for (const tr of sandbox.__dbg.truckRiggerStates) {   // 逐帧采：ROPE_OUT 仅约 30 仿真秒（16× 下 ~2s 实时），稀采样易漏
     if (tr.state === 'ROPE_OUT') {
       sawRopeOut = true;
+      const lt = logText();
+      if (lt.includes('取出吊绳') || lt.includes('吊绳已取出收回')) ropeLogSeen = true;
       const tk = sandbox.__dbg.trucks.find(t => t.taskId === tr.truck);
       if (tk && tk.state !== 'WORKING') ropeOutTruckWorking = false;
     }
@@ -170,7 +173,7 @@ check('班组累计：挂绳 + 放绳 + 出库取绳均已发生（各端一次�
   `挂 ${st.hooked} / 放 ${st.unhooked} / 取 ${st.ropeOuts} · 天车等人 挂 ${Math.round(st.waitHook)}s / 放 ${Math.round(st.waitUnhook)}s`);
 check('库区吊运工累计步行（真实行走）', sandbox.__dbg.crewStates.some(r => r.walk > 0), sandbox.__dbg.crewStates.map(r => r.walk).join('/'));
 check('事件日志含吊运工放绳', logText().includes('放绳'));
-check('事件日志含出库取绳（取出吊绳/收清）', logText().includes('取出吊绳') || logText().includes('吊绳已取出收回'));
+check('事件日志含出库取绳（取出吊绳/收清）', ropeLogSeen || logText().includes('取出吊绳') || logText().includes('吊绳已取出收回'));
 
 console.log('== ⑤ 末吊放绳/取绳期间货车等待，收清复验离场 ==');
 // 找一辆正处 WAIT_UNHOOK 的出库吊关联货车：货车应 WORKING；等其离场

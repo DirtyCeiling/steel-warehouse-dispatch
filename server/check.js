@@ -43,8 +43,8 @@ check(`每库位 ${STACKS_PER_SLOT} 垛（默认全局）-> 垛位总数 ${91 * 
 const bps = getGeoCfg().bundlesPerStack;
 check(`总库容 91×${STACKS_PER_SLOT}×${bps}=${91 * STACKS_PER_SLOT * bps}`,
   inv.totalCapacity === 91 * STACKS_PER_SLOT * bps, String(inv.totalCapacity));
-check('初始库存为实际钢材分布（每垛上限 100：约 4.6 万捆，利用率 ~64%，均已入账）',
-  inv.totalBundles > 40000 && inv.totalBundles < 52000 && inv.utilization > 0.55 && inv.utilization < 0.72 && inv.pending === 0,
+check('初始库存为实际钢材分布（每垛上限 100：约 5.6 万捆，利用率 ~62%，均已入账）',
+  inv.totalBundles > 50000 && inv.totalBundles < 62000 && inv.utilization > 0.55 && inv.utilization < 0.72 && inv.pending === 0,
   `${inv.totalBundles} 捆 · ${(inv.utilization * 100).toFixed(1)}%`);
 check('存在空闲库位（入库缓冲位）', inv.occupiedSlots < inv.slotCount, `${inv.slotCount - inv.occupiedSlots} 个空库位`);
 check('分区统计齐全', inv.perZone.length === 4, JSON.stringify(inv.perZone.map(z => `${z.zone}:${z.slots}`)));
@@ -91,9 +91,10 @@ check('重建后 1-1 最多 4 垛、17-1 最多 6 垛且 racks 字段一致',
   `1-1=${s11.stacks.length} 17-1=${s171.stacks.length}`);
 check('覆盖跨重建保留', getSlotRacks(db)['1-1'] === 4, JSON.stringify(getSlotRacks(db)));
 applySlotRacks(db, { '1-1': null });
-setSimParams(db, { warehouse: { stacksPerSlot: 8 } });
+setSimParams(db, { warehouse: { stacksPerSlot: STACKS_PER_SLOT } });
 seed(db);
-check('清除覆盖并恢复全局 8 后回到 91×8 垛', effectiveRacks('1-1') === 8 && getSlots(db).every(x => x.racks === 8), '');
+check(`清除覆盖并恢复全局 ${STACKS_PER_SLOT} 后回到 91×${STACKS_PER_SLOT} 垛`,
+  effectiveRacks('1-1') === STACKS_PER_SLOT && getSlots(db).every(x => x.racks === STACKS_PER_SLOT), '');
 
 console.log('== 写入 / 状态同步 ==');
 // 选一个初始为空闲的库位做写入测试，保证状态同步断言不受随机撒点影响
@@ -101,7 +102,7 @@ const freeSlot = getSlots(db).find(x => x.state === 'free');
 check('存在空闲库位可测写入', !!freeSlot, freeSlot && freeSlot.code);
 const slotId = freeSlot.id;
 let s = getSlot(db, slotId);
-check(`库位 ${s.code} 含 8 垛（racks 与垛行一致）`, s.racks === STACKS_PER_SLOT && s.stacks.length === STACKS_PER_SLOT, `${s.code}`);
+check(`库位 ${s.code} 含 ${STACKS_PER_SLOT} 垛（racks 与垛行一致）`, s.racks === STACKS_PER_SLOT && s.stacks.length === STACKS_PER_SLOT, `${s.code}`);
 setStack(db, slotId, 1, { spec: '螺纹钢 Φ20', count: 5, pending: 1, in_time: 100 });
 s = getSlot(db, slotId);
 check('写入第 1 垛 5 捆', s.stacks[0].count === 5 && s.stacks[0].spec === '螺纹钢 Φ20', `count=${s.stacks[0].count}`);

@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>机器狗工作流设计 · 钢厂棒材库区调度系统</title>
+<link rel="stylesheet" href="./shared/tokens.css">
+<link rel="stylesheet" href="./shared/base.css">
+<style>
+  body { min-width: 1080px; }
+  /* ---- 锚点目录（吸顶） ---- */
+  .tabs {
+    display: flex; gap: 6px; padding: 8px 16px; flex: none; flex-wrap: wrap;
+    border-bottom: 1px solid var(--line); background: rgba(6, 13, 30, .88);
+    position: sticky; top: 0; z-index: 5; backdrop-filter: blur(4px);
+  }
+  .tabs a {
+    border: 1px solid var(--line2); background: var(--panel2); color: var(--dim);
+    border-radius: 999px; padding: 4px 14px; font-size: 12px; text-decoration: none;
+    transition: all .15s; cursor: pointer;
+  }
+  .tabs a:hover { border-color: var(--cyan); color: #fff; }
+  .tabs a.on { background: var(--cyan); color: #04121f; font-weight: 700; border-color: transparent; }
+  main { padding: 16px 16px 60px; }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  .hbtn {
+    display: inline-block; border: 1px solid var(--line2); background: var(--panel2); color: var(--text);
+    border-radius: 6px; padding: 4px 10px; font-size: 12px; text-decoration: none; transition: all .15s;
+  }
+  .hbtn:hover { border-color: var(--cyan); color: #fff; box-shadow: 0 0 10px rgba(56, 189, 248, .2); }
+
+  /* ---- 章节 ---- */
+  section {
+    border: 1px solid var(--line); border-radius: 12px; margin-bottom: 18px;
+    background: rgba(11, 23, 48, .55); overflow: hidden; scroll-margin-top: 52px;
+  }
+  .sec-head { display: flex; align-items: baseline; gap: 10px; padding: 14px 20px 11px; border-left: 3px solid var(--cyan); }
+  .sec-head .no {
+    font-family: var(--mono); font-size: 12px; color: var(--cyan); flex: none;
+    border: 1px solid rgba(56, 189, 248, .4); border-radius: 6px; padding: 1px 7px;
+  }
+  .sec-head .ico { font-size: 17px; }
+  .sec-head h2 { font-size: 15.5px; font-weight: 700; letter-spacing: .5px; }
+  .sec-head .sub { font-size: 11.5px; color: var(--dim); }
+  .sec-body { padding: 4px 20px 18px; border-top: 1px dashed rgba(22, 41, 79, .7); }
+  .sec-body p.lead { font-size: 12.5px; color: var(--text); line-height: 1.8; margin: 10px 0 6px; }
+  .sec-body p.lead b { color: var(--cyan); font-weight: 600; }
+  .sec-body code { font-family: var(--mono); color: var(--cyan); font-size: 11.5px; background: rgba(56,189,248,.08); border-radius: 4px; padding: 0 4px; }
+
+  /* ---- 总览：数据条 + 角色卡 ---- */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+  .chip {
+    border: 1px solid var(--line2); background: rgba(14, 29, 58, .7); border-radius: 8px;
+    padding: 7px 12px; font-size: 12px; line-height: 1.5;
+  }
+  .chip b { display: block; font-size: 14px; color: var(--cyan); font-family: var(--mono); }
+  .chip span { color: var(--dim); font-size: 11px; }
+  .roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 12px; }
+  .role { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: rgba(14, 29, 58, .45); border-top: 2px solid; }
+  .role h4 { font-size: 13px; margin-bottom: 4px; }
+  .role p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .role.hero { background: rgba(45, 212, 191, .07); box-shadow: 0 0 18px rgba(45, 212, 191, .12); }
+  .role.hero p { color: #b9c8e8; }
+
+  /* ---- 通用表格 ---- */
+  table.tb { width: 100%; border-collapse: collapse; margin: 10px 0 4px; font-size: 12px; }
+  .tb th, .tb td { border: 1px solid rgba(22, 41, 79, .8); padding: 6px 9px; text-align: left; line-height: 1.55; vertical-align: top; }
+  .tb th { background: rgba(14, 29, 58, .85); color: var(--cyan); font-weight: 600; font-size: 11.5px; letter-spacing: .3px; }
+  .tb td { background: rgba(9, 19, 40, .5); }
+  .tb td.mono, .mono { font-family: var(--mono); font-size: 11.5px; }
+  .tb tr:hover td { background: rgba(20, 40, 78, .45); }
+  .c-cyan { color: var(--cyan); } .c-teal { color: var(--teal); } .c-amber { color: var(--amber); }
+  .c-orange { color: var(--orange); } .c-violet { color: var(--violet); } .c-red { color: var(--red); } .c-green { color: var(--green); }
+  .c-dim { color: var(--dim); }
+
+  /* ---- 流程链（入库/出库/倒垛） ---- */
+  .flow { border: 1px solid var(--line); border-radius: 10px; margin: 12px 0; overflow: hidden; }
+  .flow-head { display: flex; align-items: baseline; gap: 8px; padding: 9px 14px; background: rgba(14, 29, 58, .75); border-bottom: 1px solid var(--line); }
+  .flow-head .tag { font-family: var(--mono); font-size: 11px; border-radius: 5px; padding: 1px 7px; flex: none; }
+  .flow-head h3 { font-size: 13.5px; font-weight: 700; }
+  .flow-head .fdesc { font-size: 11px; color: var(--dim); }
+  .steps { padding: 6px 14px 12px; }
+  .step { display: flex; gap: 12px; align-items: flex-start; padding: 8px 0 2px; position: relative; }
+  .step:not(:last-child)::before { content: ''; position: absolute; left: 13px; top: 34px; bottom: -6px; width: 2px; background: linear-gradient(var(--line2), rgba(31,58,107,.15)); }
+  .step .n {
+    width: 26px; height: 26px; flex: none; border-radius: 50%; border: 1.5px solid var(--line2);
+    display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 11.5px;
+    color: var(--dim); background: var(--panel); z-index: 1;
+  }
+  .step.dog .n { border-color: var(--teal); color: var(--teal); box-shadow: 0 0 10px rgba(45, 212, 191, .35); }
+  .step .sbody { flex: 1; border: 1px solid rgba(22, 41, 79, .6); border-radius: 8px; padding: 7px 12px; background: rgba(9, 19, 40, .5); }
+  .step.dog .sbody { border-color: rgba(45, 212, 191, .45); background: rgba(45, 212, 191, .06); }
+  .step .stitle { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; font-weight: 600; }
+  .step .sdetail { font-size: 11.5px; color: var(--dim); line-height: 1.65; margin-top: 3px; }
+  .badge { font-size: 10.5px; border-radius: 5px; padding: 1px 8px; font-weight: 600; letter-spacing: .3px; flex: none; }
+  .b-truck { background: rgba(251, 191, 36, .14); color: var(--amber); border: 1px solid rgba(251, 191, 36, .4); }
+  .b-cam { background: rgba(167, 139, 250, .13); color: var(--violet); border: 1px solid rgba(167, 139, 250, .4); }
+  .b-crew { background: rgba(251, 146, 60, .13); color: var(--orange); border: 1px solid rgba(251, 146, 60, .4); }
+  .b-crane { background: rgba(56, 189, 248, .12); color: var(--cyan); border: 1px solid rgba(56, 189, 248, .4); }
+  .b-dog { background: rgba(45, 212, 191, .14); color: var(--teal); border: 1px solid rgba(45, 212, 191, .45); }
+  .b-wms { background: rgba(52, 211, 153, .12); color: var(--green); border: 1px solid rgba(52, 211, 153, .4); }
+  .b-algo { background: rgba(167, 139, 250, .13); color: var(--violet); border: 1px solid rgba(167, 139, 250, .4); }
+  .dur { font-family: var(--mono); font-size: 10.5px; color: var(--amber); border: 1px dashed rgba(251, 191, 36, .45); border-radius: 5px; padding: 0 6px; }
+
+  /* ---- 状态机 ---- */
+  .fsm-wrap { display: flex; gap: 14px; margin-top: 10px; align-items: stretch; }
+  .fsm-svg { flex: 1.6; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: rgba(5, 11, 26, .6); }
+  .fsm-svg svg { width: 100%; height: auto; display: block; }
+  .fsm-node { cursor: pointer; }
+  .fsm-node rect { transition: all .15s; }
+  .fsm-node:hover rect { filter: brightness(1.35); }
+  .fsm-node.on rect { stroke: #fff !important; stroke-width: 2 !important; filter: brightness(1.3); }
+  .fsm-detail { flex: 1; border: 1px solid var(--line); border-radius: 10px; background: rgba(14, 29, 58, .55); padding: 12px 14px; min-width: 280px; }
+  .fsm-detail h3 { font-size: 14px; margin-bottom: 2px; }
+  .fsm-detail .fsub { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-bottom: 8px; }
+  .fsm-detail p { font-size: 12px; color: var(--text); line-height: 1.75; }
+  .fsm-detail .trans { margin-top: 8px; font-size: 11.5px; }
+  .fsm-detail .trans div { padding: 3px 0; color: var(--dim); }
+  .fsm-detail .trans b { color: var(--teal); font-family: var(--mono); font-weight: 600; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 11px; color: var(--dim); margin-top: 8px; line-height: 1.6; }
+  .legend i { display: inline-block; width: 22px; height: 0; border-top: 2px solid var(--dim); vertical-align: middle; margin-right: 5px; }
+
+  /* ---- 公式 / 注释块 ---- */
+  .note { font-size: 11.5px; color: var(--dim); background: rgba(14, 29, 58, .6); border: 1px solid var(--line); border-radius: 8px; padding: 8px 13px; margin: 10px 0 2px; line-height: 1.75; }
+  .note b { color: var(--violet); font-weight: 600; }
+  .formula {
+    font-family: var(--mono); font-size: 12px; color: var(--teal); background: rgba(5, 11, 26, .85);
+    border: 1px solid rgba(45, 212, 191, .3); border-radius: 8px; padding: 10px 14px; margin: 8px 0; line-height: 2; overflow-x: auto; white-space: pre;
+  }
+  .formula .cm { color: var(--dim); }
+
+  /* ---- 电量条 ---- */
+  .batt { margin: 14px 0 6px; }
+  .batt-track { position: relative; height: 30px; border-radius: 8px; border: 1px solid var(--line2); overflow: visible;
+    background: linear-gradient(90deg,
+      rgba(248,113,113,.30) 0%, rgba(248,113,113,.30) 12%,
+      rgba(251,146,60,.26) 12%, rgba(251,146,60,.26) 25%,
+      rgba(56,189,248,.16) 25%, rgba(56,189,248,.16) 85%,
+      rgba(45,212,191,.22) 85%, rgba(45,212,191,.22) 98%,
+      rgba(52,211,153,.28) 98%, rgba(52,211,153,.28) 100%); }
+  .batt-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 7px 0 0 7px; background: rgba(56, 189, 248, .30); border-right: 2px solid var(--cyan); width: 72%; transition: width .3s linear; }
+  .batt-pin { position: absolute; top: -8px; transform: translateX(-50%); text-align: center; }
+  .batt-pin i { display: block; width: 2px; height: 46px; margin: 8px auto 0; }
+  .batt-pin span { font-size: 10.5px; font-family: var(--mono); white-space: nowrap; }
+  .batt-scale { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--dim); margin-top: 22px; }
+  .batt-legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 11px; color: var(--dim); margin-top: 6px; }
+  .batt-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; }
+
+  /* ---- 时效链 ---- */
+  .tl { display: flex; align-items: stretch; gap: 0; margin: 14px 0 4px; overflow-x: auto; }
+  .tl .tlnode { flex: 1; min-width: 150px; border: 1px solid var(--line2); border-radius: 9px; background: rgba(14, 29, 58, .6); padding: 8px 11px; }
+  .tl .tlnode h5 { font-size: 12px; color: var(--text); margin-bottom: 3px; }
+  .tl .tlnode .tt { font-family: var(--mono); font-size: 10.5px; color: var(--cyan); }
+  .tl .tlnode p { font-size: 11px; color: var(--dim); line-height: 1.6; margin-top: 3px; }
+  .tl .tlarr { flex: none; align-self: center; padding: 0 7px; color: var(--dim); font-size: 15px; }
+  .tl .tlarr span { display: block; text-align: center; font-size: 9.5px; font-family: var(--mono); color: var(--amber); margin-top: 1px; }
+
+  /* ---- 任务拆解树 ---- */
+  .tree { font-family: var(--mono); font-size: 11.5px; line-height: 1.9; background: rgba(5, 11, 26, .85); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; overflow-x: auto; white-space: pre; color: var(--text); margin: 8px 0; }
+  .tree .tk { color: var(--cyan); } .tree .tv { color: var(--amber); } .tree .tc { color: var(--dim); }
+  .pri { font-family: var(--mono); font-weight: 700; border-radius: 5px; padding: 0 7px; font-size: 11px; }
+  .p0 { background: rgba(248, 113, 113, .16); color: var(--red); border: 1px solid rgba(248, 113, 113, .5); }
+  .p1 { background: rgba(251, 191, 36, .14); color: var(--amber); border: 1px solid rgba(251, 191, 36, .5); }
+  .p2 { background: rgba(56, 189, 248, .13); color: var(--cyan); border: 1px solid rgba(56, 189, 248, .5); }
+  .p3 { background: rgba(114, 136, 179, .15); color: var(--dim); border: 1px solid rgba(114, 136, 179, .5); }
+  .impl { font-size: 10.5px; border-radius: 5px; padding: 0 6px; }
+  .impl.y { background: rgba(52, 211, 153, .13); color: var(--green); border: 1px solid rgba(52, 211, 153, .4); }
+  .impl.n { background: rgba(114, 136, 179, .13); color: var(--dim); border: 1px solid rgba(114, 136, 179, .4); }
+
+  .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 1150px) { .cols2 { grid-template-columns: 1fr; } .fsm-wrap { flex-direction: column; } }
+  .foot { text-align: center; color: var(--dim); font-size: 11px; line-height: 1.9; padding: 20px 0 6px; }
+  .foot a { color: var(--cyan); text-decoration: none; } .foot a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 8V4.5L10 8"/><path d="M17.5 8V4.5L14 8"/><rect x="5" y="8" width="14" height="12" rx="3.5"/><circle cx="9.8" cy="13" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.2" cy="13" r="1.1" fill="currentColor" stroke="none"/><path d="M12 15.8v1.4"/></svg></div>
+    <div><h1>机器狗工作流设计</h1></div>
+  </div>
+  <nav data-sim-nav="dogflow" title="新标签打开，不打断各页面状态"></nav>
+  <div class="actions">
+    <a class="hbtn" href="/" target="_blank">🗺 仿真沙盘</a>
+    <a class="hbtn" href="/params" target="_blank">⚙ 调度参数</a>
+    <a class="hbtn" href="/scans" target="_blank">⏱ 扫描时效</a>
+  </div>
+</header>
+<script src="./shared/nav.js"></script>
+<div class="tabs" id="tabs">
+  <a href="#sec-overview">① 总览与分工</a>
+  <a href="#sec-flow">② 端到端流程</a>
+  <a href="#sec-fsm">③ 状态机</a>
+  <a href="#sec-dispatch">④ 调度引擎</a>
+  <a href="#sec-nav">⑤ 导航通行</a>
+  <a href="#sec-power">⑥ 电量充电</a>
+  <a href="#sec-except">⑦ 异常兜底</a>
+  <a href="#sec-task">⑧ 任务体系</a>
+  <a href="#sec-kpi">⑨ 时效评估</a>
+  <a href="#sec-param">⑩ 参数总览</a>
+</div>
+<main>
+<div class="wrap">
+
+  <!-- ==================== ① 总览与角色分工 ==================== -->
+  <section id="sec-overview">
+    <div class="sec-head" style="border-color: var(--cyan);">
+      <span class="no">01</span><span class="ico">🎯</span>
+      <h2>系统总览与角色分工</h2>
+      <span class="sub">机器狗在库管调度系统中的定位：只扫码核验，不搬运钢材</span>
+    </div>
+    <div class="sec-body">
+      <p class="lead">
+        本系统是 <b>300m × 90m 三跨棒材库区</b> 的流程级调度仿真。钢材捆上贴有二维码，<b>机器狗（四足机器人）承担全库的“扫码核验”环节</b>：
+        入库时到天车落料的库位扫码确认入账，出库时到吊走后的垛位扫码核销，倒垛后到源/目标两垛双点核验——
+        扫码结果回传 WMS 后库存才正式更新，保证<b>账物一致</b>。钢材的物理搬运全部由天车 + 吊运工完成。
+      </p>
+      <div class="chips">
+        <div class="chip"><b>300×90 m</b><span>库区总长 × 宽</span></div>
+        <div class="chip"><b>3 跨</b><span>A / B / C，每跨 30m</span></div>
+        <div class="chip"><b>91 库位</b><span>每库位 10 垛（可配）</span></div>
+        <div class="chip"><b>3 台</b><span>机器狗（1–6 台可调，D-01 起编号）</span></div>
+        <div class="chip"><b>6 台</b><span>天车（每跨 2 台）</span></div>
+        <div class="chip"><b>6+1 名</b><span>库区吊运工 + 每车 1 名车上专职</span></div>
+        <div class="chip"><b>3 通道</b><span>竖向车辆进出通道</span></div>
+        <div class="chip"><b>4 廊道</b><span>2m 横向通道 = 机器狗主动脉</span></div>
+      </div>
+      <div class="roles">
+        <div class="role hero" style="border-color: var(--teal);">
+          <h4>🐕 机器狗（本页主角）</h4>
+          <p>扫码核验员。沿横向廊道与库位间空道机动到目标垛位正前方，转身面向垛位扫描二维码，
+          完成入库入账 / 出库核销 / 倒垛双点核验；<b>同一垛位的积压待扫任务归并为一趟，到场连续扫完、不重复跑</b>；
+          低电自动返航充电。行进 5 m/s、单次扫码 120s、满电续航 3h。</p>
+        </div>
+        <div class="role" style="border-color: var(--cyan);">
+          <h4>🏗 天车</h4>
+          <p>唯一的钢材搬运设备。大车 4 m/s（沿厂房长向）、小车 1 m/s、吊取 2s / 放下 1.8s；
+          一车一天车：一辆货车的装卸全程由同一台天车完成，单跨作业。</p>
+        </div>
+        <div class="role" style="border-color: var(--orange);">
+          <h4>🧍 吊运工</h4>
+          <p>人因环节三段分工：吊前<b>挂绳 60s</b>（穿绳上钩）→ 落位<b>放绳 45s</b>（取钩，入库/倒垛吊绳随捆留垛）→
+          出库<b>取绳 30s</b>（车上抽绳收回，不挡天车、挡货车复验离场）。出入库货车每车另配 1 名车上专职。</p>
+        </div>
+        <div class="role" style="border-color: var(--amber);">
+          <h4>🚚 货车 + 📷 立柱摄像头</h4>
+          <p>3 条竖向通道进场、停靠目标跨；跨上立柱摄像头识别车牌（2s），凭车牌从物流系统吊取运单（1.2s）；
+          出场复验 1.5s（装卸数量与运单复核）。</p>
+        </div>
+        <div class="role" style="border-color: var(--green);">
+          <h4>🗄 WMS / 调度引擎</h4>
+          <p>下发入库 / 出库 / 倒垛确认任务；就近分配 + 电量约束派单给机器狗，同垛位任务归并同一趟
+          （到场/扫完每捆时再捎带新落料/新吊走的同垛任务）；扫码回传后更新库存数据库并台账留痕；
+          管理工在「进厂确认」工作台保留最终决策权。</p>
+        </div>
+      </div>
+      <div class="note">
+        <b>端到端主链：</b>货车进场停靠 → 跨上立柱摄像头识别车牌 → 物流系统吊取运单 → 吊运工挂绳 →
+        天车吊运装卸 → 吊运工放绳 / 取绳 → <b style="color:var(--teal)">机器狗扫码确认</b> → 库存更新。
+        一车 6–10 吊，单跨装卸；任务保持“吊”粒度（1 任务 = 1 规格 → 1 库位），机器狗 / 天车 / 库存 / KPI 均按吊计数。
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== ② 端到端业务流程 ==================== -->
+  <section id="sec-flow">
+    <div class="sec-head" style="border-color: var(--teal);">
+      <span class="no">02</span><span class="ico">🔁</span>
+      <h2>端到端业务流程</h2>
+      <span class="sub">入库 / 出库 / 倒垛 三条主流程全环节拆解（含各环节耗时与责任角色）</span>
+    </div>
+    <div class="sec-body">
+
+      <div class="flow">
+        <div class="flow-head">
+          <span class="tag" style="background:rgba(45,212,191,.15);color:var(--teal);border:1px solid rgba(45,212,191,.4);">流程 A</span>
+          <h3>入库流程（进厂卸货 → 扫码入账）</h3>
+          <span class="fdesc">触发：进厂货车随车运单（一车 6–10 吊，整车单规格为主，部分混装）</span>
+        </div>
+        <div class="steps">
+          <div class="step"><div class="n">1</div><div class="sbody">
+            <div class="stitle"><span class="badge b-truck">货车</span>进场停靠</div>
+            <div class="sdetail">货车经 3 条竖向通道进场，按任务目标跨停靠车位；场内行驶 8 m/s。</div>
+          </div></div>
+          <div class="step"><div class="n">2</div><div class="sbody">
+            <div class="stitle"><span class="badge b-cam">识别</span>车牌识别 <span class="dur">2s</span></div>
+            <div class="sdetail">跨上立柱摄像头自动识别车牌，作为该车全部业务的索引键。</div>
+          </div></div>
+          <div class="step"><div class="n">3</div><div class="sbody">
+            <div class="stitle"><span class="badge b-cam">识别</span>吊取运单 <span class="dur">1.2s</span></div>
+            <div class="sdetail">凭车牌从物流系统调取随车运单（规格 × 吊数）；运单与实货差异率 5% 时以现场扫码数据为准修正。</div>
+          </div></div>
+          <div class="step"><div class="n">4</div><div class="sbody">
+            <div class="stitle"><span class="badge b-crew">吊运工</span>挂绳 <span class="dur">60s / 吊</span></div>
+            <div class="sdetail">库区班组把吊绳穿上钢材捆并挂上天车吊钩；车上另有 1 名专职吊运工配合车上绳索。</div>
+          </div></div>
+          <div class="step"><div class="n">5</div><div class="sbody">
+            <div class="stitle"><span class="badge b-crane">天车</span>吊运落料 <span class="dur">吊取 2s + 放下 1.8s</span></div>
+            <div class="sdetail">按归堆推荐评分选定目标库位/垛（同规格归堆、先填满旧垛、邻位聚簇、避让待扫码垛），天车把钢材从车上吊到目标垛。</div>
+          </div></div>
+          <div class="step"><div class="n">6</div><div class="sbody">
+            <div class="stitle"><span class="badge b-crew">吊运工</span>放绳 <span class="dur">45s</span></div>
+            <div class="sdetail">落位后把吊绳自吊钩取下；入库吊绳随捆留垛，供下次出库直接挂钩。</div>
+          </div></div>
+          <div class="step dog"><div class="n">7</div><div class="sbody">
+            <div class="stitle"><span class="badge b-dog">机器狗</span>扫码核验 <span class="dur">120s/捆</span> ← 账物一致关口</div>
+            <div class="sdetail">天车落料后任务才可派单（materialReady）。机器狗经廊道+库位间空道到垛位正前方站位，转身面向垛位扫码，
+            捆标签与库位/垛绑定；同垛积压的待扫任务原地连续扫完（同车多吊集中落同垛时不再逐捆跑腿）；失败原地重扫 ≤2 次，连续失败转人工介入。</div>
+          </div></div>
+          <div class="step"><div class="n">8</div><div class="sbody">
+            <div class="stitle"><span class="badge b-wms">库存</span>入账闭环</div>
+            <div class="sdetail">待核验捆转为在库（捆级明细确认），写回库存数据库，任务台账留痕；同车多吊集中同垛时按计数逐捆核销。</div>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="flow">
+        <div class="flow-head">
+          <span class="tag" style="background:rgba(251,191,36,.13);color:var(--amber);border:1px solid rgba(251,191,36,.4);">流程 B</span>
+          <h3>出库流程（提货订单 → 扫码核销）</h3>
+          <span class="fdesc">触发：提货订单（合同号 + 需求捆数，全天铺开下发）；<b>天车先吊走，机器狗随后扫码核销</b></span>
+        </div>
+        <div class="steps">
+          <div class="step"><div class="n">1</div><div class="sbody">
+            <div class="stitle"><span class="badge b-wms">WMS</span>提货订单下发</div>
+            <div class="sdetail">按合同号 + 需求捆数生成出库订单，在办订单上限 16 个，防队列失控。</div>
+          </div></div>
+          <div class="step"><div class="n">2</div><div class="sbody">
+            <div class="stitle"><span class="badge b-algo">调度</span>订单配捆</div>
+            <div class="sdetail">该规格在库已扫码捆中随机选捆；目标捆被压（上方整层压货）→ 先触发倒垛（见流程 C）；
+            无倒垛落点最长等待 1800s，超时换捆重配防库位锁死。</div>
+          </div></div>
+          <div class="step"><div class="n">3</div><div class="sbody">
+            <div class="stitle"><span class="badge b-truck">货车</span>空车进场 + 识别 <span class="dur">2s + 1.2s</span></div>
+            <div class="sdetail">空车进场停靠目标跨，车牌识别 + 运单吊取确认后，天车作业条件齐备。</div>
+          </div></div>
+          <div class="step"><div class="n">4</div><div class="sbody">
+            <div class="stitle"><span class="badge b-crew">吊运工</span>挂绳 <span class="dur">60s</span></div>
+            <div class="sdetail">库位侧班组对目标捆挂绳（入库时留垛的吊绳可直接挂钩）。</div>
+          </div></div>
+          <div class="step"><div class="n">5</div><div class="sbody">
+            <div class="stitle"><span class="badge b-crane">天车</span>吊运装车</div>
+            <div class="sdetail">天车<b>先行</b>把钢材吊离垛位装车；物料吊走时刻（liftedAt）是出库扫码延时统计起点，此后机器狗才可获派。</div>
+          </div></div>
+          <div class="step"><div class="n">6</div><div class="sbody">
+            <div class="stitle"><span class="badge b-crew">吊运工</span>取绳 <span class="dur">30s</span></div>
+            <div class="sdetail">出库落车后把吊绳自钢材捆中抽出收回；不挡天车，但挡住货车复验离场。</div>
+          </div></div>
+          <div class="step dog"><div class="n">7</div><div class="sbody">
+            <div class="stitle"><span class="badge b-dog">机器狗</span>扫码核销 <span class="dur">120s</span> ← 账物一致关口</div>
+            <div class="sdetail">机器狗到原垛位前扫码，确认“出库吊走后垛位余量与台账一致”；与装车完成互为双条件，后到者触发任务闭环。</div>
+          </div></div>
+          <div class="step"><div class="n">8</div><div class="sbody">
+            <div class="stitle"><span class="badge b-truck">货车</span>出场复验 <span class="dur">1.5s</span></div>
+            <div class="sdetail">装卸数量与运单复核（异常率 3%，人工复核后放行），复验通过货车离场。</div>
+          </div></div>
+          <div class="step"><div class="n">9</div><div class="sbody">
+            <div class="stitle"><span class="badge b-wms">库存</span>核销闭环</div>
+            <div class="sdetail">装车完成 + 扫码确认核销双条件齐备，订单履约推进，库存数据库同步核销。</div>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="flow">
+        <div class="flow-head">
+          <span class="tag" style="background:rgba(167,139,250,.13);color:var(--violet);border:1px solid rgba(167,139,250,.4);">流程 C</span>
+          <h3>倒垛流程（压货挪移 → 双点核验）</h3>
+          <span class="fdesc">触发：出库目标捆被上方整层压货；倒垛后机器狗源垛 + 目标垛<b>双点扫码</b></span>
+        </div>
+        <div class="steps">
+          <div class="step"><div class="n">1</div><div class="sbody">
+            <div class="stitle"><span class="badge b-algo">调度</span>倒垛触发</div>
+            <div class="sdetail">配捆时发现目标捆被压：需在装车前把上方整层压货挪至同库位其他垛；无落点则等待（上限 1800s）后换捆重配。</div>
+          </div></div>
+          <div class="step"><div class="n">2</div><div class="sbody">
+            <div class="stitle"><span class="badge b-wms">WMS</span>下发倒垛任务</div>
+            <div class="sdetail">倒垛任务进入天车作业队列（与出入库吊统一调度）。</div>
+          </div></div>
+          <div class="step"><div class="n">3</div><div class="sbody">
+            <div class="stitle"><span class="badge b-crew">吊运工</span>挂绳 <span class="dur">60s</span> → <span class="badge b-crane">天车</span>挪移压货 → <span class="badge b-crew">吊运工</span>放绳 <span class="dur">45s</span></div>
+            <div class="sdetail">压货整层挪至同库位目标垛，吊绳随捆留垛；库存在天车落位时即完成物理迁移。</div>
+          </div></div>
+          <div class="step"><div class="n">4</div><div class="sbody">
+            <div class="stitle"><span class="badge b-wms">WMS</span>下发倒垛确认任务</div>
+            <div class="sdetail">事后核验、不阻塞该车装车吊；源/目标两垛均在扫描范围内才派机器狗，否则整单免检直通 / 转人工核对。</div>
+          </div></div>
+          <div class="step dog"><div class="n">5</div><div class="sbody">
+            <div class="stitle"><span class="badge b-dog">机器狗</span>源垛扫码 <span class="dur">120s</span></div>
+            <div class="sdetail">确认压货捆已挪走、垛顶物资与台账一致。</div>
+          </div></div>
+          <div class="step dog"><div class="n">6</div><div class="sbody">
+            <div class="stitle"><span class="badge b-dog">机器狗</span>转场目标垛扫码 <span class="dur">120s</span></div>
+            <div class="sdetail">源垛扫毕自动规划转场路径，到目标垛前扫第二点，确认倒垛落位捆与台账一致（转场受阻则整单重排、从目标垛续扫）。</div>
+          </div></div>
+          <div class="step"><div class="n">7</div><div class="sbody">
+            <div class="stitle"><span class="badge b-wms">库存</span>留痕闭环</div>
+            <div class="sdetail">双点核验一致后留痕闭环（不改动库存——库存已在落位时迁移）；出库装车流程继续。</div>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="note">
+        <b>为什么出库是“先吊走后扫码”？</b> 钢材一旦吊离垛位即不可逆地开始装车节拍，机器狗无须挡在天车前；
+        改为吊走后到原垛位核验“余量与台账一致”，扫码与装车并行，任务闭环取两者后到者——既保住账物一致，又不拖累天车节拍。
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== ③ 状态机 ==================== -->
+  <section id="sec-fsm">
+    <div class="sec-head" style="border-color: var(--violet);">
+      <span class="no">03</span><span class="ico">🧠</span>
+      <h2>机器狗状态机</h2>
+      <span class="sub">9 个状态 · 点击节点查看详情（与沙盘 Robot 类逐一对应）</span>
+    </div>
+    <div class="sec-body">
+      <div class="fsm-wrap">
+        <div class="fsm-svg">
+          <svg viewBox="0 0 960 300" id="fsmSvg" aria-label="机器狗状态机图">
+            <defs>
+              <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="#7288b3"></path>
+              </marker>
+              <marker id="arrAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="#fbbf24"></path>
+              </marker>
+              <marker id="arrGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="#34d399"></path>
+              </marker>
+              <marker id="arrRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="#f87171"></path>
+              </marker>
+            </defs>
+            <!-- 主链路边 -->
+            <g stroke="#7288b3" stroke-width="1.4" fill="none" marker-end="url(#arr)">
+              <path d="M129,65 H159"/>
+              <path d="M269,65 H299"/>
+              <path d="M409,65 H434"/>
+              <path d="M544,65 H569"/>
+              <path d="M679,65 H704"/>
+              <path d="M814,65 H839"/>
+              <path d="M895,86 V122 H75 V84"/>
+            </g>
+            <!-- 自环：原地重扫 -->
+            <path d="M748,44 C735,12 785,12 772,44" stroke="#7288b3" stroke-width="1.4" fill="none" marker-end="url(#arr)"/>
+            <!-- 充电链路（琥珀虚线） -->
+            <g stroke="#fbbf24" stroke-width="1.4" stroke-dasharray="5 4" fill="none" marker-end="url(#arrAmber)">
+              <path d="M75,86 C75,175 120,213 157,214"/>
+              <path d="M895,86 V252 H215 V240"/>
+              <path d="M392,192 C290,105 130,55 27,60"/>
+            </g>
+            <path d="M269,215 H364" stroke="#fbbf24" stroke-width="1.4" fill="none" marker-end="url(#arrAmber)"/>
+            <!-- 打断接单（绿虚线） -->
+            <path d="M420,192 C405,120 310,90 226,89" stroke="#34d399" stroke-width="1.4" stroke-dasharray="5 4" fill="none" marker-end="url(#arrGreen)"/>
+            <!-- 人工介入（红虚线） -->
+            <path d="M790,86 C848,118 848,168 812,190" stroke="#f87171" stroke-width="1.4" stroke-dasharray="5 4" fill="none" marker-end="url(#arrRed)"/>
+            <!-- 边标签 -->
+            <g font-size="10" fill="#7288b3" font-family="Consolas, monospace" text-anchor="middle">
+              <text x="144" y="56">派单</text>
+              <text x="284" y="56">0.5s</text>
+              <text x="421" y="56">0.8s</text>
+              <text x="556" y="56">抵达</text>
+              <text x="691" y="56">对垛</text>
+              <text x="826" y="56">扫毕</text>
+              <text x="480" y="114">0.6s 状态回传 · 任务闭环</text>
+              <text x="760" y="9">失败重扫 ≤2 次</text>
+            </g>
+            <g font-size="10" fill="#fbbf24" font-family="Consolas, monospace" text-anchor="middle">
+              <text x="102" y="168">电量&lt;25% 返航</text>
+              <text x="560" y="246">完工时低电</text>
+              <text x="316" y="206">抵达充电桩</text>
+              <text x="212" y="98">≥98% 满电恢复</text>
+            </g>
+            <text x="330" y="142" font-size="10" fill="#34d399" font-family="Consolas, monospace" text-anchor="middle">≥85% 可被打断接单</text>
+            <text x="852" y="142" font-size="10" fill="#f87171" font-family="Consolas, monospace" text-anchor="middle">转人工</text>
+            <!-- 状态节点 -->
+            <g class="fsm-node" data-st="IDLE"><rect x="21" y="44" width="108" height="42" rx="10" fill="#0e1d3a" stroke="#38bdf8" stroke-width="1.5"/><text x="75" y="62" text-anchor="middle" font-size="12.5" fill="#dbe7ff" font-weight="700">IDLE</text><text x="75" y="78" text-anchor="middle" font-size="10" fill="#7288b3">待命</text></g>
+            <g class="fsm-node" data-st="ASSIGN"><rect x="161" y="44" width="108" height="42" rx="10" fill="#0e1d3a" stroke="#2dd4bf" stroke-width="1.5"/><text x="215" y="62" text-anchor="middle" font-size="12.5" fill="#dbe7ff" font-weight="700">ASSIGN</text><text x="215" y="78" text-anchor="middle" font-size="10" fill="#7288b3">接单确认 0.5s</text></g>
+            <g class="fsm-node" data-st="PLAN"><rect x="301" y="44" width="108" height="42" rx="10" fill="#0e1d3a" stroke="#2dd4bf" stroke-width="1.5"/><text x="355" y="62" text-anchor="middle" font-size="12.5" fill="#dbe7ff" font-weight="700">PLAN</text><text x="355" y="78" text-anchor="middle" font-size="10" fill="#7288b3">路径规划 0.8s</text></g>
+            <g class="fsm-node" data-st="NAV"><rect x="436" y="44" width="108" height="42" rx="10" fill="#0e1d3a" stroke="#2dd4bf" stroke-width="1.5"/><text x="490" y="62" text-anchor="middle" font-size="12.5" fill="#dbe7ff" font-weight="700">NAV</text><text x="490" y="78" text-anchor="middle" font-size="10" fill="#7288b3">导航行走 5m/s</text></g>
+            <g class="fsm-node" data-st="TURN"><rect x="571" y="44" width="108" height="42" rx="10" fill="#0e1d3a" stroke="#2dd4bf" stroke-width="1.5"/><text x="625" y="62" text-anchor="middle" font-size="12.5" fill="#dbe7ff" font-weight="700">TURN</text><text x="625" y="78" text-anchor="middle" font-size="10" fill="#7288b3">转身对垛 ≤2s</text></g>
+            <g class="fsm-node" data-st="SCAN"><rect x="706" y="44" width="108" height="42" rx="10" fill="#0e1d3a" stroke="#2dd4bf" stroke-width="1.5"/><text x="760" y="62" text-anchor="middle" font-size="12.5" fill="#dbe7ff" font-weight="700">SCAN</text><text x="760" y="78" text-anchor="middle" font-size="10" fill="#7288b3">扫码核验 120s</text></g>
+            <g class="fsm-node" data-st="REPORT"><rect x="841" y="44" width="108" height="42" rx="10" fill="#0e1d3a" stroke="#2dd4bf" stroke-width="1.5"/><text x="895" y="62" text-anchor="middle" font-size="12.5" fill="#dbe7ff" font-weight="700">REPORT</text><text x="895" y="78" text-anchor="middle" font-size="10" fill="#7288b3">状态回传 0.6s</text></g>
+            <g class="fsm-node" data-st="TO_CHARGER"><rect x="161" y="194" width="108" height="42" rx="10" fill="#0e1d3a" stroke="#fbbf24" stroke-width="1.5"/><text x="215" y="212" text-anchor="middle" font-size="12" fill="#dbe7ff" font-weight="700">TO_CHARGER</text><text x="215" y="228" text-anchor="middle" font-size="10" fill="#7288b3">返航充电桩</text></g>
+            <g class="fsm-node" data-st="CHARGING"><rect x="366" y="194" width="108" height="42" rx="10" fill="#0e1d3a" stroke="#fbbf24" stroke-width="1.5"/><text x="420" y="212" text-anchor="middle" font-size="12.5" fill="#dbe7ff" font-weight="700">CHARGING</text><text x="420" y="228" text-anchor="middle" font-size="10" fill="#7288b3">充电中</text></g>
+            <g class="fsm-node" data-st="MANUAL"><rect x="706" y="194" width="108" height="42" rx="10" fill="#0e1d3a" stroke="#f87171" stroke-width="1.5" stroke-dasharray="5 4"/><text x="760" y="212" text-anchor="middle" font-size="12.5" fill="#f87171" font-weight="700">人工介入</text><text x="760" y="228" text-anchor="middle" font-size="10" fill="#7288b3">异常旁路 · 留痕</text></g>
+          </svg>
+        </div>
+        <div class="fsm-detail" id="fsmDetail"></div>
+      </div>
+      <div class="legend">
+        <span><i style="border-color:#7288b3;"></i>主流程节拍</span>
+        <span><i style="border-color:#fbbf24;border-top-style:dashed;"></i>充电链路</span>
+        <span><i style="border-color:#34d399;border-top-style:dashed;"></i>充电打断派单</span>
+        <span><i style="border-color:#f87171;border-top-style:dashed;"></i>异常旁路</span>
+        <span>另：ASSIGN / 倒垛转场寻路失败 → 任务重排队（间隙释放后调度器重新分配），图中从略</span>
+      </div>
+      <table class="tb">
+        <tr><th style="width:110px;">状态</th><th style="width:130px;">耗时 / 参数</th><th>含义与出口条件</th></tr>
+        <tr><td class="mono c-cyan">IDLE</td><td class="mono">—</td><td>待命，等待调度器派单；电量 &lt; 25% 时自主返航（已在桩上则直接转 CHARGING）。</td></tr>
+        <tr><td class="mono c-teal">ASSIGN</td><td class="mono">0.5s</td><td>接单确认：求解“当前位置 → 目标垛前空道站位”的 A* 路径；无解则任务重排队（abortTask）。</td></tr>
+        <tr><td class="mono c-teal">PLAN</td><td class="mono">0.8s</td><td>路径规划确认，任务阶段推进到“出发”，随后进入导航。</td></tr>
+        <tr><td class="mono c-teal">NAV</td><td class="mono">按路程 ÷ 5m/s</td><td>沿导航栅格行走，行进耗电 0.00185%/m；抵达垛位前站位 → TURN。</td></tr>
+        <tr><td class="mono c-teal">TURN</td><td class="mono">≤ 2s</td><td>在库位间空道内转身面向垛位中心（角容差 0.06rad，超时 2s 强制就位）；<b>不进入垛位本体</b>。</td></tr>
+        <tr><td class="mono c-teal">SCAN</td><td class="mono">60s</td><td>二维码扫描 + 信息比对；失败率 4%，原地重扫 ≤2 次，连续失败转人工介入；倒垛源垛扫毕转场目标垛（回 PLAN）。</td></tr>
+        <tr><td class="mono c-teal">REPORT</td><td class="mono">0.6s</td><td>状态回传 WMS：入库入账 / 出库核销 / 倒垛留痕；完工后低电 → TO_CHARGER，否则回 IDLE。</td></tr>
+        <tr><td class="mono c-amber">TO_CHARGER</td><td class="mono">按路程</td><td>寻路返桩；周边被垛位堵死时原地等待、逐拍重试（保持任务外状态）。</td></tr>
+        <tr><td class="mono c-amber">CHARGING</td><td class="mono">0.0139%/s</td><td>充电至 ≥98% 恢复待命；电量 ≥85% 时可被派单打断（中断充电留痕）。</td></tr>
+      </table>
+      <div class="note"><b>忙碌占比口径：</b>ASSIGN / PLAN / NAV / TURN / SCAN / REPORT 计入忙碌时长（busyTime），用于「集群利用率」KPI 与扫描能力评估；IDLE / TO_CHARGER / CHARGING 不计。</div>
+    </div>
+  </section>
+
+  <!-- ==================== ④ 调度引擎 ==================== -->
+  <section id="sec-dispatch">
+    <div class="sec-head" style="border-color: var(--amber);">
+      <span class="no">04</span><span class="ico">🧮</span>
+      <h2>任务调度引擎</h2>
+      <span class="sub">先到先服务 + 就近分配 + 电量约束 · 每仿真拍运行一次</span>
+    </div>
+    <div class="sec-body">
+      <p class="lead">调度器（<code>scheduler()</code>）对 <b>pending 任务队列</b>按先来后到逐单尝试派狗，每单在可用机队中择优：</p>
+      <table class="tb">
+        <tr><th style="width:150px;">规则</th><th>内容</th></tr>
+        <tr><td class="c-cyan">① 派单前置</td><td>入库单：天车落料就位（materialReady）后才可派扫码；出库单：物料吊走（liftedAt）后才可派核销——扫码与吊运不互相等待。</td></tr>
+        <tr><td class="c-cyan">② 范围旁路</td><td>先于派单处理：库位不在扫描范围内 → 免检直通 / 转人工核对（不占机器狗、不等机队）；倒垛确认需源/目标双垛均在范围内才派狗。</td></tr>
+        <tr><td class="c-cyan">③ 可用判定</td><td>IDLE 立即可用；CHARGING 中电量 ≥ 85% 亦可接单（打断充电，留痕中断时刻电量）。</td></tr>
+        <tr><td class="c-cyan">④ 就近分配</td><td>对每台可用狗求解到“目标垛前空道站位”的路径长 d1，取 d1 最小者；路径不可达（∞）直接跳过该狗。</td></tr>
+        <tr><td class="c-cyan">⑤ 电量约束</td><td>预估全程电耗 + 返桩电耗 + 安全余量，电量不足不派——保证任何已派任务做完一定能回桩。</td></tr>
+        <tr><td class="c-cyan">⑥ 阻断兜底</td><td>所有狗都不满足 → 任务留在队列下一拍重试；执行中寻路失败 → 任务重排队，通道间隙释放后自动再派。</td></tr>
+      </table>
+      <div class="formula">need = ( d1<span class="cm">（当前位置 → 垛前站位）</span> + d2<span class="cm">（倒垛：源垛 → 目标垛转场）</span> + d3<span class="cm">（站位 → 本狗充电桩）</span> ) × drainPerM
+派单条件： battery ≥ need + reserve<span class="cm">（安全余量 12%）</span>；多台满足时取 d1 最小</div>
+      <div class="note">
+        <b>分配日志示例：</b><code>调度分配：T-XXXX → D-02（扫码路程 87m · 电量 76%）</code>。
+        倒垛确认两点任务的电量预留会把“源垛 → 目标垛”转场段一并加算，避免扫完第一点却走不到第二点。
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== ⑤ 导航通行 ==================== -->
+  <section id="sec-nav">
+    <div class="sec-head" style="border-color: var(--green);">
+      <span class="no">05</span><span class="ico">🗺</span>
+      <h2>导航与通行规则</h2>
+      <span class="sub">双层栅格 · A* 寻路 · 廊道 + 库位间空道的通行模型</span>
+    </div>
+    <div class="sec-body">
+      <div class="cols2">
+        <div>
+          <table class="tb">
+            <tr><th style="width:150px;">层</th><th>用途</th></tr>
+            <tr><td class="c-cyan">宏观栅格 38×8</td><td>服务地图绘制、货车、天车；行 0/2/4/6 为 4 条 2m 横向通道。</td></tr>
+            <tr><td class="c-teal">细分导航栅格</td><td>机器狗专用：跨内按 <b>10 垛层</b> 与 <b>库位间空道列</b>（相邻库位分界线）交替细分。</td></tr>
+          </table>
+          <table class="tb">
+            <tr><th>通行代价（A* 权重）</th><th style="width:90px;">代价值</th></tr>
+            <tr><td>横向通道 / 库位间空道</td><td class="mono c-teal">1.0</td></tr>
+            <tr><td>服务带（垛位贴邻作业带）</td><td class="mono c-amber">1.35</td></tr>
+            <tr><td>垛位本体 / 墙外</td><td class="mono c-red">∞（禁行）</td></tr>
+          </table>
+        </div>
+        <div>
+          <svg viewBox="0 0 460 300" style="width:100%;border:1px solid var(--line);border-radius:10px;background:rgba(5,11,26,.6);">
+            <!-- 横向廊道 -->
+            <rect x="10" y="14" width="440" height="26" rx="4" fill="rgba(45,212,191,.13)" stroke="rgba(45,212,191,.5)"/>
+            <text x="230" y="31" text-anchor="middle" font-size="10.5" fill="#2dd4bf">2m 横向廊道（机器狗主通道，横贯全长 ×4 条）</text>
+            <!-- 库位 A -->
+            <rect x="20" y="56" width="170" height="228" rx="5" fill="rgba(56,189,248,.06)" stroke="#1f3a6b"/>
+            <text x="105" y="72" text-anchor="middle" font-size="10.5" fill="#38bdf8">库位 A-12（8 垛）</text>
+            <!-- 空道 -->
+            <rect x="190" y="56" width="34" height="228" fill="rgba(52,211,153,.13)" stroke="rgba(52,211,153,.45)" stroke-dasharray="4 3"/>
+            <text x="207" y="296" text-anchor="middle" font-size="9.5" fill="#34d399">库位间空道</text>
+            <!-- 库位 B -->
+            <rect x="224" y="56" width="170" height="228" rx="5" fill="rgba(56,189,248,.06)" stroke="#1f3a6b"/>
+            <text x="309" y="72" text-anchor="middle" font-size="10.5" fill="#38bdf8">库位 A-13（8 垛）</text>
+            <!-- 垛位行 -->
+            <g fill="rgba(56,189,248,.16)" stroke="#1f3a6b">
+              <rect x="28" y="80" width="154" height="22" rx="3"/><rect x="28" y="106" width="154" height="22" rx="3"/>
+              <rect x="28" y="132" width="154" height="22" rx="3"/><rect x="28" y="158" width="154" height="22" rx="3"/>
+              <rect x="28" y="184" width="154" height="22" rx="3"/><rect x="28" y="210" width="154" height="22" rx="3"/>
+              <rect x="28" y="236" width="154" height="22" rx="3"/><rect x="28" y="262" width="154" height="18" rx="3"/>
+              <rect x="232" y="80" width="154" height="22" rx="3"/><rect x="232" y="106" width="154" height="22" rx="3"/>
+              <rect x="232" y="132" width="154" height="22" rx="3"/>
+              <rect x="232" y="158" width="154" height="22" rx="3" fill="rgba(251,191,36,.30)" stroke="#fbbf24"/>
+              <rect x="232" y="184" width="154" height="22" rx="3"/><rect x="232" y="210" width="154" height="22" rx="3"/>
+              <rect x="232" y="236" width="154" height="22" rx="3"/><rect x="232" y="262" width="154" height="18" rx="3"/>
+            </g>
+            <text x="394" y="173" font-size="9.5" fill="#fbbf24">目标垛</text>
+            <!-- 行走路径 -->
+            <path d="M40,34 H207 V169" stroke="#38bdf8" stroke-width="2" stroke-dasharray="6 4" fill="none" marker-end="url(#arr)"/>
+            <!-- 机器狗站位 -->
+            <circle cx="207" cy="169" r="7" fill="#2dd4bf"/>
+            <text x="207" y="155" text-anchor="middle" font-size="9.5" fill="#2dd4bf">🐕 垛前站位</text>
+            <path d="M214,169 H230" stroke="#f87171" stroke-width="1.6" marker-end="url(#arrRed)"/>
+            <text x="222" y="190" text-anchor="middle" font-size="9" fill="#f87171">面向垛位扫码</text>
+            <!-- 标注 -->
+            <text x="105" y="296" text-anchor="middle" font-size="9.5" fill="#7288b3">垛位本体禁行（∞）</text>
+            <text x="309" y="296" text-anchor="middle" font-size="9.5" fill="#7288b3">服务带 1.35（谨慎通行）</text>
+          </svg>
+        </div>
+      </div>
+      <table class="tb">
+        <tr><th style="width:170px;">通行规则</th><th>说明</th></tr>
+        <tr><td class="c-teal">长向机动</td><td>沿 4 条 2m 横向廊道横贯厂房全长，是机器狗的“高速公路”。</td></tr>
+        <tr><td class="c-teal">入跨深入</td><td>转入目标库位旁的<b>库位间空道</b>（相邻库位分界）深入跨内，直达各垛位正前方。</td></tr>
+        <tr><td class="c-teal">站位扫码</td><td>最终站位 = 目标垛所在垛层行 × 库位间空道列；<b>不进入垛位本体</b>，转身面向垛位中心扫码。</td></tr>
+        <tr><td class="c-teal">不穿跨 / 不穿垛</td><td>天车小车、机器狗、货物均不跨跨作业；路径不穿垛、不穿墙。</td></tr>
+        <tr><td class="c-teal">堵死重试</td><td>周边库位被占用/锁定导致无可通行间隙时，原地等待、下一拍重试，任务自动重排队。</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ==================== ⑥ 电量充电 ==================== -->
+  <section id="sec-power">
+    <div class="sec-head" style="border-color: var(--orange);">
+      <span class="no">06</span><span class="ico">🔋</span>
+      <h2>电量与充电管理</h2>
+      <span class="sub">续航模型 · 五档阈值 · 充电桩布局</span>
+    </div>
+    <div class="sec-body">
+      <div class="batt">
+        <div class="batt-track" id="battTrack">
+          <div class="batt-fill" id="battFill"></div>
+          <div class="batt-pin" style="left:12%;"><span class="c-red">12% 临界告警</span><i style="background:var(--red);"></i></div>
+          <div class="batt-pin" style="left:25%;"><span class="c-orange">25% 返航充电</span><i style="background:var(--orange);"></i></div>
+          <div class="batt-pin" style="left:85%;"><span class="c-teal">85% 充电可被打断</span><i style="background:var(--teal);"></i></div>
+          <div class="batt-pin" style="left:98%;"><span class="c-green">98% 满电恢复</span><i style="background:var(--green);"></i></div>
+        </div>
+        <div class="batt-scale"><span>0%</span><span id="battNow">演示电量 72%</span><span>100%</span></div>
+        <div class="batt-legend">
+          <span><i style="background:rgba(248,113,113,.5);"></i>0–12% 临界区</span>
+          <span><i style="background:rgba(251,146,60,.5);"></i>12–25% 低电区（完工即返航）</span>
+          <span><i style="background:rgba(56,189,248,.4);"></i>25–85% 正常作业区</span>
+          <span><i style="background:rgba(45,212,191,.5);"></i>85–98% 充电后段（可打断接单）</span>
+          <span><i style="background:rgba(52,211,153,.55);"></i>≥98% 满电恢复待命</span>
+        </div>
+      </div>
+      <div class="cols2">
+        <table class="tb">
+          <tr><th>电量模型</th><th style="width:200px;">取值</th></tr>
+          <tr><td>满电续航（额定速度连续作业）</td><td class="mono c-cyan">3 小时</td></tr>
+          <tr><td>行进电耗 drainPerM = 100 ÷ (续航h × 3600 × 速度)</td><td class="mono c-cyan">≈ 0.00185 %/m（1% 电 ≈ 540m）</td></tr>
+          <tr><td>扫码 / 待命耗电</td><td class="mono c-cyan">仅行进耗电，扫码不耗</td></tr>
+          <tr><td>充电速率 chargePerS = 100 ÷ (充满min × 60)</td><td class="mono c-cyan">≈ 0.0139 %/s（0→100% 约 120min）</td></tr>
+          <tr><td>班次开始电量</td><td class="mono c-cyan">随机 88–98%（≥打断阈值，可立即接单）</td></tr>
+        </table>
+        <table class="tb">
+          <tr><th>充电策略</th><th>说明</th></tr>
+          <tr><td class="c-amber">低电返航</td><td>IDLE 中电量 &lt; 25% 自主返航；作业中跌破 25% 则完工后返航，跌破 12% 触发临界告警日志。</td></tr>
+          <tr><td class="c-amber">满电恢复</td><td>充到 98% 转 IDLE 恢复待命。</td></tr>
+          <tr><td class="c-amber">打断接单</td><td>CHARGING 且 ≥85% 可被派单打断（留痕打断时刻电量），提升机队响应。</td></tr>
+          <tr><td class="c-amber">派单余量</td><td>调度派单预留 任务全程 + 返桩路程 电耗之外再加 12% 安全余量。</td></tr>
+          <tr><td class="c-amber">充电桩</td><td>集中在 A 跨北端厂房外（栅格列 3/5/7，「库房参数设计」页可调），1–3 个循环复用；每只狗按桩数取模绑定固定桩。</td></tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== ⑦ 异常兜底 ==================== -->
+  <section id="sec-except">
+    <div class="sec-head" style="border-color: var(--red);">
+      <span class="no">07</span><span class="ico">⚡</span>
+      <h2>异常与兜底设计</h2>
+      <span class="sub">异常注入概率均可在「调度参数 · 异常注入」页调整（0 = 关闭）</span>
+    </div>
+    <div class="sec-body">
+      <table class="tb">
+        <tr><th style="width:180px;">异常场景</th><th style="width:130px;">概率 / 参数</th><th>处置策略</th><th style="width:190px;">留痕与影响</th></tr>
+        <tr>
+          <td class="c-red">扫码失败（码面污损 / 反光）</td>
+          <td class="mono">scanFailPct 4%</td>
+          <td>原地重扫，最多 <b>maxScanRetries = 2</b> 次；仍失败 → <b>人工介入核验放行</b>，不阻断流程。</td>
+          <td>异常计数 + 日志留痕；任务标 anomaly；该捆耗时拉长。</td>
+        </tr>
+        <tr>
+          <td class="c-red">运单与实货差异</td>
+          <td class="mono">manifestMismatchPct 5%</td>
+          <td>以机器狗现场扫码数据为准修正（数据融合优先级：现场扫码 &gt; 门卫录入 &gt; 运单）。</td>
+          <td>修正留痕；库存按实物入账。</td>
+        </tr>
+        <tr>
+          <td class="c-red">出场复验异常</td>
+          <td class="mono">verifyIssuePct 3%</td>
+          <td>人工复核后放行。</td>
+          <td>复验环节延时，货车离场推迟。</td>
+        </tr>
+        <tr>
+          <td class="c-orange">扫描范围外任务</td>
+          <td class="mono">监测跨 × 号区配置</td>
+          <td>监测跨内、扫描号区之外 → <b>转人工核对</b>；未监测跨（或三跨全关）→ <b>免检直通</b>，直接产生与扫码完成相同效果。</td>
+          <td>不派狗、不占机队；时效页按“人工核对 / 免检”分别标记，延时≈0。</td>
+        </tr>
+        <tr>
+          <td class="c-orange">路径阻断</td>
+          <td class="mono">动态（垛位占用）</td>
+          <td>派单时跳过不可达狗；执行中寻路失败 → 任务重排队；返航被堵 → 原地等待逐拍重试。</td>
+          <td>系统日志告警；间隙释放后自动恢复。</td>
+        </tr>
+        <tr>
+          <td class="c-orange">倒垛无落点</td>
+          <td class="mono">restackWaitMax 1800s</td>
+          <td>目标捆被压且无倒垛落点时最长等待 1800 仿真秒，超时换捆重配，防库位锁死。</td>
+          <td>出库订单履约延后；任务日志留痕。</td>
+        </tr>
+        <tr>
+          <td class="c-orange">库满暂缓</td>
+          <td class="mono">动态（容量）</td>
+          <td>入库吊暂无落点 → 转补配队列（inDebt），容量释放后自动续配，不丢吊。</td>
+          <td>排产日志注明暂缓吊数。</td>
+        </tr>
+        <tr>
+          <td class="c-orange">队列失控防护</td>
+          <td class="mono">上限 48 / 16</td>
+          <td>待处理任务上限 48、在办出库订单上限 16，到顶暂停新任务下发。</td>
+          <td>防内存与节奏失控。</td>
+        </tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ==================== ⑧ 任务体系 ==================== -->
+  <section id="sec-task">
+    <div class="sec-head" style="border-color: var(--violet);">
+      <span class="no">08</span><span class="ico">🧩</span>
+      <h2>任务体系与原子动作</h2>
+      <span class="sub">任务类型 × 优先级抢占 × 原子动作拆解（对齐《软件设计方案》机器狗任务规划管理系统）</span>
+    </div>
+    <div class="sec-body">
+      <table class="tb">
+        <tr><th>任务类型</th><th style="width:150px;">触发方式</th><th style="width:70px;">优先级</th><th>说明</th><th style="width:110px;">沙盘实现</th></tr>
+        <tr><td class="c-cyan">出库盘库</td><td>事件（提货单录入）</td><td><span class="pri p0">P0</span></td><td>提前到达目标垛位，确认库存与压货情况。</td><td><span class="impl n">规划中</span></td></tr>
+        <tr><td class="c-cyan">出库复验（核销）</td><td>事件（吊运完成）</td><td><span class="pri p0">P0</span></td><td>扫描垛位确认出库数量 = 原量 − 现量。</td><td><span class="impl y">已实现</span></td></tr>
+        <tr><td class="c-cyan">紧急召回</td><td>手动</td><td><span class="pri p0">P0</span></td><td>管理员远程召回机器狗。</td><td><span class="impl n">规划中</span></td></tr>
+        <tr><td class="c-teal">入库扫描</td><td>事件（货车到达）</td><td><span class="pri p1">P1</span></td><td>前往货车尾部，扫描断面/内壁识别钢材。</td><td><span class="impl n">规划中</span></td></tr>
+        <tr><td class="c-teal">入库复验（入账）</td><td>事件（吊运完成）</td><td><span class="pri p1">P1</span></td><td>扫描目标垛位，数量变化 = 入库数量。</td><td><span class="impl y">已实现</span></td></tr>
+        <tr><td class="c-teal">倒库扫描</td><td>事件（倒库触发）</td><td><span class="pri p1">P1</span></td><td>源/目标双点确认移走与归位数量。</td><td><span class="impl y">已实现</span></td></tr>
+        <tr><td class="c-amber">充电任务</td><td>电量触发</td><td><span class="pri p2">P2</span></td><td>低于阈值自动返桩；电量 &lt;20% 升级为 P1。</td><td><span class="impl y">已实现</span></td></tr>
+        <tr><td class="c-dim">定时巡检</td><td>周期触发</td><td><span class="pri p3">P3</span></td><td>按预设路线逐垛位扫描更新库存。</td><td><span class="impl n">规划中</span></td></tr>
+        <tr><td class="c-dim">指定点巡检</td><td>手动触发</td><td><span class="pri p3">P3</span></td><td>管理人员指定垛位前往扫描。</td><td><span class="impl n">规划中</span></td></tr>
+      </table>
+      <div class="note">
+        <b>优先级抢占：</b>P0 可抢占执行中的 P1/P2/P3，同级 FIFO；P1 可抢占 P2/P3；P2 仅可抢占 P3；P3 巡检被插入时记录已巡位置、恢复后继续。
+        沙盘中出库核销（P0）与入库/倒垛（P1）经同一 FCFS + 就近队列调度，抢占规则为设计目标、随巡检类任务一并落地。
+      </div>
+      <div class="cols2">
+        <div>
+          <table class="tb">
+            <tr><th>原子动作</th><th>参数</th><th style="width:90px;">预计耗时</th></tr>
+            <tr><td class="mono c-cyan">Navigate</td><td>目标坐标、避障模式</td><td class="mono">按距离</td></tr>
+            <tr><td class="mono c-cyan">Stand</td><td>高度、俯仰角</td><td class="mono">3–5s</td></tr>
+            <tr><td class="mono c-cyan">Scan</td><td>断面/内壁/端面模式</td><td class="mono">10–30s</td></tr>
+            <tr><td class="mono c-cyan">Recognize</td><td>识别模式、ROI</td><td class="mono">3–5s</td></tr>
+            <tr><td class="mono c-cyan">Capture</td><td>相机、分辨率</td><td class="mono">1–2s</td></tr>
+            <tr><td class="mono c-cyan">Wait</td><td>时长 / 信号</td><td class="mono">可变</td></tr>
+            <tr><td class="mono c-cyan">Charge</td><td>充电站 ID</td><td class="mono">30–60s</td></tr>
+            <tr><td class="mono c-cyan">Announce</td><td>播报文本</td><td class="mono">按文本</td></tr>
+          </table>
+        </div>
+        <div>
+          <div class="tree"><span class="tk">Task: 入库复验（仿真实现 · 吊粒度）</span>
+├── Navigate  <span class="tc">→ 库位间空道 · 目标垛前站位（A* 寻路）</span>
+├── Stand     <span class="tc">→ 转身面向垛位（角容差 0.06rad，≤2s）</span>
+├── Scan      <span class="tc">→ 二维码扫描（60s，失败重扫 ≤2 次）</span>
+├── Recognize <span class="tc">→ 捆标签 ↔ 库位/垛 比对绑定</span>
+├── Report    <span class="tc">→ 回传 WMS（0.6s）→ 待核验捆转在库、写回数据库</span>
+└── Charge?   <span class="tc">→ 电量 &lt;25% 时自主返航充电</span></div>
+          <div class="tree"><span class="tk">Task: 出库盘库（设计目标 · 模板 TPL_OUT_CHECK）</span>
+├── Navigate  <span class="tc">→ 垛位前方停靠点</span>
+├── Stand     <span class="tc">→ 盘库姿态（高度 H_scan，俯仰 0°）</span>
+├── Scan      <span class="tc">→ 端面模式逐层扫描</span>
+├── Recognize <span class="tc">→ 逐层识别钢材二维码</span>
+├── Report    <span class="tc">→ 垛位实存 vs 系统库存比对回传</span>
+└── Announce  <span class="tc">→ 播报盘库结果（"S-A-03-12，Φ170×8根，确认完成"）</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== ⑨ 时效评估 ==================== -->
+  <section id="sec-kpi">
+    <div class="sec-head" style="border-color: var(--cyan);">
+      <span class="no">09</span><span class="ico">⏱</span>
+      <h2>时效链与扫描能力评估</h2>
+      <span class="sub">全时间链埋点 · 扫码延时口径 · 满足 / 紧张 / 不满足 三档判定</span>
+    </div>
+    <div class="sec-body">
+      <p class="lead">每捆扫码任务留下 <b>5 个时刻埋点</b>（「扫描时效记录」页按车分组 / 捆级明细查看，CSV 导出）：</p>
+      <div class="tl">
+        <div class="tlnode"><h5>① 任务下发</h5><span class="tt">t.created</span><p>WMS 创建入库/出库/倒垛确认任务（吊粒度）。</p></div>
+        <div class="tlarr">→<span>等待吊运</span></div>
+        <div class="tlnode"><h5>② 放好 / 吊走</h5><span class="tt">materialReady / liftedAt</span><p>入库：天车落料就位；出库：物料吊离垛位（延时统计起点）。</p></div>
+        <div class="tlarr">→<span>排队+路程</span></div>
+        <div class="tlnode"><h5>③ 开始扫码</h5><span class="tt">scanStartAt</span><p>机器狗抵达垛前站位、转身后首次开扫（重扫/转场不清零）。</p></div>
+        <div class="tlarr">→<span>60s+重扫</span></div>
+        <div class="tlnode"><h5>④ 扫码完成</h5><span class="tt">scanDoneAt</span><p>最终成功时刻定格（倒垛 = 目标垛扫毕）。</p></div>
+        <div class="tlarr">→<span>0.6s 回传</span></div>
+        <div class="tlnode"><h5>⑤ 任务完成</h5><span class="tt">t.ended</span><p>回传 WMS，入账/核销/留痕，任务闭环。</p></div>
+      </div>
+      <div class="formula">扫码延时 = scanDoneAt − 放好/吊走时刻<span class="cm">（每捆一值、按车平均；上限 delayLimitSec = 300s）</span></div>
+      <table class="tb">
+        <tr><th>能力评估指标</th><th style="width:150px;">口径</th><th style="width:230px;">判定阈值（可调）</th></tr>
+        <tr><td class="c-cyan">需求 / 能力利用率 ρ</td><td>每小时扫码需求 ÷ 机队小时能力（含充电损失）</td><td class="mono">≥70% 紧张 · ≥90% 不满足（冷启动兜底）</td></tr>
+        <tr><td class="c-cyan">超时占比</td><td>扫码延时 &gt; 300s 的捆占比</td><td class="mono">&gt;5% 判不满足 · ≤5% 内可判紧张</td></tr>
+        <tr><td class="c-cyan">平均忙碌占比</td><td>busyTime ÷ 在场时长（六状态计忙）</td><td class="mono">≥85% 升紧张</td></tr>
+        <tr><td class="c-cyan">每捆耗电</td><td>平均扫码路程 × drainPerM</td><td class="mono">用于续航折算与能力修正</td></tr>
+      </table>
+      <div class="note">
+        评估结论（✅ 满足 / ⚠️ 紧张 / ❌ 不满足）显示在沙盘首页「扫描能力评估」卡与「仿真场次」效率评估中，并给出整改建议
+        （加狗 / 扩监测范围 / 调充电桩等）；本页 ⑨ 与「扫描时效记录」「仿真场次记录」两页数据同源。
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== ⑩ 参数总览 ==================== -->
+  <section id="sec-param">
+    <div class="sec-head" style="border-color: var(--teal);">
+      <span class="no">10</span><span class="ico">⚙</span>
+      <h2>机器狗参数总览</h2>
+      <span class="sub">全部参数在「调度参数」页在线调整，沙盘每 5 秒自动同步、实时生效</span>
+    </div>
+    <div class="sec-body">
+      <table class="tb">
+        <tr><th style="width:170px;">参数</th><th style="width:110px;">默认值</th><th style="width:110px;">范围</th><th>说明</th></tr>
+        <tr><td>机器狗数量</td><td class="mono c-cyan">3 台</td><td class="mono">1–6</td><td>D-01 起编号；增减机队时在途扫码任务自动重新排队。</td></tr>
+        <tr><td>充电桩数量 / 位置</td><td class="mono c-cyan">1 个 · A 跨北端</td><td class="mono">1–3</td><td>栅格列 3/5/7（「库房参数设计」页调列位）；狗按桩数取模绑定。</td></tr>
+        <tr><td>监测跨开关</td><td class="mono c-cyan">A+B+C 全监测</td><td class="mono">开关</td><td>未监测跨不作业、免检直通；同时约束货车停靠跨与出入库范围。</td></tr>
+        <tr><td>跨内号区范围</td><td class="mono c-cyan">1–33（整跨）</td><td class="mono">1–33</td><td>逐跨设定扫描列区间（起始&gt;截止自动交换）；区间内外的同跨库位转人工核对。</td></tr>
+        <tr><td>行进速度</td><td class="mono c-cyan">5.0 m/s</td><td class="mono">可调</td><td>机器狗不载物；影响路程耗时与单位时间电耗。</td></tr>
+        <tr><td>接单确认 / 路径规划</td><td class="mono c-cyan">0.5s / 0.8s</td><td class="mono">可调</td><td>ASSIGN / PLAN 两状态耗时。</td></tr>
+        <tr><td>扫码核验耗时</td><td class="mono c-cyan">60s</td><td class="mono">可调</td><td>二维码扫描 + 信息比对；扫码能力评估的核心输入。</td></tr>
+        <tr><td>状态回传耗时</td><td class="mono c-cyan">0.6s</td><td class="mono">可调</td><td>REPORT 状态耗时。</td></tr>
+        <tr><td>满电续航</td><td class="mono c-cyan">3 h</td><td class="mono">可调</td><td>额定速度连续作业时长；推导 drainPerM。</td></tr>
+        <tr><td>充满电耗时</td><td class="mono c-cyan">120 min</td><td class="mono">可调</td><td>分钟粒度；推导 chargePerS；设 0 视为瞬时满电。</td></tr>
+        <tr><td>返航 / 满电阈值</td><td class="mono c-cyan">25% / 98%</td><td class="mono">可调</td><td>低于返航阈值自主回桩；充到满电阈值恢复待命。</td></tr>
+        <tr><td>充电打断电量</td><td class="mono c-cyan">85%</td><td class="mono">可调</td><td>CHARGING 中达到该电量可被派单打断。</td></tr>
+        <tr><td>临界告警 / 安全余量</td><td class="mono c-cyan">12% / 12%</td><td class="mono">可调</td><td>临界告警日志线；派单电量预估之外的安全余量。</td></tr>
+        <tr><td>扫码失败率 / 重扫上限</td><td class="mono c-cyan">4% / 2 次</td><td class="mono">0=关闭</td><td>异常注入；超限转人工介入核验放行。</td></tr>
+        <tr><td>扫码延时上限 / 超时占比</td><td class="mono c-cyan">300s / 5%</td><td class="mono">可调</td><td>能力评估阈值（assess 段，与沙盘首页同源）。</td></tr>
+      </table>
+      <div class="note" style="margin-top:12px;">
+        <b>相关页面：</b><a href="/params" target="_blank" style="color:var(--cyan);">⚙ 调度参数</a>（在线调整）·
+        <a href="/whcfg" target="_blank" style="color:var(--cyan);">🏗 库房参数</a>（充电桩列位 / 垛容）·
+        <a href="/scans" target="_blank" style="color:var(--cyan);">⏱ 扫描时效</a>（延时明细）·
+        <a href="/runs" target="_blank" style="color:var(--cyan);">📊 仿真场次</a>（效率评估留档）·
+        <a href="/" target="_blank" style="color:var(--cyan);">🗺 仿真沙盘</a> / <a href="/3d" target="_blank" style="color:var(--cyan);">3D 沙盘</a>（🐕 机器狗视角实时观察）
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    本页内容与仿真实现同源：状态机 / 调度 / 电量模型对应 <span class="mono">shared/sandbox-core.mjs</span>（Robot 类 · scheduler() · CFG.robot），<br>
+    任务体系对齐《软件设计方案-库管调度+任务规划+数字孪生》第二部分「机器狗任务规划管理系统」v1.1。
+  </div>
+</div>
+</main>
+
+<script>
+'use strict';
+/* ---- 吸顶目录：滚动高亮 ---- */
+const tabLinks = [...document.querySelectorAll('#tabs a')];
+const secs = tabLinks.map(a => document.querySelector(a.getAttribute('href')));
+function spy() {
+  let cur = 0;
+  for (let i = 0; i < secs.length; i++) {
+    if (secs[i].getBoundingClientRect().top <= 90) cur = i;
+  }
+  tabLinks.forEach((a, i) => a.classList.toggle('on', i === cur));
+}
+document.querySelector('main').addEventListener('scroll', spy, { passive: true });
+window.addEventListener('scroll', spy, { passive: true });
+spy();
+tabLinks.forEach(a => a.addEventListener('click', e => {
+  e.preventDefault();
+  document.querySelector(a.getAttribute('href')).scrollIntoView({ behavior: 'smooth', block: 'start' });
+}));
+
+/* ---- 状态机：节点点击详情 ---- */
+const FSM_INFO = {
+  IDLE: { name: 'IDLE · 待命', sub: 'state = IDLE · 不计忙碌', body: '机队空闲待命，等待调度器派单。电量低于 25% 时自主进入返航逻辑；若已停在充电桩格上则直接转 CHARGING。',
+    trans: [['收到派单', 'ASSIGN'], ['电量 < 25%', 'TO_CHARGER / CHARGING']] },
+  ASSIGN: { name: 'ASSIGN · 接单确认', sub: '0.5s · 计入忙碌', body: '确认任务并求解“当前位置 → 目标垛前库位间空道站位”的 A* 路径；无解（被垛位围住）时任务重排队、机器狗回 IDLE。',
+    trans: [['路径求解完成', 'PLAN'], ['无可通行路径', 'IDLE（任务重排队）']] },
+  PLAN: { name: 'PLAN · 路径规划', sub: '0.8s · 计入忙碌', body: '路径规划确认，任务阶段推进为“出发”，日志记录全程里程。',
+    trans: [['计时到 0.8s', 'NAV']] },
+  NAV: { name: 'NAV · 导航行走', sub: '按路程 ÷ 5m/s · 计入忙碌', body: '沿细分导航栅格行走：横向廊道长向机动 → 库位间空道入跨 → 垛位正前方站位。行进耗电约 0.00185%/m，转向平滑插值。',
+    trans: [['抵达站位', 'TURN']] },
+  TURN: { name: 'TURN · 转身对垛', sub: '≤ 2s · 计入忙碌', body: '在库位间空道内原地转身，面向目标垛中心（角容差 0.06rad，超时 2s 强制就位）。机器狗不进入垛位本体。',
+    trans: [['面向垛位', 'SCAN']] },
+  SCAN: { name: 'SCAN · 扫码核验', sub: '60s · 计入忙碌', body: '二维码扫描 + 信息比对。失败率 4%：原地重扫最多 2 次；连续失败转人工介入核验放行（异常留痕，不阻断）。倒垛确认源垛扫毕后自动规划转场路径，回 PLAN 前往目标垛扫第二点。',
+    trans: [['扫码成功', 'REPORT'], ['扫码失败（≤2 次）', 'SCAN 自环重扫'], ['连续失败', '人工介入 → REPORT'], ['倒垛源垛扫毕', 'PLAN（转场目标垛）']] },
+  REPORT: { name: 'REPORT · 状态回传', sub: '0.6s · 计入忙碌', body: '回传 WMS：入库 → 待核验捆转在库并写回数据库；出库 → 核销确认（与装车完成双条件闭环）；倒垛 → 双点核验留痕。完工后检查电量。',
+    trans: [['电量 ≥ 25%', 'IDLE'], ['电量 < 25%', 'TO_CHARGER']] },
+  TO_CHARGER: { name: 'TO_CHARGER · 返航充电', sub: '按路程 · 不计忙碌', body: '寻路返回绑定的充电桩（A 跨北端，按桩数取模绑定）。周边被垛位堵死时原地等待、逐拍重试。',
+    trans: [['抵达充电桩', 'CHARGING']] },
+  CHARGING: { name: 'CHARGING · 充电中', sub: '0.0139%/s · 不计忙碌', body: '按 chargePerS 速率充电：≥98% 满电恢复待命；≥85% 时可被调度器派单打断（留痕中断时刻电量）。',
+    trans: [['电量 ≥ 98%', 'IDLE'], ['电量 ≥ 85% 且有任务', 'ASSIGN（打断接单）']] },
+  MANUAL: { name: '人工介入 · 异常旁路', sub: '非机器狗状态 · 流程旁路', body: '连续重扫失败，或任务位于扫描范围外（监测跨内号区外 → 人工核对；未监测跨 → 免检直通）时，由人工核验放行，直接产生与扫码完成相同的效果，异常留痕不阻断流程。',
+    trans: [['核验放行', '任务闭环']] },
+};
+const fsmDetail = document.getElementById('fsmDetail');
+function showState(key) {
+  const info = FSM_INFO[key];
+  document.querySelectorAll('.fsm-node').forEach(n => n.classList.toggle('on', n.dataset.st === key));
+  fsmDetail.innerHTML =
+    `<h3>${info.name}</h3><div class="fsub">${info.sub}</div><p>${info.body}</p>` +
+    `<div class="trans">${info.trans.map(t => `<div>→ <b>${t[1]}</b>　${t[0]}</div>`).join('')}</div>`;
+}
+document.querySelectorAll('.fsm-node').forEach(n => n.addEventListener('click', () => showState(n.dataset.st)));
+showState('SCAN');
+
+/* ---- 电量演示：放电 → 返航 → 充电 循环 ---- */
+const fill = document.getElementById('battFill');
+const now = document.getElementById('battNow');
+let demo = 100, phase = -1; // phase<0 放电，>0 充电
+setInterval(() => {
+  if (phase < 0) {
+    demo -= 0.35;
+    if (demo <= 25) { demo = 25; phase = 1; }
+  } else {
+    demo += 0.5;
+    if (demo >= 98) { demo = 98; phase = -1; }
+  }
+  fill.style.width = demo + '%';
+  now.textContent = `演示电量 ${demo.toFixed(0)}%（${phase < 0 ? '作业放电 · 至 25% 返航' : '充电中 · 至 98% 恢复'}）`;
+}, 120);
+</script>
+</body>
+</html>

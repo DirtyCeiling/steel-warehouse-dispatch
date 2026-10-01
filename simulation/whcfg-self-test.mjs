@@ -71,7 +71,9 @@ await fetch(`${API}/api/params`, {
 
 console.log('== 页面（VM 无头渲染） ==');
 const { readFileSync } = await import('node:fs');
-const html = readFileSync(new URL('./库房参数设计.html', import.meta.url), 'utf8');
+const { buildBrowserBundle } = await import('../../StackAlloc/browser.js');   // 垛位推荐算法包（/*@@stack-alloc@@*/ 占位注入，与 serve.mjs 同口径）
+const html = readFileSync(new URL('./库房参数设计.html', import.meta.url), 'utf8')
+  .replace(/\/\*@@stack-alloc@@\*\//g, () => buildBrowserBundle());
 const blocks = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
 const code = blocks.find(b => b.includes('DB_API'));   // 主脚本（首个为 embed 模式片段）
 
@@ -207,11 +209,11 @@ chgSlider.oninput({ target: chgSlider });
 console.log('== 垛体预览（2D/3D） ==');
 // 料架几何与三维沙盘 buildRack 同口径（len=9m 普通垛格）
 const rd9 = sandbox.__whcfgDbg.rackDimsOf(9);
-check('料架垛格 8.333×3.75m（库位列宽 × 跨深/8）', rd9.cw > 8.33 && rd9.cw < 8.34 && rd9.cd === 3.75,
+check('料架垛格 8.333×3.0m（库位列宽 × 跨深/10）', rd9.cw > 8.33 && rd9.cw < 8.34 && rd9.cd === 3,
   `${rd9.cw.toFixed(3)}×${rd9.cd}`);
-check('立柱四角 ≈±3.717/±1.525（沙盘 buildRack 口径）', Math.abs(rd9.px - 3.7167) < 0.001 && rd9.pz === 1.525, `${rd9.px.toFixed(3)}/${rd9.pz}`);
-check('垫梁 0.20 高 × 2.55 深、位于捆端下方 X≈±3.617',
-  Math.abs(rd9.beamH - 0.2) < 1e-6 && rd9.beamD === 2.55 && Math.abs(rd9.rx - 3.6167) < 0.001, `rx=${rd9.rx.toFixed(3)} h=${rd9.beamH.toFixed(3)} d=${rd9.beamD}`);
+check('立柱四角 ≈±3.717/±1.15（沙盘 buildRack 口径）', Math.abs(rd9.px - 3.7167) < 0.001 && Math.abs(rd9.pz - 1.15) < 1e-9, `${rd9.px.toFixed(3)}/${rd9.pz}`);
+check('垫梁 0.20 高 × 1.8 深、位于捆端下方 X≈±3.617',
+  Math.abs(rd9.beamH - 0.2) < 1e-6 && Math.abs(rd9.beamD - 1.8) < 1e-9 && Math.abs(rd9.rx - 3.6167) < 0.001, `rx=${rd9.rx.toFixed(3)} h=${rd9.beamH.toFixed(3)} d=${rd9.beamD}`);
 const pileCv = byId.get('pileCv');
 check('二维预览画布已创建且完成绘制（DPR 尺寸已设置）', !!pileCv && pileCv.width === 900 && pileCv.height === 400,
   `${pileCv?.width}x${pileCv?.height}`);
@@ -287,8 +289,8 @@ check('重建回显新期初利用率', msgEl3 && /利用率 \d+(\.\d)?%/.test(m
 console.log('== 每库位垛数（全局统一值 + 逐库位覆盖） ==');
 r = await (await fetch(`${API}/api/params`)).json();
 const spsDef = r.schema.find(s => s.sec === 'warehouse').defs.find(d => d.key === 'stacksPerSlot');
-check('库房参数 schema 含每库位垛数（默认 8 垛 · 1~8）',
-  !!spsDef && spsDef.def === 8 && spsDef.min === 1 && spsDef.max === 8 && r.values.warehouse.stacksPerSlot === 8,
+check('库房参数 schema 含每库位垛数（默认 10 垛 · 1~10）',
+  !!spsDef && spsDef.def === 10 && spsDef.min === 1 && spsDef.max === 10 && r.values.warehouse.stacksPerSlot === 10,
   JSON.stringify(spsDef));
 const spsInputs = documentStub.querySelectorAll('[data-sec="warehouse"][data-key="stacksPerSlot"]');
 check('页面渲染每库位垛数滑杆（range+number）', spsInputs.length === 2, String(spsInputs.length));
@@ -302,12 +304,12 @@ rackInputOf(row11).oninput();
 check('覆盖 1-1=4 垛后保存按钮可用', btnSave.disabled === false, String(btnSave.disabled));
 await btnSave.onclick();
 let rk = await (await fetch(`${API}/api/slot-racks`)).json();
-check('保存后覆盖落库（1-1 -> 4 垛）', rk.racks['1-1'] === 4 && rk.global === 8, JSON.stringify(rk.racks));
+check('保存后覆盖落库（1-1 -> 4 垛）', rk.racks['1-1'] === 4 && rk.global === 10, JSON.stringify(rk.racks));
 let slotsNow = (await (await fetch(`${API}/api/slots`)).json()).slots;
 const s11now = slotsNow.find(s => s.code === '1-1');
 check('/api/slots 下发 racks=4（旧期初高位存货保留显示，不丢账）', s11now.racks === 4 && s11now.stacks.length >= 4,
   `racks=${s11now.racks} 行=${s11now.stacks.length}`);
-// 全局 8 -> 6：页面 KPI 即时联动，保存后 API 库容按逐库位垛数汇总
+// 全局 10 -> 6：页面 KPI 即时联动，保存后 API 库容按逐库位垛数汇总
 const spsSlider = spsInputs.find(e => e.type === 'range');
 spsSlider.value = '6';
 spsSlider.oninput({ target: spsSlider });
@@ -333,7 +335,7 @@ const restored = await (await fetch(`${API}/api/bundle-rules`)).json();
 check('恢复预置保存后全部规格 source=preset 且吨位回写', restored.rules.every(x => x.source === 'preset')
   && restored.rules.find(x => x.spec === '螺纹钢 Φ20').weight === 0.47, '');
 rk = await (await fetch(`${API}/api/slot-racks`)).json();
-check('恢复默认保存后清除全部垛数覆盖（跟随全局 8）', Object.keys(rk.racks).length === 0 && rk.global === 8, JSON.stringify(rk.racks));
+check('恢复默认保存后清除全部垛数覆盖（跟随全局 10）', Object.keys(rk.racks).length === 0 && rk.global === 10, JSON.stringify(rk.racks));
 
 try { rmSync(join(process.env.WAREHOUSE_DB, '..'), { recursive: true, force: true }); } catch { /* Windows 下服务进程仍持句柄，忽略 */ }
 console.log(failed === 0 ? '\n库房参数设计自检通过 ✓' : `\n${failed} 项断言失败 ✗`);

@@ -117,12 +117,10 @@ async function pump(realSeconds, fps = 30) {
 const CELL_L = 300 / 36;
 const cellCX = c => (c - 1.5) * CELL_L;
 const LANE_COLS = [7, 19, 31];
+// 与沙盘 laneAllJobsServable 同源：本车次全部吊连同车道须同处一台天车的可达侧（西 ≤219-6 / 东 ≥81+6）
 const servable = (lane, cols) => {
-  const tx = cellCX(lane);
-  return cols.every(c => {
-    const sx = cellCX(c);
-    return Math.max(tx, sx) <= 219 || Math.min(tx, sx) >= 81;
-  });
+  const xs = [cellCX(lane), ...cols.map(cellCX)];
+  return Math.max(...xs) <= 219 - 6 || Math.min(...xs) >= 81 + 6;
 };
 const laneCalls = [];
 const origPick = sandbox.pickLaneForBatch;
