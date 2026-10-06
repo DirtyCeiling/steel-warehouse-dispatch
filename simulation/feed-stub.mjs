@@ -2,9 +2,19 @@
 // 以 1× 源速映射——源时钟跟随沙盘仿真钟推进，事件"到点放行"，实现 /api/health 与 /api/events。
 // 其余 URL 一律 404 形状：沙盘对 /api/params、/api/slots 等按"服务不可达"走既有兜底。
 // 用法：sandbox.fetch = makeFeedFetch(() => sandbox.__dbg.simTime)；或 opts.events 传固定剧本。
-import { createGenerator, advance, reschedule } from '../../LogisticsData_Sim/server/generator.js';
+import { existsSync } from 'node:fs';
+
+// LogisticsData_Sim 是可选外部项目（与本仓库同级放置，见 README）：不在本机时导出可用性标志，
+// 引用方据此整体 SKIP（而非模块解析崩溃）——feed 模式相关自检/探针都依赖其真实生成器。
+export const logisticsGenAvailable =
+  existsSync(new URL('../../LogisticsData_Sim/server/generator.js', import.meta.url));
+const { createGenerator, advance, reschedule } = logisticsGenAvailable
+  ? await import('../../LogisticsData_Sim/server/generator.js')
+  : {};
 
 export function makeFeedFetch(getSimTime, opts = {}) {
+  if (!logisticsGenAvailable)
+    throw new Error('外部物流源项目 LogisticsData_Sim 不在本机（可选依赖）：feed 桩依赖其真实生成器，请将其与本项目同级放置后重跑');
   // quiet=true：不自排产（班次排到无穷远），仅 inject() 注入的事件存在 —— 供剧本式断言精确控制
   const gen = opts.quiet
     ? createGenerator({ params: opts.params, nextInAt: Infinity, nextOutAt: Infinity })

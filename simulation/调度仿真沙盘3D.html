@@ -210,9 +210,9 @@ function shadeHex(color, f = 0.42) {
   return `#${((1 << 24) | (r << 16) | (g2 << 8) | b).toString(16).slice(1)}`;
 }
 /*@@core-seg-44@@*/
-    z: s.merged ? (rowY(1) + rowY(5) + M.SPAN_W) / 2 : rowY(s.row) + M.SPAN_W / 2,
+    z: rowY(s.row) + M.SPAN_W / 2,   // 一跨 14~16 整宽合并位仅占本跨（与 buildMap 一致）
 /*@@core-seg-45@@*/
-    d: s.merged ? rowY(5) + M.SPAN_W - rowY(1) : M.SPAN_W,
+    d: M.SPAN_W,
 /*@@core-seg-46@@*/
     scene.background = makeSkyTex();
     scene.fog = new THREE.Fog(0xd0d4d9, 380, 950);
@@ -297,7 +297,7 @@ const INV_X = wx => wx + M.L / 2;          // 世界 -> 仿真米制（射线拾
 const INV_Y = wz => wz + MAP_BOT / 2;
 const slotGeo3 = s => ({
   x: cellCX(s.col),
-  z: rowY(s.merged ? s.goalR : s.row) + M.SPAN_W / 2,   // 合并位垛层按所属跨收拢（与 stackCenterY 一致，不跨跨）
+  z: rowY(s.row) + M.SPAN_W / 2,   // 整宽合并位同属本跨（s.row = 一跨行，不跨跨）
   w: M.CELL_L,
   d: M.SPAN_W,
 });
@@ -306,9 +306,9 @@ const slotGeo3 = s => ({
 const SLOT_GAP = 1.8;
 const STACK_W = M.CELL_L - SLOT_GAP;         // 6.53m：料架横向占地
 const BAR_MAX = STACK_W - 0.3;               // 捆示意长度上限 6.23m：捆端不越入空道（真实长度见库存三维特写）
-const stackCell3 = (s, i) => {   // 与库存三维视图相同的垛格划分：10 垛沿跨向纵深竖排
-  const g = slotGeo3(s), dEff = Math.min(g.d, 40);
-  return { x: g.x, z: g.z + (i - (STACKS_PER_SLOT - 1) / 2) * (dEff / STACKS_PER_SLOT), cw: g.w, cd: dEff / STACKS_PER_SLOT, dEff };
+const stackCell3 = (s, i) => {   // 与库存三维视图相同的垛格划分：物理垛数（1~10）沿跨向纵深竖排
+  const g = slotGeo3(s), dEff = Math.min(g.d, 40), n = s.stacks ? s.stacks.length : STACKS_PER_SLOT;
+  return { x: g.x, z: g.z + (i - (n - 1) / 2) * (dEff / n), cw: g.w, cd: dEff / n, dEff };
 };
 const zoneTint = zone => parseInt(ZONES[zone].tint.split(',').map(x => (+x).toString(16).padStart(2, '0')).join(''), 16);
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -529,7 +529,7 @@ function buildEnv() {
     const lb = makeLabel(s.code, ZONES[s.zone].label, 6.5);
     lb.position.set(WX(g.x), RACK_H + 1.6, WZ(g.z) - dEff / 2 - 1.4);
     envGroup.add(lb);
-    for (let i = 0; i < s.stacks.length; i++) {   // 每库位按生效垛数建料架（垛层划分仍固定 STACKS_PER_SLOT 层）
+    for (let i = 0; i < s.stacks.length; i++) {   // 每库位按物理垛数建料架（与 stackCell3 垛格划分一致）
       const cell = stackCell3(s, i);
       const px = STACK_W / 2 - .07, pz = cell.cd / 2 - .35;   // 立柱外缘贴料架边界：相邻两列柱间净距 = 1.8m 空道
       for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
@@ -1865,7 +1865,7 @@ cv3.addEventListener('click', e => {
   const hs = stackAtWorld(p, cell);
   showStackCard(st, hs ? hs.si : -1, e);
 });
-function stackAtWorld(p, cell) {   // 地面交点 -> 具体垛（垛层划分固定 STACKS_PER_SLOT 层，与 stackCell3 一致；未设货架层返回 si=-1）
+function stackAtWorld(p, cell) {   // 地面交点 -> 具体垛（垛格划分按该库位物理垛数，与 stackCell3 一致；未设货架层返回 si=-1）
   const t = tiles[cell.r][cell.c];
   if (t.type !== 'storage') return null;
   const st = storages[t.slotId];
@@ -1896,7 +1896,7 @@ function showStackCard(st, si, e) {   // 点击垛位：钉住的信息卡（垛
     st.stacks.forEach((kk, i) => { if (kk.count > 0) rows.push(`第${i + 1}垛 <b>${kk.spec.name}</b> ×${kk.count}`); });
     mat = `<div>${rows.join('；')}</div><div class="tt-dim">点击具体垛位查看该垛钢材明细</div>`;
   }
-  const size = st.merged ? '整跨合并 · 8.3m × 90m' : '8.3m × 30m';
+  const size = st.merged ? '一跨整宽合并 · 8.3m × 30m' : '8.3m × 30m';
   const acts = [];
   if (st.state !== 'locked' && nB > 0 && pickOutStack(st) >= 0)
     acts.push(`<button class="tt-btn" data-act="out" data-slot="${st.id}">⬇ 下发出库</button>`);

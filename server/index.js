@@ -8,6 +8,7 @@ import {
   syncBundlePositions, getBundlePositions, getSeedSlots,
   getAppData, seedAppData, createTask, updateTaskStatus, getSimParams, setSimParams, DB_PATH,
   getBundleRules, applyBundleRules, getSlotRacks, applySlotRacks, globalStacksPerSlot,
+  getSteelLedger, getSteelLedgerEntry, upsertSteelLedgerMeta, steelLedgerCsv,
 } from './database.js';
 import { PARAM_SCHEMA } from './params.js';
 import {
@@ -18,6 +19,7 @@ import {
 import {
   getFrontendSnapshot, bumpRev, appendEvents, listEvents, latestEventSeq,
   setTelemetry, createCommand, listCommands, finishCommand,
+  touchDrive, driveHolder, checkDriveAuth, releaseDrive, takeoverDrive,
 } from './frontend.js';
 
 const HOST = process.env.HOST || '127.0.0.1';
@@ -28,10 +30,23 @@ function json(res, code, data) {
   res.writeHead(code, {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET,PUT,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET,PUT,POST,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Sim-Drive',
+    'Access-Control-Max-Age': '600',
   });
   res.end(body);
+}
+
+/* ---- 驾驶租约（独占驾驶位仲裁）：沙盘写回/回推/认领须持租约，非沙盘（人工页/操作端）放行 ---- */
+function driveIdOf(req, url, body) {
+  return req.headers['x-sim-drive'] || url.searchParams.get('drive') || (body && body.driveId) || null;
+}
+/** 租约仲裁门：拒绝回 409 { error:'drive-lease-held', holder }；放行返回 true */
+function guardDrive(req, res, url, body) {
+  const r = checkDriveAuth(driveIdOf(req, url, body));
+  if (r.ok) return true;
+  json(res, 409, { error: 'drive-lease-held', holder: r.holder });
+  return false;
 }
 
 function readBody(req) {
@@ -73,12 +88,46 @@ export function startServer({ host = HOST, port = PORT } = {}) {
       }
       if (req.method === 'POST' && p === '/api/events') {
         const body = await readBody(req);
+        if (!guardDrive(req, res, url, body)) return;   // 沙盘事件回推须持驾驶租约（操作端读事件无身份，不受影响）
         return json(res, 200, { appended: appendEvents(db, body.events || []) });
       }
 
-      // —— P2 遥测（沙盘 1Hz 回推天车/机器狗实时状态；内存驻留，快照携带下发）——
+      // —— 驾驶租约释放（切观景/关页主动让位；query 传身份免预检）——
+      if (req.method === 'POST' && p === '/api/drive/release') {
+        const released = releaseDrive(driveIdOf(req, url, null));
+        return json(res, released ? 200 : 409, { ok: released });
+      }
+      // —— 驾驶租约心跳（暂停中的驾驶窗：不推遥测但保住租约，操作端会话数据不清空）——
+      if (req.method === 'POST' && p === '/api/drive/heartbeat') {
+        touchDrive(driveIdOf(req, url, null));
+        return json(res, 200, { ok: true });
+      }
+
+      // —— 驾驶租约查询/接管（点「驾驶·数据源」时：先查持有者，他窗持有时经人工确认后强取）——
+      if (req.method === 'GET' && p === '/api/drive/holder') {
+        const h = driveHolder();
+        return json(res, 200, { holder: h ? { id: h.holderId, label: h.holderLabel } : null });
+      }
+      if (req.method === 'POST' && p === '/api/drive/takeover') {
+        const body = await readBody(req);
+        const did = driveIdOf(req, url, body);
+        if (!did) return json(res, 400, { error: '缺少 drive 身份' });
+        takeoverDrive(did, (body && body.driveLabel) || '');
+        return json(res, 200, { ok: true });
+      }
+
+      // —— P2 遥测（沙盘 1Hz 回推天车/机器狗实时状态；内存驻留，快照携带下发；帧即租约心跳）——
       if (req.method === 'POST' && p === '/api/telemetry') {
         const body = await readBody(req);
+        const did = driveIdOf(req, url, body);
+        // 有主时无身份的帧（旧版沙盘页）直接拒绝，防止旧实例蹭心跳之外还覆写遥测
+        // 遥测是租约的「唯一注册/接管点」：无主时首个带身份帧接管；有主时仅持有者放行
+        // （其余写回端点仅判持有者，无主时不再顺带接管——防止非遥测写抢在遥测前占位）
+        if (!did && driveHolder()) return json(res, 409, { error: 'drive-lease-held', holder: driveHolder().holderLabel });   // 旧版沙盘页蹭心跳
+        // 无主/过期：本帧接管；有主且非持有者：409（checkDriveAuth 对已收紧为「非遥测写不接管」）
+        const h = driveHolder();
+        if (did && h && h.holderId !== did) return json(res, 409, { error: 'drive-lease-held', holder: h.holderLabel || h.holderId.slice(0, 8) });
+        if (did) touchDrive(did, body.driveLabel);
         setTelemetry(body, m => console.log(m));
         return json(res, 200, { ok: true });
       }
@@ -90,9 +139,18 @@ export function startServer({ host = HOST, port = PORT } = {}) {
         return cmd ? json(res, 200, cmd) : json(res, 400, { error: '缺少 kind' });
       }
       if (req.method === 'GET' && p === '/api/frontend/commands') {
+        const claim = url.searchParams.get('claim') === '1';
+        const did = driveIdOf(req, url, null);
+        // 认领是写行为：有身份须持租约（过期先接管）；无身份且有主时（旧版沙盘页）返回空列表——不得抢命令
+        if (claim) {
+          // 独占认领：仅当前持有者可拿命令（无身份/非持有者/无主下的先到者一律空列表——接管走遥测帧）
+          const h = driveHolder();
+          if (!did || !h || h.holderId !== did) return json(res, 200, { commands: [], driveLease: h ? { holder: h.holderLabel || h.holderId.slice(0, 8) } : null });
+          touchDrive(did);
+        }
         const r = listCommands(db, {
           status: url.searchParams.get('status') || 'pending',
-          claim: url.searchParams.get('claim') === '1',
+          claim,
           limit: Number(url.searchParams.get('limit')) || 10,
         });
         return json(res, 200, { commands: r });
@@ -100,6 +158,7 @@ export function startServer({ host = HOST, port = PORT } = {}) {
       const mCmd = p.match(/^\/api\/frontend\/commands\/(\d+)\/finish$/);
       if (mCmd && req.method === 'POST') {
         const body = await readBody(req);
+        if (!guardDrive(req, res, url, body)) return;   // 回执是写行为：非持有者迟到回执不落库
         const r = finishCommand(db, +mCmd[1], body || {});
         return r ? json(res, 200, r) : json(res, 404, { error: '命令不存在' });
       }
@@ -213,8 +272,16 @@ export function startServer({ host = HOST, port = PORT } = {}) {
         return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r);
       }
       if (mInbound && req.method === 'DELETE') {
+        // 取消登记不受驾驶租约仲裁：清「自己登记的死账」是清场行为，非持有者窗口（重置/关页）也必须能取消，
+        // 否则换驾驶位后旧窗口重置 → DELETE 被 409 → 台账幽灵车（P10 永远显示已不存在 World 的车）
+        const did = driveIdOf(req, url, null);
         const r = deleteVehicle(db, +mInbound[1]);
-        if (!r.error) bumpRev();
+        if (!r.error) {
+          bumpRev();
+          console.log(`[台账] 取消车辆 #${mInbound[1]}（来源 ${did ? '沙盘 ' + did.slice(0, 8) : '人工'}）`);
+        } else {
+          console.log(`[台账] 取消车辆 #${mInbound[1]} 失败：${r.error}（来源 ${did ? '沙盘 ' + did.slice(0, 8) : '人工'}）`);
+        }
         return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r);
       }
 
@@ -274,6 +341,7 @@ export function startServer({ host = HOST, port = PORT } = {}) {
       const mStack = p.match(/^\/api\/slots\/(\d+)\/stacks\/(\d+)$/);
       if (req.method === 'PUT' && mStack) {
         const body = await readBody(req);
+        if (!guardDrive(req, res, url, body)) return;   // 垛级库存写回须持驾驶租约（多实例防互踩的权威闸）
         const s = setStack(db, +mStack[1], +mStack[2], body);
         if (s) bumpRev();
         return s ? json(res, 200, s) : json(res, 404, { error: '垛位不存在' });
@@ -291,10 +359,53 @@ export function startServer({ host = HOST, port = PORT } = {}) {
       }
       if (req.method === 'POST' && p === '/api/positions') {
         const body = await readBody(req);
+        if (!guardDrive(req, res, url, body)) return;   // 捆级落位写回须持驾驶租约
         const r = syncBundlePositions(db, body || {});
         bumpRev();
         return json(res, 200, r);
       }
+
+      // —— 钢材台账（steel_ledger：一捆一行，与捆标签一一对应）——
+      // 字段 = Excel「钢材入库数据-近3个月」全 18 列 + 标签附加（供应商/PO号/材料号）；
+      // 落位写库自动建账/倒垛随迁/出库闭环（见 syncBundlePositions），此处为查询/导出/扫码补录。
+      const ledgerFilters = () => {
+        const q = url.searchParams, f = {};
+        for (const k of ['bundleId', 'heatNo', 'contractNo', 'plate', 'spec', 'grade', 'buyer', 'supplier', 'state', 'from', 'to']) {
+          const v = q.get(k); if (v) f[k] = v;
+        }
+        return f;
+      };
+      if (req.method === 'GET' && p === '/api/ledger') {
+        const f = ledgerFilters();
+        f.limit = Math.min(2000, Math.max(1, Number(url.searchParams.get('limit')) || 200));
+        f.offset = Math.max(0, Number(url.searchParams.get('offset')) || 0);
+        return json(res, 200, getSteelLedger(db, f));
+      }
+      // CSV 导出（UTF-8 BOM，Excel 直开；列序与「钢材入库数据-近3个月 需收集」模板一致）
+      if (req.method === 'GET' && p === '/api/ledger/export.csv') {
+        const f = ledgerFilters();
+        f.limit = Math.min(50000, Math.max(1, Number(url.searchParams.get('limit')) || 50000));
+        const { rows, total } = getSteelLedger(db, f);
+        res.writeHead(200, {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent('钢材出入库台账.csv')}`,
+          'Access-Control-Allow-Origin': '*',
+          'X-Total-Count': String(total),
+        });
+        return res.end('﻿' + steelLedgerCsv(rows));
+      }
+      // 扫码补录/修正标签元数据（真实场景对接捆标签二维码枪）：按捆号更新在库行，无则立未落位新行
+      if (req.method === 'POST' && p === '/api/ledger') {
+        const body = await readBody(req);
+        const r = upsertSteelLedgerMeta(db, body || {});
+        return r ? json(res, 200, r) : json(res, 400, { error: '缺少 bundleId' });
+      }
+      const mLedger = p.match(/^\/api\/ledger\/([^/]+)$/);
+      if (mLedger && req.method === 'GET') {
+        const r = getSteelLedgerEntry(db, decodeURIComponent(mLedger[1]));
+        return r ? json(res, 200, r) : json(res, 404, { error: '捆号无台账记录' });
+      }
+
       if (req.method === 'POST' && p === '/api/reset') {
         seed(db);
         bumpRev();

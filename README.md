@@ -10,10 +10,20 @@
 
 > **车辆数据来源（默认本地）**：沙盘**自己排产**生成进厂车（随车运单 6-10 吊）与提货订单，
 > 按「生产节奏」参数（每日进厂/出厂辆数，见「调度参数」页）均匀铺到全天，**无需任何外部程序**。
+> 进厂车生成即登记管理工待办（P10 核验 + 垛位推荐），**须确认规划（人工「入库规划」或确认超时自动下发）
+> 后才派车执行**——未确认前车次挂起、天车不动；服务离线或台账异常时自动放行兜底（沙盘自主运行不受阻）。
 > 如需接入外部物流源 [LogisticsData_Sim](../LogisticsData_Sim)（`npm start` 启动后打开 `http://localhost:5199/?feed=all`）：
 > 沙盘从同一条持久化事件流消费车辆事件——`?feed=all` **全量回放**（期初按数据库种子分布重建，
 > 同一标签页刷新自 sessionStorage 游标**断点续接**，不重复入库）；`?feed=live` 只跟最新事件（跳过历史）；
 > `?view=1` **只读观景**（不写回库存数据库、不落台账，多开对照安全）。
+> **顶栏「🛜 驾驶·数据源」按钮**（运行时切换，无需改 URL）：默认驾驶 = 本实例是数据源
+> （库存写回 / 台账回传 / 场次归档 / 事件·遥测回推 / 命令认领均由它执行）；
+> 点成「👁 观景」即停一切回推/写回/认领（多开对照安全，防旧实例互踩），再点申请切回驾驶；
+> `?view=1` 只是观景的初值。**独占驾驶（服务端租约仲裁）**：先到先得，一个沙盘窗口占住驾驶位后，
+> 其它窗口的写回/遥测/认领一律被服务端拒绝（409）。**点「驾驶」遇他窗持有时弹确认**：
+> 确定 = 强制接管（`/api/drive/takeover`，原窗口下次心跳被拒、自动转观景）；取消 = 本窗保持观景。
+> 持有者停心跳 10s 后他人可接管（后台标签被浏览器节流会自然让位给前台窗口）；关页/切观景主动释放立即让位。
+> 自检 `node simulation/drive-mode-self-test.mjs`（28 项）。
 > 「进厂确认」页的「模拟车辆进厂」始终优先取物流源下一辆进厂车（源离线时自动回退本地随机）；
 > 数据库服务还会**每 2s 自动轮询**物流源，把每辆进厂车实时登记进「进厂确认」队列（待确认）——
 > 确认队列 / 「车辆记录」与沙盘消费的是同一条事件流，三个页面车辆一一对应（沙盘须 `?feed` 模式；
@@ -74,7 +84,7 @@ npm run sim         # 一站式启动：静态站点(5199) + 库存数据库API(
 ### 常用命令
 ```bash
 npm run sim         # 一站式启动：沙盘/进厂确认/调度参数(5199) + 库存数据库API(3001)
-npm run db:init     # 初始化：建库 + 91 库位 × 10 垛 + 分区归堆实际钢材分布
+npm run db:init     # 初始化：建库 + 91 库位 × 物理垛数（共 555 垛）+ 分区归堆实际钢材分布
 npm run db:reset    # 重置为初始钢材分布
 npm run db:inspect  # 打印库存汇总与抽样库位
 npm run db:serve    # 仅启动本地 HTTP API（http://127.0.0.1:3001）
@@ -97,7 +107,7 @@ npm run vendor:three # 重新生成 simulation/vendor/three.inline.js
 
 ## 本地数据库（库存/库位）
 
-基于 Node + SQLite（better-sqlite3），存储「库位 → 10 垛 → 每垛 ≤400 捆（实际按限高收窄）」的库存数据。
+基于 Node + SQLite（better-sqlite3），存储「库位 → 物理垛数（1/2/3/10 垛）→ 每垛 ≤400 捆（实际按限高收窄）」的库存数据。
 数据库文件为 `server/warehouse.db`（不提交 git，可用命令随时重建）；主应用种子数据在 `server/data/*.json`。
 
 ### 表结构
@@ -108,6 +118,10 @@ npm run vendor:three # 重新生成 simulation/vendor/three.inline.js
 - `sim_params` — 调度规划参数（key 形如 `placement.sameSpecBase`）
 - `inbound_vehicles` / `inbound_loads` — 进厂车辆与其垛位分配（推荐值 + 最终值）
 - `placement_feedback` — 确认/调整留痕（推荐落点、最终落点、触发的权重变化）
+- `steel_ledger` — 钢材台账（一捆一行，与捆标签一一对应）：Excel「钢材入库数据-近3个月」全 18 列
+  （钢材类型/材质/炉号/长度/支数/重量/日期/采购商/合同号/规格/标准/库位/垛位/垛位层/入库时间/进厂车牌/出库时间/出厂车牌）
+  + 捆标签附加字段（供应商/PO号/材料号）。落位写库自动建账、倒垛随迁位置、出库回填离场信息（行保留作历史）；
+  捆号随沙盘重启复用（自增 id 区分物理捆），期初全量对齐 replace 时清除已落位在库行（身份重建，非出库）
 - `app_warehouse` / `app_spans` / `app_locations` / `app_coils` / `app_tasks` — 主应用（三维库区）数据
 
 ### HTTP 接口（带 CORS，127.0.0.1:3001）
@@ -136,8 +150,12 @@ npm run vendor:three # 重新生成 simulation/vendor/three.inline.js
 | GET | `/api/frontend/snapshot` | 操作端（kg-dispatch-frontend）轻量快照：91 库位垛行 + 在厂车辆 + 汇总（含 rev 修订号，前端 2s 轮询对账） |
 | GET | `/api/frontend/snapshot?with=bundles` | 同上，附捆级明细（bundle_positions 全量；前端比对 rev 变化才重拉） |
 | GET/POST | `/api/events` | 事件流：沙盘批量回推（POST）/ 操作端游标拉取（GET ?after=&limit=，?latest=1 取最大 seq）；分层保留：结构化 5000 / 日志 400 |
+| GET | `/api/ledger` | 钢材台账多条件查询（bundleId/heatNo/contractNo/plate/spec/grade/buyer/supplier/state=in\|out/from/to + 分页） |
+| GET | `/api/ledger/export.csv` | 台账 CSV 导出（UTF-8 BOM Excel 直开；列序与「钢材入库数据-近3个月 需收集」模板一致，前置捆号、后置供应商/PO号/材料号） |
+| GET | `/api/ledger/:bundleId` | 单捆台账详情（在库行优先；含库位编码） |
+| POST | `/api/ledger` | 扫码补录/修正标签元数据（真实场景对接捆标签二维码枪；按捆号更新在库行，无则立未落位新行） |
 | POST | `/api/telemetry` | 沙盘 1Hz 遥测（天车位姿/机器狗状态；内存驻留，快照携带下发） |
-| POST | `/api/frontend/commands` | 操作端命令下发（dispatch-inbound/outbound/restack、alarm-handled） |
+| POST | `/api/frontend/commands` | 操作端命令下发（dispatch-inbound/outbound/restack、alarm-handled、crane-confirm 天车完工确认） |
 | GET | `/api/frontend/commands?claim=1` | 沙盘轮询认领（原子置 claimed，多实例防重）；`POST /:id/finish` 回写可附带事件 |
 
 ### 与操作端（kg-dispatch-frontend）联调
@@ -159,6 +177,18 @@ npm run dev                 # localhost:3000，vite proxy /api -> 3001
 - 操作端右上角角标显示连接状态：`仿真源 · 在线` / `离线（本地演示数据）`（离线时回退内置 mock 与模拟器）。
 - **完整闭环**（P2/P3）：操作端「核验/确认规划/出库下发/倒垛下发/报警处置」经命令通道驱动沙盘真实执行，
   结果经事件流回报（任务进度/报警/出厂/留痕流水）；天车位姿来自沙盘 1Hz 遥测。
+  **机器狗异常处置闭环（阻断式）**：沙盘注入机器狗运行异常（行进卡死 `dogStuckPct` / 到位硬件损坏
+  `dogBreakdownPct`，「调度参数 · 异常注入」段可调，0=关）或扫码异常（二维码污损重扫超限，按
+  `scanHoldPct` 阻断等待人工，默认 100%，0=回退旧的自动放行留痕）时，机器狗转 FAULT 停机
+  **挂起当前任务**（含同垛批量队列）并报警操作端 —— 管理工平板收到报警卡（**设备故障** = 卡内选
+  「现场复位 / 检修恢复」后确认；**识别失败** = 点卡地图气泡选「清洁二维码 / 修复补码 / 翻面」后确认）
+  → `alarm-handled` 命令 → 沙盘按故障类型**恢复执行原任务**（脱困续走 / 回原节拍重扫 / 处置后补扫必过）
+  → `alarm.closed`（resumed）回推、平板报警卡转已闭环；操作端地图故障狗红色警示。
+  无头自检 `node simulation/alarm-hold-self-test.mjs`（三类异常挂起/恢复/防御/回退 29 项）。
+  **天车完工人工确认**（人因闸门，默认开）：天车完成一个调运任务（整车装卸/一张提货订单/一组倒垛）驶回
+  汽车通道上方待命，天车工平板弹「天车完工待确认」卡，手动确认「上个任务已完成」→ `crane-confirm` 命令
+  → 沙盘放行恢复接单（未确认不接新任务）；「调度参数」页天车段可关（无人值守长跑），沙盘 `?confirm=1/0`
+  强制开关；自检 `node simulation/crane-confirm-self-test.mjs`。
   **沙盘页须保持前台**——后台标签页被浏览器节流后仿真近乎冻结、命令认领延迟（详见《仿真与操作端数据打通设计.md》M2/M3 回注）。
 - 自检：`node simulation/frontend-snapshot-self-test.mjs`（快照形状 / rev 修订 / 捆级口径 / 事件流 / 遥测 / 命令闭环）。
 

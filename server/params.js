@@ -51,7 +51,7 @@ export const PARAM_SCHEMA = [
   },
   {
     sec: 'robot', secLabel: '机器狗（扫码核验）',
-    desc: '台数（D-01 起编号，1-6 台）与监测范围：仅监测范围内由机器狗扫码核验，范围外免检直通；仅开启部分监测范围时，运输车辆与出入库作业均限定在监测范围内（如仅开「监测 A 跨」：所有车辆均前往一跨 A，库满/无货则暂缓待回补）；每跨用「起始/截止号区」配置跨内具体区域（1~33 号区，如 17~33=右侧中棒区域、18~25=中棒区域局部）；台数变更即时重建机队；充电桩集中布置在 A 跨北端厂房外，可设 1-3 个',
+    desc: '台数（D-01 起编号，1-6 台）与监测范围：仅监测范围内由机器狗扫码核验，范围外免检直通；仅开启部分监测范围时，运输车辆与出入库作业均限定在监测范围内（如仅开「监测 A 跨」：所有车辆均前往一跨 A，库满/无货则暂缓待回补）；每跨用「起始/截止号区」配置跨内具体区域（1~33 号区，如一跨 17~27=中棒区域、二跨 18~25=小无缝短钢区域、三跨 28~33=商品坯）；台数变更即时重建机队；充电桩集中布置在 A 跨北端厂房外，可设 1-3 个',
     defs: [
       { key: 'count',       label: '机器狗数量', min: 1,   max: 6,  step: 1,   unit: '台', def: 3 },
       { key: 'chargerCount', label: '充电桩数量', min: 1, max: 3, step: 1, unit: '个', def: 1 },
@@ -75,8 +75,10 @@ export const PARAM_SCHEMA = [
   },
   {
     sec: 'crane', secLabel: '天车（吊运装卸）',
-    desc: '6 台（每跨 2 台，TC-A1~TC-C2）：行进速度（大车）/ 小车运行速度可调；吊取 2.0s / 放下 1.8s 为设备固有耗时（内置常数，不在本页调节）；挂绳 / 放绳 / 取绳由吊运工完成，见「吊运工」段',
+    desc: '6 台（每跨 2 台，TC-A1~TC-C2）：行进速度（大车）/ 小车运行速度可调；吊取 2.0s / 放下 1.8s 为设备固有耗时（内置常数，不在本页调节）；挂绳 / 放绳 / 取绳由吊运工完成，见「吊运工」段；「完工人工确认」开启时，天车完成一个调运任务（整车装卸 / 一张提货订单 / 一组倒垛）驶回汽车通道上方待命，须天车工在操作端平板确认「上个任务已完成」才恢复接单（平板确认 → 仿真命令 → 沙盘放行闭环；无人值守长跑可关闭）',
     defs: [
+      { key: 'confirmGate', label: '完工人工确认', min: 0, max: 1, step: 1, unit: '开/关', def: 1, toggle: true,
+        onText: '开：完工回汽车通道上方，天车工确认后才接新任务', offText: '关：完工自动接续（无人值守）' },
       { key: 'speed',     label: '行进速度', min: 0.5, max: 10, step: 0.1, unit: 'm/s', def: 4.0 },
       { key: 'trolleySpeed', label: '小车运行速度', min: 0.2, max: 4, step: 0.1, unit: 'm/s', def: 1.0 },
     ],
@@ -94,9 +96,13 @@ export const PARAM_SCHEMA = [
   },
   {
     sec: 'abnormal', secLabel: '异常注入',
-    desc: '异常事件概率（0 = 关闭）：扫码失败原地重扫、运单差异以现场扫码为准、复验异常人工复核放行',
+    desc: '异常事件概率（0 = 关闭）：扫码失败原地重扫；重扫超限按「扫码异常阻断率」挂起任务报警、等管理工平板处置（清洁/补码）后恢复补扫，余下自动转人工介入放行；机器狗卡死/硬件损坏同样挂起任务报警，现场复位/检修确认后恢复执行原任务',
     defs: [
       { key: 'scanFailPct',        label: '扫码失败率', min: 0, max: 50, step: 1, unit: '%', def: 4 },
+      { key: 'maxScanRetries',     label: '扫码重扫上限', min: 0, max: 5, step: 1, unit: '次', def: 2 },
+      { key: 'scanHoldPct',        label: '扫码异常阻断率', min: 0, max: 100, step: 5, unit: '%', def: 100 },
+      { key: 'dogStuckPct',        label: '机器狗卡死率', min: 0, max: 50, step: 1, unit: '%', def: 0 },
+      { key: 'dogBreakdownPct',    label: '机器狗损坏率', min: 0, max: 50, step: 1, unit: '%', def: 0 },
       { key: 'manifestMismatchPct', label: '运单差异率', min: 0, max: 50, step: 1, unit: '%', def: 5 },
       { key: 'verifyIssuePct',     label: '复验异常率', min: 0, max: 50, step: 1, unit: '%', def: 3 },
     ],

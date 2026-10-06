@@ -8,7 +8,8 @@ const { openDb, seed } = await import('../server/database.js');
 const {
   spawnIncomingVehicle, pollInboundFromSource, confirmVehicle, matchConfirmedVehicle,
 } = await import('../server/inbound.js');
-const { makeFeedFetch } = await import('./feed-stub.mjs');
+const { makeFeedFetch, logisticsGenAvailable } = await import('./feed-stub.mjs');
+if (!logisticsGenAvailable) { console.log('SKIP：外部物流源项目 LogisticsData_Sim 不在本机（可选依赖）—— 本自检验证物流源轮询同步，跳过。'); process.exit(0); }
 
 let n = 0;
 const assert = (cond, msg) => {

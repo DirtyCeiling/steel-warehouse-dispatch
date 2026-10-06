@@ -1,8 +1,9 @@
-// 库区布局生成：与仿真「调度仿真沙盘.html」的 buildMap 完全一致
-// 91 库位（36 库位列 × 三跨，含 14~16 整跨合并位），每库位 10 垛；每垛捆数上限为库房参数
-//（warehouse.bundlesPerStack，默认 100，实际垛容按限高收窄）
+// 库区布局生成：按现场平面图还原（图见 库房真实布局图.drawio，生成器 simulation/layout-diagram-gen.mjs）
+// 91 库位 = 一跨 33 + 二跨 25（14~16/26~27/31~33 号区现场无库位）+ 三跨 33；
+// 号区（1~33）沿厂房长向，垛位序号沿跨宽方向；每库位垛数 = 现场实际垛位列数
+//（2/3/10，一跨 14~16 大棒头(制光钢)为整宽合并单垛），库房参数 stacksPerSlot 只能在此上限内收窄。
 
-/** 三条竖向（横贯三跨）车辆进出通道列：不设库位 */
+/** 三条竖向（横贯三跨）车辆进出通道列：5|6、16|17、27|28 号区边界，不设库位 */
 export const LANE_COLS = [7, 19, 31];
 
 /** 棒材/管材规格（与仿真 SPECS 一致；weight = 9m 基准单捆吨位，按捆内支数 × 理论米重核算） */
@@ -20,28 +21,61 @@ export const SPECS = [
   { name: '管材 Φ600', weight: 1.8, color: '#16a34a' },
 ];
 
-/** 栅格列 -> 1~33 号区编号（通道列返回 null） */
+/** 栅格列 -> 1~33 号区编号（通道列返回 null）；三跨共用同一长向坐标 */
 export function areaOfCol(c) {
   const bx = c - 2;
   if (bx < 0) return null;
-  if (bx <= 4) return bx + 1;             // 1~5 铁姆肯区
-  if (bx <= 16) return bx;                // 6~16 大棒区域 + 单支/长钢
-  if (bx <= 28) return bx >= 18 ? bx - 1 : null; // 17 为通道；18~28 -> 17~27 中棒
-  return bx >= 30 ? bx - 2 : null;        // 29 为通道；30~35 -> 28~33 中棒
+  if (bx <= 4) return bx + 1;             // 1~5 装棒筒区/扁钢杂/冀鲁扁钢（各跨端区）
+  if (bx <= 16) return bx;                // 6~16
+  if (bx <= 28) return bx >= 18 ? bx - 1 : null; // 17 为通道；18~28 -> 17~27
+  return bx >= 30 ? bx - 2 : null;        // 29 为通道；30~35 -> 28~33
 }
 
-/** 号区 -> 分区 */
-export function zoneOfArea(a) {
-  if (a >= 17) return '中棒区域';
-  if (a >= 14) return '大棒单支和长钢';
-  if (a >= 3) return '大棒区域';
-  return '铁姆肯区';
+/** 分区表（现场平面图标注）：[起始号区, 截止号区, 分区名]，按跨（0=A/1=B/2=C）给出 */
+export const SPAN_ZONES = [
+  [ // 一跨 A（棒材跨）
+    [1, 5, '装棒筒区'], [6, 13, '大棒区域'], [14, 16, '大棒头（制光钢）'],
+    [17, 27, '中棒区域'], [28, 33, '备用区域'],   // 28~33 现场图上未标注分区，按备用区域计
+  ],
+  [ // 二跨 B（管材跨）
+    [1, 5, '扁钢杂区域'], [6, 9, '219及钢管长钢区域（10米以上）'], [10, 12, '460管（9.5米左右）'],
+    [13, 13, '高钢管'], [17, 17, '高钢管（临时）'], [18, 25, '小无缝及钢管短钢区域（8米以内）'],
+    [28, 30, '钢管外贸区域'],
+  ],
+  [ // 三跨 C（外贸/内贸棒扁钢跨）
+    [1, 5, '冀鲁扁钢区域'], [6, 10, '大棒外贸区域'], [11, 15, '小中棒外贸区域'],
+    [16, 16, '外贸长钢区域'], [17, 22, '小棒内贸区域'], [23, 25, '待定'],
+    [26, 27, '扁棒圆钢区域'], [28, 33, '商品坯'],
+  ],
+];
+
+/** 二跨无库位号区（现场平面图为空白，不生成库位） */
+export const SPAN_B_VACANT = new Set([14, 15, 16, 26, 27, 31, 32, 33]);
+
+/** 号区 -> 分区（按跨）；无库位号区返回 null */
+export function zoneOfSlot(span, area) {
+  for (const [lo, hi, name] of SPAN_ZONES[span] || []) if (area >= lo && area <= hi) return name;
+  return null;
+}
+
+/** 每库位物理垛数（跨宽方向实际垛位列数；生效垛数 = min(库房参数/逐库位覆盖, 物理垛数)） */
+export function physicalRacks(span, area) {
+  if (span === 0) {
+    if (area >= 14 && area <= 16) return 1;   // 一跨 14~16 大棒头(制光钢)：整宽合并单垛
+    return area <= 2 ? 2 : 3;                 // 一跨 1~2 号区 2 垛（中间为通道口），3~33 号区 3 垛
+  }
+  if (area <= 2) return 2;                    // 二/三跨端区 1~2 号区 2 个宽垛位
+  if (area <= 5) return 3;                    // 二/三跨端区 3~5 号区 3 个宽垛位
+  if (span === 2 && area >= 28) return 3;     // 三跨 28~33 商品坯：3 个宽垛位
+  return 10;                                  // 二/三跨主区：10 垛
 }
 
 /**
- * 生成库位列表（与仿真一致）：
- *   span: 0=A跨 1=B跨 2=C跨；14~16 整跨合并位 span=3（跨越 A~C 三跨），merged=1
- *   1、2 号区 B 跨为车辆通道，故只生成 A/C 两跨库位
+ * 生成库位列表（与仿真沙盘 buildMap 一致）：
+ *   span: 0=A跨(一跨) 1=B跨(二跨) 2=C跨(三跨)；
+ *   一跨 14~16 为整宽合并库位（merged=1，仅此一跨设位，编码沿用现场「14/15/16」）；
+ *   二跨 14~16/26~27/31~33 号区现场无库位，不生成；
+ *   每库位 racks = 物理垛数（2/3/10，合并位 1）。
  */
 export function generateSlots() {
   const slots = [];
@@ -50,19 +84,20 @@ export function generateSlots() {
     if (LANE_COLS.includes(c)) continue;
     const area = areaOfCol(c);
     if (area == null) continue;
-    const zone = zoneOfArea(area);
-    if (area >= 14 && area <= 16) {        // 大棒单支和长钢：整跨合并库位
-      slots.push({ id: id++, code: String(area), zone, area, span: 3, merged: 1 });
-      continue;
-    }
-    for (let i = 0; i < 3; i++) {
-      if (area <= 2 && i === 1) continue;  // 1、2 号区 B 跨为车辆通道
-      const suffix = area <= 2 ? (i === 0 ? 1 : 2) : i + 1;
-      slots.push({ id: id++, code: `${area}-${suffix}`, zone, area, span: i, merged: 0 });
+    for (let span = 0; span < 3; span++) {
+      if (span === 1 && SPAN_B_VACANT.has(area)) continue;   // 二跨无库位号区（含 14~16，仅一跨设整宽合并位）
+      const merged = span === 0 && area >= 14 && area <= 16 ? 1 : 0;
+      const code = merged ? String(area) : `${area}-${span + 1}`;
+      slots.push({ id: id++, code, zone: zoneOfSlot(span, area), area, span, merged,
+        racks: physicalRacks(span, area) });
     }
   }
   return slots;
 }
+
+/** 库位编码 -> 物理垛数（默认上限）；未知编码回落 10 */
+const RACKS_BY_CODE = new Map(generateSlots().map(s => [s.code, s.racks]));
+export function physicalRacksOf(code) { return RACKS_BY_CODE.get(code) ?? 10; }
 
 /** 分区库位计数 */
 export function zoneCounts(slots) {

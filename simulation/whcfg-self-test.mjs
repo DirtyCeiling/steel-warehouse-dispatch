@@ -71,7 +71,7 @@ await fetch(`${API}/api/params`, {
 
 console.log('== 页面（VM 无头渲染） ==');
 const { readFileSync } = await import('node:fs');
-const { buildBrowserBundle } = await import('../../StackAlloc/browser.js');   // 垛位推荐算法包（/*@@stack-alloc@@*/ 占位注入，与 serve.mjs 同口径）
+const { buildBrowserBundle } = await import('../../stack-alloc/browser.js');   // 垛位推荐算法包（/*@@stack-alloc@@*/ 占位注入，与 serve.mjs 同口径）
 const html = readFileSync(new URL('./库房参数设计.html', import.meta.url), 'utf8')
   .replace(/\/\*@@stack-alloc@@\*\//g, () => buildBrowserBundle());
 const blocks = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
@@ -282,7 +282,7 @@ check('重建时未保存的捆制规则编辑一并落库（圆钢 Φ50 -> 6 �
   rulesAfterRebuild.rules.find(x => x.spec === '圆钢 Φ50').rods === 6
   && rulesAfterRebuild.rules.find(x => x.spec === '圆钢 Φ50').source === 'override', '');
 const inv1 = (await (await fetch(`${API}/api/inventory`)).json()).totalBundles;
-check('装载比例 22% -> 90% 重建后库存显著上升（每垛上限 100 下 ≥1.2 倍）', inv1 > inv0 * 1.2, `${inv0} -> ${inv1}`);
+check('装载比例 22% -> 90% 重建后库存显著上升（每垛上限 100 下 ≥1.15 倍）', inv1 > inv0 * 1.15, `${inv0} -> ${inv1}`);
 const msgEl3 = documentStub.querySelector('.msg');
 check('重建回显新期初利用率', msgEl3 && /利用率 \d+(\.\d)?%/.test(msgEl3.textContent), msgEl3 && msgEl3.textContent.slice(0, 50));
 
@@ -296,35 +296,43 @@ const spsInputs = documentStub.querySelectorAll('[data-sec="warehouse"][data-key
 check('页面渲染每库位垛数滑杆（range+number）', spsInputs.length === 2, String(spsInputs.length));
 check('逐库位垛数覆盖表渲染 91 行', sandbox.__whcfgDbg.rackRows === 91, String(sandbox.__whcfgDbg.rackRows));
 const rackTbody = tbodyOf(byId.get('rackTbl'));
-const rackInputOf = tr => tr.children[3]?.children[0];
+const rackInputOf = tr => tr.children[4]?.children[0];   // 列：库位/分区/跨/物理/垛数输入/来源/在货
 const row11 = rackTbody.children.find(tr => tr.children[0]?.textContent === '1-1');
-check('垛数表按库位编码列出（含 1-1）', !!row11, row11 && row11.children[0].textContent);
-rackInputOf(row11).value = '4';
+const row172 = rackTbody.children.find(tr => tr.children[0]?.textContent === '17-2');
+check('垛数表按库位编码列出（含 1-1 / 17-2）', !!row11 && !!row172, row11 && row11.children[0].textContent);
+check('1-1 物理垛数列 = 2（一跨端区），17-2 = 10（二跨主区）',
+  row11.children[3]?.textContent === '2' && row172.children[3]?.textContent === '10',
+  `1-1=${row11.children[3]?.textContent} 17-2=${row172.children[3]?.textContent}`);
+rackInputOf(row11).value = '4';   // 超过物理垛数 2：页面即时收窄
 rackInputOf(row11).oninput();
-check('覆盖 1-1=4 垛后保存按钮可用', btnSave.disabled === false, String(btnSave.disabled));
+check('覆盖 1-1=4 垛被物理垛数收窄（输入框值=2）', String(rackInputOf(row11).value) === '2', String(rackInputOf(row11).value));
+rackInputOf(row172).value = '4';
+rackInputOf(row172).oninput();
+check('覆盖 17-2=4 垛后保存按钮可用', btnSave.disabled === false, String(btnSave.disabled));
 await btnSave.onclick();
 let rk = await (await fetch(`${API}/api/slot-racks`)).json();
-check('保存后覆盖落库（1-1 -> 4 垛）', rk.racks['1-1'] === 4 && rk.global === 10, JSON.stringify(rk.racks));
+check('保存后覆盖落库（1-1 -> 2 物理收窄 · 17-2 -> 4）', rk.racks['1-1'] === 2 && rk.racks['17-2'] === 4 && rk.global === 10, JSON.stringify(rk.racks));
 let slotsNow = (await (await fetch(`${API}/api/slots`)).json()).slots;
-const s11now = slotsNow.find(s => s.code === '1-1');
-check('/api/slots 下发 racks=4（旧期初高位存货保留显示，不丢账）', s11now.racks === 4 && s11now.stacks.length >= 4,
-  `racks=${s11now.racks} 行=${s11now.stacks.length}`);
-// 全局 10 -> 6：页面 KPI 即时联动，保存后 API 库容按逐库位垛数汇总
+const s172now = slotsNow.find(s => s.code === '17-2');
+check('/api/slots 下发 17-2 racks=4（旧期初高位存货保留显示，不丢账）', s172now.racks === 4 && s172now.stacks.length >= 4,
+  `racks=${s172now.racks} 行=${s172now.stacks.length}`);
+// 全局 10 -> 6：页面 KPI 即时联动，保存后 API 库容按逐库位垛数汇总（物理收窄：一跨 91 + 二跨 131 + 三跨 163 = 385 垛）
 const spsSlider = spsInputs.find(e => e.type === 'range');
 spsSlider.value = '6';
 spsSlider.oninput({ target: spsSlider });
-check('全局 6 + 1-1 覆盖 4：页面总库容 KPI 即时联动（(90×6+4)×100）',
-  (byId.get('capKpis')?.children[0]?._html || '').includes('54,400'), byId.get('capKpis')?.children[0]?._html);
+check('全局 6 + 17-2 覆盖 4：页面总库容 KPI 即时联动（385×100）',
+  (byId.get('capKpis')?.children[0]?._html || '').includes('38,500'), byId.get('capKpis')?.children[0]?._html);
 await btnSave.onclick();
 let invR = (await (await fetch(`${API}/api/inventory`)).json());
-check('保存后 API 库容按逐库位垛数汇总（(90×6+4)×100）', invR.totalCapacity === (90 * 6 + 4) * 100, String(invR.totalCapacity));
+check('保存后 API 库容按逐库位垛数汇总（385×100）', invR.totalCapacity === 385 * 100, String(invR.totalCapacity));
 await btnRebuild.onclick();
 slotsNow = (await (await fetch(`${API}/api/slots`)).json()).slots;
-const s11b = slotsNow.find(s => s.code === '1-1'), s17b = slotsNow.find(s => s.code === '17-1');
-check('重建后 1-1 共 4 垛、无覆盖位 17-1 共 6 垛（覆盖跨重建保留）',
-  s11b.stacks.length === 4 && s17b.stacks.length === 6, `1-1=${s11b.stacks.length} 17-1=${s17b.stacks.length}`);
+const s11b = slotsNow.find(s => s.code === '1-1'), s61b = slotsNow.find(s => s.code === '6-1'), s172b = slotsNow.find(s => s.code === '17-2');
+check('重建后 1-1 共 2 垛（物理上限）、6-1 共 3 垛、覆盖位 17-2 共 4 垛（覆盖跨重建保留）',
+  s11b.stacks.length === 2 && s61b.stacks.length === 3 && s172b.stacks.length === 4,
+  `1-1=${s11b.stacks.length} 6-1=${s61b.stacks.length} 17-2=${s172b.stacks.length}`);
 const msgRk = documentStub.querySelector('.msg');
-check('重建回显垛数配置（全局 6 + 1 位覆盖）', msgRk && msgRk.textContent.includes('全局 6 + 1 位覆盖'),
+check('重建回显垛数配置（全局 6 + 2 位覆盖）', msgRk && msgRk.textContent.includes('全局 6 + 2 位覆盖'),
   msgRk && msgRk.textContent.slice(0, 60));
 
 // 恢复默认按钮：参数回 schema 默认 + 规则全部标记恢复预置

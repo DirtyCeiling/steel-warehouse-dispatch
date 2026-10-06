@@ -7,7 +7,13 @@ import { injectCoreSegs } from './sandbox-page-loader.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
-import { makeFeedFetch } from './feed-stub.mjs';
+import { makeFeedFetch, logisticsGenAvailable } from './feed-stub.mjs';
+if (!logisticsGenAvailable) {
+  console.log('SKIP：外部物流源项目 LogisticsData_Sim 不在本机（可选依赖，与本项目同级放置）。'
+    + ' 本脚本验证 ?feed 物流源模式，跳过——其余默认本地排产链路由 self-test 等覆盖。');
+  process.exit(0);
+}
+
 import { getSeedSlots } from '../server/database.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -95,10 +101,10 @@ check('期初全部同垛单规格（无混垛）',
   storages.every(st => st.stacks.every(k => k.bundles.every(b => b.specIdx === k.bundles[0].specIdx))), '');
 const logText = () => elements.get('logList').children.map(d => d.innerHTML).join('\n');
 check('日志已提示实际钢材分布来源', logText().includes('实际钢材分布'), '');
-check('分区归堆正确：铁姆肯区全为圆钢',
-  storages.filter(s => s.zone === '铁姆肯区').every(s => s.stacks.every(k => !k.spec || k.spec.name.startsWith('圆钢'))), '');
-check('分区归堆正确：大棒区域全为螺纹钢',
-  storages.filter(s => s.zone === '大棒区域').every(s => s.stacks.every(k => !k.spec || k.spec.name.startsWith('螺纹钢'))), '');
+check('分区归堆正确：商品坯全为方钢',
+  storages.filter(s => s.zone === '商品坯').every(s => s.stacks.every(k => !k.spec || k.spec.name.startsWith('方钢'))), '');
+check('分区归堆正确：大棒区域全为圆钢',
+  storages.filter(s => s.zone === '大棒区域').every(s => s.stacks.every(k => !k.spec || k.spec.name.startsWith('圆钢'))), '');
 
 console.log('== 卸货推荐算法：16× 跑 1 个仿真小时 ==');
 sandbox.setSpeed(16);

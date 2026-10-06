@@ -103,6 +103,32 @@ const nA = full.bundles.filter(b => b.slotId === slotA.id).length;
 check('首库位捆数与垛行 count 一致', nA === slotA.stacks.reduce((t, k) => t + k.count, 0),
   `${nA}/${slotA.stacks.reduce((t, k) => t + k.count, 0)}`);
 
+// 3b) 钢材台账（steel_ledger）：捆级对齐自动建账 -> 多条件查询 / 扫码补录 / 单捆详情 / CSV 导出
+const led = await (await fetch(`${API}/api/ledger?state=in&limit=500`)).json();
+check('落位对齐自动建账（在库台账行数 = 对齐捆数）', led.total === bn, `${led.total}/${bn}`);
+check('台账行含 Excel 字段位（类型/规格/库位编码/垛位/层）', led.rows.every(r =>
+  typeof r.bundleId === 'string' && typeof r.steelType === 'string' && typeof r.spec === 'string'
+  && typeof r.slotCode === 'string' && r.stackNo >= 1 && r.layer >= 0), '');
+const lid = upserts[0].bundleId;
+const meta = await (await fetch(`${API}/api/ledger`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ bundleId: lid, heatNo: 'HT250317', grade: '45#', contractNo: 'CT26-10001', supplier: '大冶特殊钢', poNo: '4500169907/89501801', materialNo: 'T426000120', rods: 6, weightKg: 1424 }),
+})).json();
+check('POST /api/ledger 扫码补录标签字段（炉号/牌号/合同号/供应商/PO号/材料号）',
+  meta.heatNo === 'HT250317' && meta.supplier === '大冶特殊钢' && meta.contractNo === 'CT26-10001', meta.bundleId);
+const one = await (await fetch(`${API}/api/ledger/${encodeURIComponent(lid)}`)).json();
+check('GET /api/ledger/:bundleId 单捆详情（含库位编码与补录字段）', one.bundleId === lid && one.slotCode === slotA.code && one.grade === '45#', one.slotCode);
+check('台账按炉号过滤', (await (await fetch(`${API}/api/ledger?heatNo=HT250317`)).json()).total === 1, '');
+const csvRes = await fetch(`${API}/api/ledger/export.csv?state=in`);
+const csvBuf = new Uint8Array(await csvRes.arrayBuffer());   // text() 会按编码规范剥离 BOM，改用字节断言
+const csv = new TextDecoder().decode(csvBuf);
+check('CSV 导出（UTF-8 BOM + Excel 模板列序 + 数据行）', csvRes.status === 200
+  && csvBuf[0] === 0xEF && csvBuf[1] === 0xBB && csvBuf[2] === 0xBF
+  && csv.includes('捆号,钢材类型,钢材材质,炉号,长度,支数,重量,日期,采购商,合同号,规格/直径,标准,库位,垛位,垛位层,入库时间,进厂车牌,出库时间,出厂车牌')
+  && csv.includes(lid), `${csv.split('\r\n').length - 1} 行`);
+const notFound = await fetch(`${API}/api/ledger/B-不存在`);
+check('不存在捆号 404', notFound.status === 404, `status=${notFound.status}`);
+
 // 4) 写库存后 rev 变化（前端重拉捆级明细的信号）
 const slot0 = snap.slots[0];
 const st0 = slot0.stacks.find(k => k.count === 0) || slot0.stacks[0];
@@ -152,16 +178,20 @@ check('v1 旧格式遥测被拒绝（不覆盖新引擎数据）', tguard.cranes
 // ---- P3：命令通道（写入 → 认领 → 回写带事件）----
 const cmd = await (await post('/api/frontend/commands', { kind: 'alarm-handled', refId: 'BJ-S9001', payload: { method: '清洁二维码' } })).json();
 check('POST /api/frontend/commands 写入', cmd.id > 0 && cmd.status === 'pending' && cmd.refId === 'BJ-S9001');
-const claimed = await (await fetch(`${API}/api/frontend/commands?claim=1&limit=5`)).json();
+// 认领/回执走沙盘驾驶通道（需 X-Sim-Drive 身份；无身份且服务端有主时被独占闸拦，属正确行为）
+const driveHdr = { 'X-Sim-Drive': 'selftest-drive-1' };
+// 先推一帧遥测占位（心跳接管租约），保证本自检实例是持有者
+await post('/api/telemetry', { driveId: 'selftest-drive-1', cranes: [{ name: 'TC-A1', span: 0, x: 0, y: 0, state: 'IDLE' }], dogs: [{ id: 0, name: 'D-01', state: 'IDLE', battery: 90, x: 1, y: 1 }], trucks: [] });
+const claimed = await (await fetch(`${API}/api/frontend/commands?claim=1&limit=5`, { headers: driveHdr })).json();
 check('沙盘认领（claim 原子置 claimed）', claimed.commands.length === 1 && claimed.commands[0].id === cmd.id
   && claimed.commands[0].status === 'claimed');
-const reClaim = await (await fetch(`${API}/api/frontend/commands?claim=1&limit=5`)).json();
+const reClaim = await (await fetch(`${API}/api/frontend/commands?claim=1&limit=5`, { headers: driveHdr })).json();
 check('二次轮询不再重复发放（多实例防重）', reClaim.commands.length === 0, String(reClaim.commands.length));
-const fin = await (await post(`/api/frontend/commands/${cmd.id}/finish`, { ok: true, result: { note: 'done' }, events: [{ type: 'alarm.closed', payload: { alarmId: 'BJ-S9001' } }] })).json();
+const fin = await (await fetch(`${API}/api/frontend/commands/${cmd.id}/finish`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...driveHdr }, body: JSON.stringify({ ok: true, result: { note: 'done' }, events: [{ type: 'alarm.closed', payload: { alarmId: 'BJ-S9001' } }] }) })).json();
 check('finish 回写 done + 附带事件落表', fin.status === 'done' && fin.result.note === 'done');
 const closed = await (await fetch(`${API}/api/events?after=${afterSeq}&limit=10`)).json();
 check('finish 附带事件可被游标拉到', closed.events.some(e => e.type === 'alarm.closed' && e.payload?.alarmId === 'BJ-S9001'));
-const badFin = await fetch(`${API}/api/frontend/commands/999999/finish`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+const badFin = await fetch(`${API}/api/frontend/commands/999999/finish`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...driveHdr }, body: '{}' });
 check('finish 不存在的命令返回 404', badFin.status === 404, `status=${badFin.status}`);
 
 await new Promise(r => server.close(r));

@@ -209,7 +209,7 @@ function showStackCard(st, si, e) {   // 点击垛位：钉住的钢材详情卡
     st.stacks.forEach((kk, i) => { if (kk.count > 0) rows.push(`第${i + 1}垛 <b>${kk.spec.name}</b> ×${kk.count}`); });
     mat = `<div>${rows.join('；')}</div><div class="tt-dim">点击具体垛位查看该垛钢材明细</div>`;
   }
-  const size = st.merged ? '整跨合并 · 8.3m × 90m' : '8.3m × 30m';
+  const size = st.merged ? '一跨整宽合并 · 8.3m × 30m' : '8.3m × 30m';
   const acts = [];
   if (st.state !== 'locked' && nB > 0 && pickOutStack(st) >= 0)
     acts.push(`<button class="tt-btn" data-act="out" data-slot="${st.id}">⬇ 下发出库</button>`);

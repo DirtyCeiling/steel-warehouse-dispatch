@@ -114,14 +114,17 @@ console.log('== 阶段零：300m×90m 三跨布局结构（对照库区平面图
 check('栅格 38×8（4 条横向通道廊道行 + 3 跨 + 充电服务带）', sandbox.__dbg.mapOK);
 check('库位总数 91', sandbox.__dbg.slotCount === 91, String(sandbox.__dbg.slotCount));
 const zc = sandbox.__dbg.zoneCounts;
-check('分区 中棒51/大棒33/长钢3/铁姆肯4',
-  zc['中棒区域'] === 51 && zc['大棒区域'] === 33 && zc['大棒单支和长钢'] === 3 && zc['铁姆肯区'] === 4,
+check('分区 20 个（一跨 33 · 二跨 25 · 三跨 33 库位）',
+  Object.keys(zc).length === 20
+    && zc['中棒区域'] === 11 && zc['大棒头（制光钢）'] === 3 && zc['备用区域'] === 6
+    && zc['小无缝及钢管短钢区域（8米以内）'] === 8 && zc['高钢管'] === 1 && zc['钢管外贸区域'] === 3
+    && zc['商品坯'] === 6 && zc['待定'] === 3,
   JSON.stringify(zc));
 const codes = sandbox.__dbg.codes;
 check('库位编码覆盖 33-1 / 1-1 / 2-2 / 14 / 15 / 16',
   ['33-1', '1-1', '2-2', '14', '15', '16'].every(x => codes.includes(x)),
   codes.slice(-6).join(','));
-check('寻路：充电桩#2 -> 铁姆肯 2-2 第1垛前空道站位 可达',
+check('寻路：充电桩#2 -> 一跨 2-2 第1垛前空道站位 可达',
   !!sandbox.findPath(sandbox.navOf(7, 19), sandbox.approachCell(sandbox.__dbg.storages.find(s => s.code === '2-2'), 0, null)));
 check('寻路：合并库位 15 第1垛前空道站位 -> 充电桩#1 可达',
   !!sandbox.findPath(sandbox.approachCell(sandbox.__dbg.storages.find(s => s.code === '15'), 0, null), sandbox.navOf(7, 7)));
@@ -165,13 +168,14 @@ check('站位不占横向人行通道（普通库位垛层行，跨内）',
   !!ap0 && ![0, 9, 18, 27].includes(ap0.r), st0 && st0.code);
 check('站位在库位分界线上（与垛位列中心横向相距半列 4.17m）',
   !!ap0 && Math.abs(Math.abs(sandbox.navCX(ap0.c) - sandbox.navCX(st0.goalC * 2)) - 300 / 36 / 2) < 0.01, '');
-check('全部 91 库位 × 10 垛均有库位间空道站位（站位列=空道 · 行=垛心所在行，含合并库位）',
-  sandbox.__dbg.storages.every(s => Array.from({ length: 10 }, (_, k) => k).every(k => {
+check('全部 91 库位 × 物理垛数均有库位间空道站位（站位列=空道 · 行=垛心所在行，含合并库位）',
+  sandbox.__dbg.storages.every(s => Array.from({ length: s.stacks.length }, (_, k) => k).every(k => {
     const ap = sandbox.approachCell(s, k, sandbox.navOf(6, 10));
     if (!ap || ap.c % 2 !== 1) return false;
     const cy = sandbox.stackCenterY(s, k);
     if (sandbox.navRowOfY(cy) !== ap.r) return false;               // 站位行 = 垛心所在行
-    return s.merged || Math.abs(sandbox.navCY(ap.r) - cy) < 1e-6;   // 普通库位严格对齐垛层行
+    // 垛心对齐站位行中心：10 层严格重合，2/3 层（垛心落在导航行内）容差半行 1.5m
+    return s.merged || Math.abs(sandbox.navCY(ap.r) - cy) <= 1.5 + 1e-6;
   })), '');
 const pAp = sandbox.findPath(sandbox.navOf(7, 19), ap0);
 check('赴扫码站位的路径全程不穿垛位（途经格均可通行）',

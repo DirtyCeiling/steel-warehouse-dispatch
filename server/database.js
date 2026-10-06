@@ -1,12 +1,13 @@
 // 本地库存数据库（Node + SQLite / better-sqlite3）
-// 存储钢厂棒材库区库存/库位数据：库位 -> 垛 1~10 个（全局参数 stacksPerSlot + 逐库位覆盖
-// slot_racks 表，「库房参数设计」页编辑）-> 每垛 ≤ 400 捆（通用上限，实际按限高收窄）
+// 存储钢厂棒材库区库存/库位数据：库位 -> 垛（物理垛数按现场布局 1/2/3/10，全局参数
+// stacksPerSlot 与逐库位覆盖 slot_racks 表只能在物理上限内收窄，「库房参数设计」页编辑）
+// -> 每垛 ≤ 400 捆（通用上限，实际按限高收窄）
 // 另含主应用（三维库区）数据：库区/跨/库位/钢卷/调度任务
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
-import { generateSlots, SPECS } from './layout.js';
+import { generateSlots, physicalRacksOf, SPECS } from './layout.js';
 import { paramDefaults, clampParam } from './params.js';
 /* 垛位推荐算法包（独立项目 StackAlloc）：规格族/杆径/捆制几何/垛容的唯一实现。
  * 本文件保留 geoCfg / specRulesCache 两个参数状态（sim_params / spec_rules 表同步），
@@ -186,6 +187,42 @@ function migrate(db) {
       final_stack_no INTEGER,
       deltas         TEXT NOT NULL DEFAULT '[]'       -- 权重变化 [{key,label,from,to}]
     );
+    -- 钢材台账（一捆一行，与捆标签一一对应）：字段 = Excel「钢材入库数据-近3个月」全 18 列
+    -- （钢材类型/材质/炉号/长度/支数/重量/日期/采购商/合同号/规格/标准/库位/垛位/垛位层/
+    --   入库时间/进厂车牌/出库时间/出厂车牌）+ 捆标签附加字段（供应商/PO号/材料号）。
+    -- 落位写库（syncBundlePositions）自动建账：新捆插入、倒垛仅迁位置、出库回写离场信息；
+    -- 捆号随沙盘重启复用（自增 id 区分物理捆），期初全量对齐 replace 时清除已落位的在库行
+    -- （身份重建，非出库），已出库历史与未落位的扫码补录行保留。
+    CREATE TABLE IF NOT EXISTS steel_ledger (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      bundle_id      TEXT NOT NULL,             -- 捆号（B-xxxx，与捆标签/bundle_positions 一致）
+      steel_type     TEXT,                      -- 钢材类型（螺纹钢/圆钢/方钢/管材，按规格族推导）
+      grade          TEXT,                      -- 钢材材质（牌号：HRB400E / 45# / S690G5QL ...）
+      heat_no        TEXT,                      -- 炉号
+      len            REAL,                      -- 长度（米）
+      rods           INTEGER,                   -- 支数
+      weight_kg      REAL,                      -- 重量（千克，与标签口径一致）
+      produce_date   TEXT,                      -- 日期（标签生产/出厂日期）
+      buyer          TEXT,                      -- 采购商（出库提货单回填）
+      contract_no    TEXT,                      -- 合同号（标签·供货合同）
+      spec           TEXT,                      -- 规格/直径（规格名，如 圆钢 Φ60）
+      standard       TEXT,                      -- 标准（GB/T 1499.2 / EN10297-1 ...）
+      supplier       TEXT,                      -- 供应商（标签抬头钢厂）
+      po_no          TEXT,                      -- PO号（标签）
+      material_no    TEXT,                      -- 材料号（标签）
+      slot_id        INTEGER,                   -- 库位（storage_slots.id；未落位补录行为 NULL）
+      stack_no       INTEGER,                   -- 垛位
+      layer          INTEGER,                   -- 垛位层（0=底层，导出 +1）
+      inbound_time   TEXT,                      -- 入库时间（NULL=期初存量）
+      inbound_plate  TEXT,                      -- 进厂车牌
+      outbound_time  TEXT,                      -- 出库时间（NULL=在库）
+      outbound_plate TEXT,                      -- 出厂车牌
+      updated_at     TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ledger_bundle   ON steel_ledger(bundle_id, outbound_time);
+    CREATE INDEX IF NOT EXISTS idx_ledger_heat     ON steel_ledger(heat_no);
+    CREATE INDEX IF NOT EXISTS idx_ledger_contract ON steel_ledger(contract_no);
+    CREATE INDEX IF NOT EXISTS idx_ledger_inbound  ON steel_ledger(inbound_time);
   `);
   // 轻量迁移：历史库文件补列（CREATE TABLE IF NOT EXISTS 不会给已存在的表加新列）
   try { db.prepare('SELECT departed_time FROM inbound_vehicles LIMIT 1').get(); }
@@ -353,18 +390,36 @@ export function deleteTask(db, id) {
 }
 
 /* ---------------- 实际钢材分布灌库 ----------------
- * 按分区专业化归堆（与卸货推荐算法「同类货物放一起」原则一致）：
- *   铁姆肯区(1-2)        -> 圆钢 Φ50 / Φ60（轴承/机加工用钢）
- *   大棒区域(3-13)       -> 螺纹钢 Φ20 / Φ25（建材主力）
- *   大棒单支和长钢(14-16) -> 方钢 40×40（长尺定尺料，整跨合并库位）
- *   中棒区域(17-33)      -> 圆钢 Φ50/Φ60 + 螺纹钢 Φ25 混区（按号区成带分规格）
+ * 按现场分区专业化归堆（与卸货推荐算法「同类货物放一起」原则一致）：
+ *   一跨棒材（装棒筒/大棒/中棒 -> 螺纹、圆钢；14~16 大棒头(制光钢) -> 圆钢 Φ60）
+ *   二跨管材（小无缝短管 Φ50/Φ100、219/460 长管 Φ200~Φ600、高钢管、扁钢杂 -> 方钢）
+ *   三跨外贸/内贸棒扁钢与商品坯（螺纹、圆钢、方钢）
  * 同库位以单一规格为主，少量同族（同形状）规格邻垛混放；号区内按 area 成带，
  * 相邻库位同规格连片，形成聚簇。确定性随机流（mulberry32），灌库结果可复现。 */
 const ZONE_SPEC_POOL = {
-  '铁姆肯区':         ['圆钢 Φ50', '圆钢 Φ60'],
-  '大棒区域':         ['螺纹钢 Φ20', '螺纹钢 Φ25'],
-  '大棒单支和长钢':   ['方钢 40×40', '管材 Φ200', '管材 Φ400', '管材 Φ600'],
-  '中棒区域':         ['圆钢 Φ50', '圆钢 Φ60', '螺纹钢 Φ25', '管材 Φ50', '管材 Φ100'],
+  // 一跨 A（棒材跨）
+  '装棒筒区':                    ['螺纹钢 Φ20', '螺纹钢 Φ25'],
+  '大棒区域':                    ['圆钢 Φ50', '圆钢 Φ60'],
+  '大棒头（制光钢）':            ['圆钢 Φ60'],
+  '中棒区域':                    ['圆钢 Φ50', '螺纹钢 Φ25'],
+  '备用区域':                    ['螺纹钢 Φ20', '圆钢 Φ50'],
+  // 二跨 B（管材跨）
+  '扁钢杂区域':                  ['方钢 40×40'],
+  '219及钢管长钢区域（10米以上）': ['管材 Φ200', '管材 Φ400'],
+  '460管（9.5米左右）':           ['管材 Φ400', '管材 Φ600'],
+  '高钢管':                      ['管材 Φ600'],
+  '高钢管（临时）':               ['管材 Φ400'],
+  '小无缝及钢管短钢区域（8米以内）': ['管材 Φ50', '管材 Φ100'],
+  '钢管外贸区域':                ['管材 Φ100', '管材 Φ200'],
+  // 三跨 C（外贸/内贸棒扁钢跨）
+  '冀鲁扁钢区域':                ['方钢 40×40'],
+  '大棒外贸区域':                ['圆钢 Φ50', '圆钢 Φ60'],
+  '小中棒外贸区域':              ['螺纹钢 Φ20', '螺纹钢 Φ25'],
+  '外贸长钢区域':                ['圆钢 Φ60'],
+  '小棒内贸区域':                ['螺纹钢 Φ20'],
+  '待定':                        ['螺纹钢 Φ25'],
+  '扁棒圆钢区域':                ['圆钢 Φ50'],
+  '商品坯':                      ['方钢 40×40'],
 };
 /* 规格族 SPEC_FAMILY / 规格杆径 SPEC_DIMS / 捆内支数排布 rowsOf / 库房几何默认 GEO_DEFAULTS
  * 均已上移到垛位推荐算法包（StackAlloc），本文件经 import 同源使用（见文件头）。 */
@@ -407,21 +462,21 @@ function fillStackRows(db) {
   return added;
 }
 
-/* ================= 每库位垛数（货架数）：全局统一值 + 逐库位覆盖 =================
- * 生效垛数 = slot_racks 覆盖 > sim_params warehouse.stacksPerSlot（geoCfg 同步）。
- * 物理栅格固定 10 垛层（跨深 30m ÷ 3.0m 垛格），故取值 1~10；
+/* ================= 每库位垛数（货架数）：物理垛数上限 + 全局统一值 + 逐库位覆盖 =================
+ * 生效垛数 = min(slot_racks 覆盖 > sim_params warehouse.stacksPerSlot, 库位物理垛数)。
+ * 物理垛数 = 现场实际垛位列数（2/3/10，一跨 14~16 合并位 1，见 layout.js physicalRacks）；
  * 调小后仍有存货的高位垛保留（垛清空即自然收敛），getSlots 按此合成垛行。 */
 let slotRacksCache = new Map();
 function syncRackOverrides(db) {
   slotRacksCache = new Map(db.prepare('SELECT code, racks FROM slot_racks').all().map(r => [r.code, r.racks]));
 }
 const rackLimit = n => Math.max(1, Math.min(STACKS_PER_SLOT, Math.round(Number(n) || STACKS_PER_SLOT)));
-/** 全局统一垛数（sim_params warehouse.stacksPerSlot，已夹取 1~10） */
+/** 全局统一垛数（sim_params warehouse.stacksPerSlot，已夹取 1~10；超过物理垛数的库位按物理值收窄） */
 export function globalStacksPerSlot() { return rackLimit(geoCfg.stacksPerSlot); }
-/** 生效垛数（不含在货兜底）：覆盖 > 全局参数 */
+/** 生效垛数（不含在货兜底）：覆盖 > 全局参数，均不超过库位物理垛数 */
 export function effectiveRacks(code) {
   const ov = slotRacksCache.get(code);
-  return rackLimit(ov != null ? ov : geoCfg.stacksPerSlot);
+  return Math.min(rackLimit(ov != null ? ov : geoCfg.stacksPerSlot), physicalRacksOf(code));
 }
 /** 逐库位覆盖快照：{ code: racks }（仅覆盖项），供 GET /api/slot-racks 与期初重灌 */
 export function getSlotRacks(db) {
@@ -438,7 +493,7 @@ export function applySlotRacks(db, racks = {}) {
   const tx = db.transaction(() => {
     for (const [code, raw] of Object.entries(racks || {})) {
       if (!known.has(code)) continue;
-      const v = raw == null ? null : rackLimit(raw);
+      const v = raw == null ? null : Math.min(rackLimit(raw), physicalRacksOf(code));   // 覆盖不超过物理垛数
       const cur = slotRacksCache.get(code);
       if (v == null) {
         if (cur == null) continue;
@@ -579,6 +634,15 @@ export function buildSeedSlots(rackOverrides = null) {
     out.push({ id: s.id, code: s.code, zone: s.zone, area: s.area, span: s.span, merged: s.merged,
       state: occupied ? 'occupied' : 'free', racks: nRacks, stacks });
   }
+  /* 空库位兜底：随机流按垛消耗后极端情况可能 0 空位——强制匀距 3 库位留空作入库缓冲位（确定性） */
+  if (out.filter(s => s.state === 'free').length < 3) {
+    for (const id of [7, 41, 74]) {
+      const s = out[id];
+      if (!s || s.state === 'free') continue;
+      s.state = 'free';
+      for (const k of s.stacks) { k.spec = null; k.count = 0; k.pending = 0; k.in_time = null; }
+    }
+  }
   return out;
 }
 /** 期初种子分布（与 /api/slots 行形状一致，供沙盘全量回放重建期初）；
@@ -588,10 +652,11 @@ export function getSeedSlots(db = null) {
 }
 
 /**
- * 重建数据：写入规格 + 91 库位 + 910 垛，并按分区专业化灌入实际钢材分布
+ * 重建数据：写入规格 + 91 库位（一跨 33 / 二跨 25 / 三跨 33，现场布局）+ 各库位物理垛，
+ * 并按分区专业化灌入实际钢材分布
  *（按限高可堆层数的「库容装载比例」铺层——默认 22%；可在
  *  「库房参数设计」页调整 fillRatio 后重建。总库容按当前库房参数计：
- *  91×每库位垛数×每垛捆数上限（默认 91×10×100=91,000 捆通用上限，
+ *  Σ每库位生效垛数×每垛捆数上限（默认 555×100=55,500 捆通用上限，
  *  实际垛容按规格限高收窄），均已扫码入账；保留少量空库位与未满垛作入库缓冲）。
  */
 export function seed(db) {
@@ -599,6 +664,7 @@ export function seed(db) {
   const slots = buildSeedSlots(getSlotRacks(db));
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM bundle_positions').run();   // 捆级落位坐标随重建清空（外键依赖 storage_slots，须先删）
+    db.prepare('DELETE FROM steel_ledger WHERE outbound_time IS NULL AND slot_id IS NOT NULL').run();   // 台账：已落位的在库捆随库区重建清除（非出库；已出库历史与未落位补录行保留）
     db.prepare('DELETE FROM stacks').run();
     db.prepare('DELETE FROM storage_slots').run();
     db.prepare('DELETE FROM specs').run();
@@ -710,6 +776,7 @@ export function setStack(db, slotId, stackNo, patch = {}) {
   if (!count || count <= 0) {
     spec = null; pending = 0; count = 0;
     db.prepare('DELETE FROM bundle_positions WHERE slot_id=? AND stack_no=?').run(slotId, stackNo);
+    db.prepare('DELETE FROM steel_ledger WHERE slot_id=? AND stack_no=? AND outbound_time IS NULL').run(slotId, stackNo);   // 台账随垛清零（库存修正，非出库；已出库历史保留）
   }
   db.prepare('UPDATE stacks SET spec=?, count=?, pending=?, in_time=? WHERE slot_id=? AND stack_no=?')
     .run(spec, count, pending, in_time, slotId, stackNo);
@@ -720,10 +787,51 @@ export function setStack(db, slotId, stackNo, patch = {}) {
 
 /* ================= 捆级三维落位（bundle_positions 表） ================= */
 
+/* ================= 钢材台账（steel_ledger 表） =================
+ * 一捆一行（自增 id 为物理捆主键；bundle_id 可随沙盘重启复用，按 id 区分）。
+ * 入账通道：syncBundlePositions 落位写库自动建账（本节三个内部钩子）+ POST /api/ledger 扫码补录。 */
+const FAMILY_TYPE = { rebar: '螺纹钢', round: '圆钢', square: '方钢', pipe: '管材' };   // 规格族 -> 钢材类型
+const steelTypeOf = spec => (spec && SPEC_FAMILY[spec]) ? FAMILY_TYPE[SPEC_FAMILY[spec]] : null;
+
+/** 新捆入账（入库落料/期初对齐）：整行插入；putTime<0（期初）无入库时刻 */
+function ledgerInsert(db, p, now) {
+  db.prepare(`INSERT INTO steel_ledger
+    (bundle_id, steel_type, grade, heat_no, len, rods, weight_kg, produce_date, buyer, contract_no,
+     spec, standard, supplier, po_no, material_no, slot_id, stack_no, layer, inbound_time, inbound_plate, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    String(p.bundleId), steelTypeOf(p.spec), p.grade ?? null, p.heatNo ?? null,
+    p.len ?? null, p.rods ?? null, p.weightKg ?? null, p.produceDate ?? null, p.buyer ?? null, p.contractNo ?? null,
+    p.spec ?? null, p.standard ?? null, p.supplier ?? null, p.poNo ?? null, p.materialNo ?? null,
+    p.slotId ?? null, p.stackNo != null ? p.stackNo | 0 : null, p.layer != null ? Math.max(0, p.layer | 0) : null,
+    (p.putTime != null && p.putTime < 0) ? null : now,
+    p.plate ?? null, now);
+}
+
+/** 增量 upsert：在库行已存在 = 倒垛迁移（仅迁位置，身份/入库信息以首次入账为准）；否则新捆入账 */
+function ledgerUpsertIncremental(db, p, now) {
+  const cur = db.prepare('SELECT id FROM steel_ledger WHERE bundle_id=? AND outbound_time IS NULL ORDER BY id DESC LIMIT 1')
+    .get(String(p.bundleId));
+  if (!cur) return ledgerInsert(db, p, now);
+  db.prepare('UPDATE steel_ledger SET slot_id=?, stack_no=?, layer=?, updated_at=? WHERE id=?')
+    .run(p.slotId, p.stackNo | 0, Math.max(0, p.layer | 0), now, cur.id);
+}
+
+/** 出库吊走：回写在库行的出库时间/出厂车牌/采购商（账随实走，行保留作出库历史） */
+function ledgerMarkOutbound(db, bundleId, { plate = null, buyer = null } = {}, now) {
+  db.prepare(`UPDATE steel_ledger
+    SET outbound_time=?, outbound_plate=COALESCE(?, outbound_plate), buyer=COALESCE(?, buyer), updated_at=?
+    WHERE id = (SELECT id FROM steel_ledger WHERE bundle_id=? AND outbound_time IS NULL ORDER BY id DESC LIMIT 1)`)
+    .run(now, plate, buyer, now, String(bundleId));
+}
+
 /**
  * 同步捆级落位坐标：upserts 增量写入（落料/倒垛落位），deletes 按捆号删除（出库吊走）；
  * replace=true 时先清空全表再写入（期初加载/重置后的全量对齐）。返回 { upserted, deleted, total }。
- * 行格式：{ bundleId, slotId, stackNo, layer, seat, spec?, len?, dx, y, dz, yaw, putTime? }
+ * 行格式：{ bundleId, slotId, stackNo, layer, seat, spec?, len?, dx, y, dz, yaw, putTime?,
+ *          grade?, heatNo?, rods?, weightKg?, produceDate?, contractNo?, standard?, supplier?,
+ *          poNo?, materialNo?, plate?（进厂车牌，入库落料时携带） } —— 标签元数据透视进钢材台账。
+ * deletes 元素：捆号字符串，或 { bundleId, plate?（出厂车牌）, buyer?（采购商） }（出库信息回填台账）。
+ * replace 时台账联动：清除已落位的在库行（身份重建，非出库），随后逐行重新入账。
  */
 export function syncBundlePositions(db, { replace = false, upserts = [], deletes = [] } = {}) {
   const del = db.prepare('DELETE FROM bundle_positions WHERE bundle_id=?');
@@ -736,8 +844,16 @@ export function syncBundlePositions(db, { replace = false, upserts = [], deletes
       put_time=excluded.put_time, updated_at=excluded.updated_at`);
   const now = new Date().toISOString();
   const tx = db.transaction(() => {
-    if (replace) db.prepare('DELETE FROM bundle_positions').run();
-    for (const id of deletes || []) if (id != null) del.run(id);
+    if (replace) {
+      db.prepare('DELETE FROM bundle_positions').run();
+      db.prepare('DELETE FROM steel_ledger WHERE outbound_time IS NULL AND slot_id IS NOT NULL').run();
+    }
+    for (const d of deletes || []) {
+      const id = typeof d === 'string' ? d : d && d.bundleId;
+      if (id == null) continue;
+      del.run(String(id));
+      ledgerMarkOutbound(db, id, typeof d === 'object' ? d : {}, now);
+    }
     let n = 0;
     for (const p of upserts || []) {
       if (!p || !p.bundleId || p.slotId == null || !(p.stackNo >= 1)) continue;
@@ -745,6 +861,7 @@ export function syncBundlePositions(db, { replace = false, upserts = [], deletes
         p.spec ?? null, p.len ?? null,
         Number(p.dx) || 0, Number(p.y) || 0, Number(p.dz) || 0, Number(p.yaw) || 0,
         p.putTime ?? null, now);
+      if (replace) ledgerInsert(db, p, now); else ledgerUpsertIncremental(db, p, now);
       n++;
     }
     return n;
@@ -752,7 +869,7 @@ export function syncBundlePositions(db, { replace = false, upserts = [], deletes
   const upserted = tx();
   return {
     upserted,
-    deleted: (deletes || []).filter(id => id != null).length,
+    deleted: (deletes || []).filter(d => (typeof d === 'string' ? d : d && d.bundleId) != null).length,
     total: db.prepare('SELECT COUNT(*) n FROM bundle_positions').get().n,
   };
 }
@@ -770,4 +887,128 @@ export function getBundlePositions(db, { slotId, stackNo } = {}) {
     layer: r.layer, seat: r.seat, spec: r.spec, len: r.len,
     dx: r.dx, y: r.y, dz: r.dz, yaw: r.yaw, putTime: r.put_time, updatedAt: r.updated_at,
   }));
+}
+
+/* ================= 钢材台账查询 / 扫码补录 / CSV 导出 ================= */
+
+function ledgerView(r) {
+  return {
+    id: r.id, bundleId: r.bundle_id,
+    steelType: r.steel_type, grade: r.grade, heatNo: r.heat_no,
+    len: r.len, rods: r.rods, weightKg: r.weight_kg, produceDate: r.produce_date,
+    buyer: r.buyer, contractNo: r.contract_no, spec: r.spec, standard: r.standard,
+    supplier: r.supplier, poNo: r.po_no, materialNo: r.material_no,
+    slotId: r.slot_id, slotCode: r.slot_code ?? null, stackNo: r.stack_no, layer: r.layer,
+    inboundTime: r.inbound_time, inboundPlate: r.inbound_plate,
+    outboundTime: r.outbound_time, outboundPlate: r.outbound_plate, updatedAt: r.updated_at,
+  };
+}
+
+/**
+ * 台账多条件查询。filters：bundleId/heatNo/contractNo/plate(进厂或出厂)/grade/buyer/supplier（模糊）、
+ * spec（精确）、state=in|out（在库/已出库）、from/to（入库时间范围，to 可为 YYYY-MM-DD）、limit/offset。
+ * 返回 { total, rows }（rows 按入账倒序，含库位编码 slotCode）。
+ */
+export function getSteelLedger(db, f = {}) {
+  const cond = [], args = [];
+  const like = (col, v) => { cond.push(`l.${col} LIKE ?`); args.push(`%${v}%`); };
+  if (f.bundleId) like('bundle_id', f.bundleId);
+  if (f.heatNo) like('heat_no', f.heatNo);
+  if (f.contractNo) like('contract_no', f.contractNo);
+  if (f.plate) { cond.push('(l.inbound_plate LIKE ? OR l.outbound_plate LIKE ?)'); args.push(`%${f.plate}%`, `%${f.plate}%`); }
+  if (f.spec) { cond.push('l.spec = ?'); args.push(f.spec); }
+  if (f.grade) like('grade', f.grade);
+  if (f.buyer) like('buyer', f.buyer);
+  if (f.supplier) like('supplier', f.supplier);
+  if (f.state === 'in') cond.push('l.outbound_time IS NULL');
+  if (f.state === 'out') cond.push('l.outbound_time IS NOT NULL');
+  if (f.from) { cond.push('l.inbound_time >= ?'); args.push(f.from); }
+  if (f.to) { cond.push('l.inbound_time <= ?'); args.push(/^\d{4}-\d{2}-\d{2}$/.test(f.to) ? f.to + 'T23:59:59.999Z' : f.to); }
+  const where = cond.length ? ' WHERE ' + cond.join(' AND ') : '';
+  const total = db.prepare(`SELECT COUNT(*) n FROM steel_ledger l${where}`).get(...args).n;
+  const limit = Math.min(50000, Math.max(1, f.limit | 0 || 200));
+  const offset = Math.max(0, f.offset | 0);
+  const rows = db.prepare(`SELECT l.*, s.code AS slot_code FROM steel_ledger l
+    LEFT JOIN storage_slots s ON s.id = l.slot_id${where}
+    ORDER BY l.id DESC LIMIT ? OFFSET ?`).all(...args, limit, offset).map(ledgerView);
+  return { total, rows };
+}
+
+/** 单捆台账（在库行优先，其次最近一条历史）；不存在返回 null */
+export function getSteelLedgerEntry(db, bundleId) {
+  const r = db.prepare(`SELECT l.*, s.code AS slot_code FROM steel_ledger l
+    LEFT JOIN storage_slots s ON s.id = l.slot_id
+    WHERE l.bundle_id=? ORDER BY (l.outbound_time IS NULL) DESC, l.id DESC LIMIT 1`).get(String(bundleId));
+  return r ? ledgerView(r) : null;
+}
+
+/** 台账可补录字段（camelCase -> 列名）：扫码枪扫捆标签二维码补齐/修正标签元数据 */
+const LEDGER_META_FIELDS = {
+  steelType: 'steel_type', grade: 'grade', heatNo: 'heat_no', len: 'len', rods: 'rods',
+  weightKg: 'weight_kg', produceDate: 'produce_date', buyer: 'buyer', contractNo: 'contract_no',
+  spec: 'spec', standard: 'standard', supplier: 'supplier', poNo: 'po_no', materialNo: 'material_no',
+  inboundPlate: 'inbound_plate', outboundPlate: 'outbound_plate',
+};
+
+/**
+ * 扫码补录/修正：按捆号更新在库行（无在库行取最近历史行；均无则立未落位新行）。
+ * 仅入参中出现的字段被覆盖；给了 spec 没给 steelType 时按规格族自动推导钢材类型。
+ * 返回更新后的台账视图；缺 bundleId 返回 null。
+ */
+export function upsertSteelLedgerMeta(db, row = {}) {
+  if (!row || !row.bundleId) return null;
+  if (row.spec !== undefined && row.steelType === undefined) row.steelType = steelTypeOf(row.spec);
+  const now = new Date().toISOString();
+  const cur = db.prepare('SELECT id FROM steel_ledger WHERE bundle_id=? ORDER BY (outbound_time IS NULL) DESC, id DESC LIMIT 1')
+    .get(String(row.bundleId));
+  if (cur) {
+    const sets = [], args = [];
+    for (const [k, col] of Object.entries(LEDGER_META_FIELDS)) {
+      if (row[k] === undefined) continue;
+      sets.push(`${col}=?`); args.push(row[k]);
+    }
+    if (sets.length) db.prepare(`UPDATE steel_ledger SET ${sets.join(', ')}, updated_at=? WHERE id=?`).run(...args, now, cur.id);
+  } else {
+    const cols = ['bundle_id'], vals = [String(row.bundleId)];
+    for (const [k, col] of Object.entries(LEDGER_META_FIELDS)) {
+      if (row[k] === undefined) continue;
+      cols.push(col); vals.push(row[k]);
+    }
+    cols.push('updated_at'); vals.push(now);
+    db.prepare(`INSERT INTO steel_ledger (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...vals);
+  }
+  return getSteelLedgerEntry(db, row.bundleId);
+}
+
+/* CSV 导出：列序与 Excel「钢材入库数据-近3个月 需收集」模板一致（18 列），前置捆号、
+ * 后置标签附加字段（供应商/PO号/材料号）；调用方加 UTF-8 BOM 供 Excel 直开。 */
+const LEDGER_CSV_HEADERS = ['捆号', '钢材类型', '钢材材质', '炉号', '长度', '支数', '重量', '日期', '采购商', '合同号',
+  '规格/直径', '标准', '库位', '垛位', '垛位层', '入库时间', '进厂车牌', '出库时间', '出厂车牌', '供应商', 'PO号', '材料号'];
+
+const csvCell = v => {
+  if (v == null) return '';
+  const s = String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+const fmtTs = iso => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+/** 台账行数组（getSteelLedger 的 rows）-> CSV 文本；入库时间为空 = 期初存量（显式标注） */
+export function steelLedgerCsv(rows) {
+  const lines = [LEDGER_CSV_HEADERS.join(',')];
+  for (const r of rows) {
+    lines.push([
+      r.bundleId, r.steelType, r.grade, r.heatNo, r.len, r.rods, r.weightKg, r.produceDate,
+      r.buyer, r.contractNo, r.spec, r.standard,
+      r.slotCode ?? r.slotId ?? '', r.stackNo ?? '', r.layer != null ? r.layer + 1 : '',
+      r.inboundTime ? fmtTs(r.inboundTime) : '期初', r.inboundPlate, fmtTs(r.outboundTime), r.outboundPlate,
+      r.supplier, r.poNo, r.materialNo,
+    ].map(csvCell).join(','));
+  }
+  return lines.join('\r\n');
 }

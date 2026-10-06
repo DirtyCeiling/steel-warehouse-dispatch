@@ -161,7 +161,7 @@ const btnReset = document.getElementById('btnReset');
 
 const SHAPE_NAMES = { rebar: '螺纹钢', round: '圆钢', square: '方钢', pipe: '管材' };
 const LANE_COLS = [7, 19, 31];          // 竖向车辆通道列（只读结构）
-/* 栅格列 -> 号区 / 号区 -> 分区（与 server/layout.js 同规则，库房总览用） */
+/* 栅格列 -> 号区 / 号区+跨 -> 分区 / 物理垛数（与 server/layout.js 同规则，库房总览用） */
 function areaOfCol(c) {
   const bx = c - 2;
   if (bx < 0) return null;
@@ -170,12 +170,49 @@ function areaOfCol(c) {
   if (bx <= 28) return bx >= 18 ? bx - 1 : null;
   return bx >= 30 ? bx - 2 : null;
 }
-function zoneOfArea(a) {
-  if (a >= 17) return '中棒区域';
-  if (a >= 14) return '大棒单支和长钢';
-  if (a >= 3) return '大棒区域';
-  return '铁姆肯区';
+function colOfArea(a) {
+  for (let c = 2; c <= 37; c++) { if (!LANE_COLS.includes(c) && areaOfCol(c) === a) return c; }
+  return 2;
 }
+/* 分区表（现场平面图标注）：[起始号区, 截止号区, 分区名]，按跨（0=A/1=B/2=C） */
+const SPAN_ZONES = [
+  [ [1, 5, '装棒筒区'], [6, 13, '大棒区域'], [14, 16, '大棒头（制光钢）'], [17, 27, '中棒区域'], [28, 33, '备用区域'] ],
+  [ [1, 5, '扁钢杂区域'], [6, 9, '219及钢管长钢区域（10米以上）'], [10, 12, '460管（9.5米左右）'],
+    [13, 13, '高钢管'], [17, 17, '高钢管（临时）'], [18, 25, '小无缝及钢管短钢区域（8米以内）'], [28, 30, '钢管外贸区域'] ],
+  [ [1, 5, '冀鲁扁钢区域'], [6, 10, '大棒外贸区域'], [11, 15, '小中棒外贸区域'], [16, 16, '外贸长钢区域'],
+    [17, 22, '小棒内贸区域'], [23, 25, '待定'], [26, 27, '扁棒圆钢区域'], [28, 33, '商品坯'] ],
+];
+const SPAN_B_VACANT = new Set([14, 15, 16, 26, 27, 31, 32, 33]);   // 二跨无库位号区（现场空白）
+function zoneOfSlot(span, area) {
+  for (const [lo, hi, name] of SPAN_ZONES[span] || []) if (area >= lo && area <= hi) return name;
+  return null;
+}
+/* 每库位物理垛数（跨宽方向实际垛位列数；生效垛数不可超过它） */
+function physicalRacks(span, area) {
+  if (span === 0) {
+    if (area >= 14 && area <= 16) return 1;   // 一跨 14~16 大棒头(制光钢)：整宽合并单垛
+    return area <= 2 ? 2 : 3;
+  }
+  if (area <= 2) return 2;
+  if (area <= 5) return 3;
+  if (span === 2 && area >= 28) return 3;     // 三跨 28~33 商品坯
+  return 10;
+}
+/* 库位镜像（与 layout.js generateSlots 一致）：总览图绘制与离线库容兜底共用 */
+const LOCAL_SLOTS = [];
+for (let c = 2; c <= 37; c++) {
+  if (LANE_COLS.includes(c)) continue;
+  const area = areaOfCol(c);
+  if (area == null) continue;
+  for (let span = 0; span < 3; span++) {
+    if (span === 1 && SPAN_B_VACANT.has(area)) continue;
+    const merged = span === 0 && area >= 14 && area <= 16 ? 1 : 0;
+    LOCAL_SLOTS.push({ code: merged ? String(area) : `${area}-${span + 1}`, zone: zoneOfSlot(span, area),
+      area, span, merged, col: c, phys: physicalRacks(span, area) });
+  }
+}
+const PHYS_BY_CODE = new Map(LOCAL_SLOTS.map(s => [s.code, s.phys]));
+const physicalRacksOf = code => PHYS_BY_CODE.get(code) ?? 10;
 let schema = [], values = {}, saved = {};   // 调度参数（warehouse + robot.charger*）
 let rules = [];                          // 捆制规则行（含编辑态 edit: null|数字|'auto'|'preset'）
 let rulesSaved = null;                   // 规则编辑态快照（脏判断）
@@ -183,14 +220,14 @@ let rackSaved = {};                      // 每库位垛数覆盖快照（{ code
 let rackEdits = {};                      // 覆盖编辑增量（{ code: 垛数|null }，null = 清除覆盖跟随全局）
 let inv = null;                          // /api/inventory 快照
 
-/* 每库位垛数（货架数）：生效值 = 编辑增量（null=清除）> 已存覆盖 > 全局参数；物理上限 10 垛层 */
-const rackLimit = v => Math.max(1, Math.min(8, Math.round(Number(v) || 8)));
+/* 每库位垛数（货架数）：生效值 = min(编辑增量（null=清除）> 已存覆盖 > 全局参数, 该库位物理垛数 1~10) */
+const rackLimit = (v, code) => Math.max(1, Math.min(physicalRacksOf(code), Math.round(Number(v) || physicalRacksOf(code))));
 function effRacksOf(code) {
   let v = code in rackEdits ? rackEdits[code] : rackSaved[code];
   if (v == null) v = values.warehouse?.stacksPerSlot;
-  return rackLimit(v);
+  return rackLimit(v, code);
 }
-const globalRacks = () => rackLimit(values.warehouse?.stacksPerSlot);
+const globalRacks = () => Math.max(1, Math.min(10, Math.round(Number(values.warehouse?.stacksPerSlot) || 10)));
 const racksDirty = () => Object.keys(rackEdits).length > 0;
 
 /* ---- 捆制几何：公式唯一实现在 StackAlloc 垛位推荐算法包（/*@@stack-alloc@@* / 注入，
@@ -443,8 +480,8 @@ function renderDimsTbl() {
 /* ---- 卡片 3：垛位与库容 ---- */
 let rebuilding = false;
 function cardStack() {
-  const c = card(colYardParams, 'c-stack', '📦', '垛位与库容', '每库位垛数（货架）可设全局统一值、也可逐库位单独调整（1~10 垛 · 跨深 30m 内 3.0m 垛格）；每垛捆数上限收窄通用垛容；库容装载比例决定期初库存铺层');
-  const s0 = subOf(c, '每库位垛数（货架）', '全局统一值作用于所有库位；个别库位在下方表格单独覆盖（如长钢位减垛、混装位加垛），留空 = 跟随全局');
+  const c = card(colYardParams, 'c-stack', '📦', '垛位与库容', '每库位垛数（货架）可设全局统一值、也可逐库位单独调整（不超过各库位物理垛数 1~10，按现场实际垛位列数）；每垛捆数上限收窄通用垛容；库容装载比例决定期初库存铺层');
+  const s0 = subOf(c, '每库位垛数（货架）', '全局统一值作用于所有库位；个别库位在下方表格单独覆盖（如长钢位减垛、混装位加垛），留空 = 跟随全局；生效值不超过该库位物理垛数');
   renderSliders(s0, 'warehouse', ['stacksPerSlot']);
   const rackScroll = document.createElement('div');
   rackScroll.className = 'rack-scroll';
@@ -507,13 +544,12 @@ function cardStack() {
 function renderCapKpis() {
   const el = document.getElementById('capKpis');
   if (!el) return;
-  // 总库容 = Σ 每库位生效垛数 × 每垛通用上限（逐库位覆盖与全局参数实时联动）
+  // 总库容 = Σ 每库位生效垛数 × 每垛通用上限（逐库位覆盖与全局参数实时联动；离线时按本地库位镜像兜底）
   const bps = geo().bundlesPerStack;
-  const cap = yardSlots.length
-    ? yardSlots.reduce((n, s) => n + effRacksOf(s.code), 0) * bps
-    : 91 * globalRacks() * bps;
-  const rackTotal = yardSlots.reduce((n, s) => n + effRacksOf(s.code), 0);
-  const nOverride = yardSlots.filter(s => (s.code in rackEdits ? rackEdits[s.code] : rackSaved[s.code] ?? null) != null).length;
+  const codes = yardSlots.length ? yardSlots.map(s => s.code) : LOCAL_SLOTS.map(s => s.code);
+  const rackTotal = codes.reduce((n, code) => n + effRacksOf(code), 0);
+  const cap = rackTotal * bps;
+  const nOverride = codes.filter(code => (code in rackEdits ? rackEdits[code] : rackSaved[code] ?? null) != null).length;
   el.innerHTML = '';
   [['总库容', `${cap.toLocaleString()} 捆`],
    ['垛位总数', `${rackTotal.toLocaleString()} 垛（91 库位 · ${nOverride} 位单独覆盖）`],
@@ -530,15 +566,15 @@ function renderCapKpis() {
   });
 }
 
-/* ---- 每库位垛数覆盖表：91 行，输入空 = 跟随全局（已覆盖位清空 = 清除覆盖） ---- */
-const SPAN_NAMES = { 0: 'A 跨', 1: 'B 跨', 2: 'C 跨', 3: '整跨 A~C' };
+/* ---- 每库位垛数覆盖表：91 行，输入空 = 跟随全局（已覆盖位清空 = 清除覆盖）；生效值不超过该库位物理垛数 ---- */
+const SPAN_NAMES = { 0: 'A 跨', 1: 'B 跨', 2: 'C 跨' };
 function renderRackTbl() {
   const tbl = document.getElementById('rackTbl');
   if (!tbl) return;
   tbl.innerHTML = '';
   const theadEl = document.createElement('thead');
   const thead = document.createElement('tr');
-  ['库位', '分区', '跨', '垛数/库位', '来源', '当前在货'].forEach(h => {
+  ['库位', '分区', '跨', '物理', '垛数/库位', '来源', '当前在货'].forEach(h => {
     const th = document.createElement('th');
     th.textContent = h;
     thead.appendChild(th);
@@ -547,32 +583,27 @@ function renderRackTbl() {
   tbl.appendChild(theadEl);
   const tbody = document.createElement('tbody');
   tbl.appendChild(tbody);
-  if (!yardSlots.length) {
-    const tr = document.createElement('tr');
-    const td = document.createElement('td');
-    td.colSpan = 6;
-    td.textContent = '库位数据未加载（数据库服务不可达）';
-    tr.appendChild(td);
-    tbody.appendChild(tr);
-    return;
-  }
-  for (const s of yardSlots) {
+  // 数据库不可达时按本地库位镜像渲染（在货列显示未加载）
+  const rows = yardSlots.length ? yardSlots : LOCAL_SLOTS.map(s => ({ ...s, stacks: null }));
+  for (const s of rows) {
     const code = s.code;
+    const phys = physicalRacksOf(code);
     const tr = document.createElement('tr');
     const mk = txt => { const td = document.createElement('td'); td.textContent = txt; tr.appendChild(td); return td; };
-    mk(code + (s.merged ? '（整跨）' : ''));
+    mk(code + (s.merged ? '（整宽合并）' : ''));
     mk(s.zone);
-    mk(SPAN_NAMES[s.span] || '');
+    mk(s.merged ? 'A 跨·整宽' : SPAN_NAMES[s.span] || '');
+    mk(String(phys));
     const tdIn = document.createElement('td');
     const input = document.createElement('input');
     input.className = 'rods';
     input.type = 'number';
-    input.min = 1; input.max = 8; input.step = 1;
+    input.min = 1; input.max = phys; input.step = 1;
     const savedOv = rackSaved[code] ?? null;
     const editing = code in rackEdits ? rackEdits[code] : savedOv;
-    input.placeholder = String(globalRacks());
+    input.placeholder = String(Math.min(globalRacks(), phys));
     if (editing != null) input.value = editing;
-    input.title = '留空 = 跟随全局统一值；填 1~8 = 单独覆盖该库位垛数';
+    input.title = `留空 = 跟随全局统一值；填 1~${phys} = 单独覆盖该库位垛数（物理垛数 ${phys} 为上限）`;
     const tdSrc = document.createElement('td');
     const tdCur = document.createElement('td');
     tdCur.className = 'mono';
@@ -581,9 +612,10 @@ function renderRackTbl() {
       const isOv = (code in rackEdits ? rackEdits[code] : rackSaved[code] ?? null) != null;
       const badge = document.createElement('span');
       badge.className = 'badge' + (isOv ? ' override' : ' auto');
-      badge.textContent = isOv ? `覆盖 ${eff} 垛` : `全局 ${eff} 垛`;
+      badge.textContent = isOv ? `覆盖 ${eff} 垛` : (globalRacks() > phys ? `物理上限 ${eff} 垛` : `全局 ${eff} 垛`);
       tdSrc.innerHTML = '';
       tdSrc.appendChild(badge);
+      if (!s.stacks) { tdCur.textContent = '在货未加载'; return; }
       const occ = (s.stacks || []).filter(k => (k.count || 0) + (k.pending || 0) > 0);
       const nB = (s.stacks || []).reduce((n, k) => n + (k.count || 0), 0);
       tdCur.textContent = occ.length
@@ -597,7 +629,9 @@ function renderRackTbl() {
         if (savedOv != null) rackEdits[code] = null;
         else delete rackEdits[code];
       } else {
-        rackEdits[code] = rackLimit(input.value);
+        const v = rackLimit(input.value, code);   // 超物理垛数即时收窄并回写输入框
+        rackEdits[code] = v;
+        input.value = String(v);
       }
       paintRow();
       renderCapKpis();
@@ -879,8 +913,19 @@ function cardYard() {
   cv.id = 'yardCv';
   s.appendChild(cv);
 }
+/* 分区配色（现场平面图 20 个分区，与沙盘 ZONES 同源；tint 为 rgb 三元组） */
 const YARD_ZONES = {
-  '中棒区域': '56,132,246', '大棒单支和长钢': '74,222,128', '大棒区域': '251,146,60', '铁姆肯区': '250,204,21',
+  // 一跨 A（棒材跨）
+  '装棒筒区': '250,204,21', '大棒区域': '148,163,184', '大棒头（制光钢）': '74,222,128',
+  '中棒区域': '56,132,246', '备用区域': '203,213,225',
+  // 二跨 B（管材跨）
+  '扁钢杂区域': '125,211,252', '219及钢管长钢区域（10米以上）': '234,179,8', '460管（9.5米左右）': '251,146,60',
+  '高钢管': '34,211,238', '高钢管（临时）': '103,232,249', '小无缝及钢管短钢区域（8米以内）': '253,224,71',
+  '钢管外贸区域': '202,138,4',
+  // 三跨 C（外贸/内贸棒扁钢跨）
+  '冀鲁扁钢区域': '250,204,21', '大棒外贸区域': '96,165,250', '小中棒外贸区域': '253,224,71',
+  '外贸长钢区域': '34,211,238', '小棒内贸区域': '125,211,252', '待定': '253,186,116',
+  '扁棒圆钢区域': '251,146,60', '商品坯': '190,242,100',
 };
 function renderYard() {
   const cv = document.getElementById('yardCv');
@@ -909,43 +954,55 @@ function renderYard() {
   ctx.fillStyle = 'rgba(56,132,246,.13)';
   for (const c of LANE_COLS) ctx.fillRect(X((c - 2) * CELL_L), Y(rowTop(0)), CELL_L * SX, 99 * SY);
 
-  // 库位（按分区分色，占用深浅；每库位垛数覆盖位右上角标出生效垛数）
+  // 库位（按分区分色，占用深浅；垛数与全局不一致的库位右上角标出生效垛数）
   const used = new Map();   // code -> Σcount
   for (const s of yardSlots || []) {
     used.set(s.code, (s.stacks || []).reduce((n, k) => n + (k.count || 0), 0));
   }
   const gN = globalRacks();
-  const draw = (c, tint, y0m, hm, code) => {
+  const SPAN_ROW = [1, 3, 5];   // 跨 -> 行（行高表 ROW_H）
+  const draw = (c, tint, y0m, hm, code, isOv) => {
     const nR = effRacksOf(code);
     const ratio = Math.min(1, (used.get(code) || 0) / (nR * geo().bundlesPerStack));
     ctx.fillStyle = `rgba(${tint},${(0.10 + 0.75 * ratio).toFixed(3)})`;
     const rx = X((c - 2) * CELL_L) + 0.5, ry = Y(y0m) + 0.5, rw = CELL_L * SX - 1, rh = hm * SY - 1;
     ctx.fillRect(rx, ry, rw, rh);
-    if (nR !== gN) {   // 覆盖位：右上角标生效垛数
-      ctx.fillStyle = 'rgba(251,191,36,.92)';
+    if (nR !== gN) {   // 生效垛数 ≠ 全局值：右上角标出（ amber=单独覆盖，灰=物理垛数收窄）
+      ctx.fillStyle = isOv ? 'rgba(251,191,36,.92)' : 'rgba(203,213,225,.75)';
       ctx.font = '700 9px "Microsoft YaHei",sans-serif';
       ctx.textAlign = 'right'; ctx.textBaseline = 'top';
       ctx.fillText(`${nR}垛`, rx + rw - 2.5, ry + 2);
       ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     }
   };
-  const codeOf = (area, merged, i) => merged ? String(area) : `${area}-${area <= 2 ? (i === 0 ? 1 : 2) : i + 1}`;
-  for (let c = 2; c <= 37; c++) {
-    if (LANE_COLS.includes(c)) continue;
-    const area = areaOfCol(c);
-    if (area == null) continue;
-    const zone = zoneOfArea(area);
-    const tint = YARD_ZONES[zone] || '114,136,179';
-    if (area >= 14 && area <= 16) { draw(c, tint, rowTop(1), 64, codeOf(area, true)); continue; }   // 整跨合并位
-    for (let i = 0; i < 3; i++) {
-      if (area <= 2 && i === 1) continue;   // 1、2 号区 B 跨为车辆通道
-      draw(c, tint, rowTop([1, 3, 5][i]), 30, codeOf(area, false, i));
+  for (const s of LOCAL_SLOTS) {
+    const tint = YARD_ZONES[s.zone] || '114,136,179';
+    const isOv = (s.code in rackEdits ? rackEdits[s.code] : rackSaved[s.code] ?? null) != null;
+    draw(s.col, tint, rowTop(SPAN_ROW[s.span]), 30, s.code, isOv);   // 一跨 14~16 整宽合并位仅占一跨行
+  }
+  // 分区名标注（按跨行内标注；窄分段用短名，仍过窄自动省略；深色描边保证在浅底色上可读）
+  const ZONE_SHORT = {
+    '大棒头（制光钢）': '大棒头', '219及钢管长钢区域（10米以上）': '219长钢', '460管（9.5米左右）': '460管',
+    '高钢管（临时）': '高钢管临', '小无缝及钢管短钢区域（8米以内）': '小无缝短钢',
+  };
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.font = '9px "Microsoft YaHei",sans-serif';
+  for (let si = 0; si < 3; si++) {
+    for (const [lo, hi, zn] of SPAN_ZONES[si]) {
+      const x0 = X((colOfArea(lo) - 2) * CELL_L), x1 = X((colOfArea(hi) - 1) * CELL_L);
+      const name = (x1 - x0 >= ctx.measureText(zn).width + 6) ? zn : ZONE_SHORT[zn] || zn;
+      if (x1 - x0 < ctx.measureText(name).width + 6) continue;
+      const lx = (x0 + x1) / 2, ly = Y(rowTop(SPAN_ROW[si])) + 2.5;
+      ctx.strokeStyle = 'rgba(6,12,24,.85)'; ctx.lineWidth = 2.5;
+      ctx.strokeText(name, lx, ly);
+      ctx.fillStyle = 'rgba(230,238,252,.92)';
+      ctx.fillText(name, lx, ly);
     }
   }
-  // 分区名标注
+  ctx.textBaseline = 'alphabetic';
+  // 方位标注
   ctx.fillStyle = '#93a8cc';
   ctx.font = '10.5px "Microsoft YaHei",sans-serif';
-  ctx.textAlign = 'center';
   ctx.fillText('北端（进厂 · 充电桩）', X(150), Y(-4));
   ctx.fillText('充电服务带', X(150), Y(101) + 4);
 
@@ -963,26 +1020,20 @@ function renderYard() {
     ctx.font = '700 9px sans-serif';
     ctx.fillText(`⚡${i + 1}`, x, y + 3);
   });
-  // 库容 KPI（左下，联动每垛上限与每库位垛数）+ 图例（右上一行，避免与 KPI 重叠）
+  // 库容 KPI（左下，联动每垛上限与每库位垛数；离线按本地库位镜像兜底）+ 角标说明（右下）
   const bps = geo().bundlesPerStack;
-  const cap = yardSlots.length ? yardSlots.reduce((n, s) => n + effRacksOf(s.code), 0) * bps : 91 * globalRacks() * bps;
+  const codes = yardSlots.length ? yardSlots.map(s => s.code) : LOCAL_SLOTS.map(s => s.code);
+  const cap = codes.reduce((n, code) => n + effRacksOf(code), 0) * bps;
   const util = inv ? inv.totalBundles / cap : 0;
   ctx.textAlign = 'left';
   ctx.font = '11px "Microsoft YaHei",sans-serif';
   ctx.fillStyle = '#93a8cc';
   ctx.fillText(`总库容 ${cap.toLocaleString()} 捆${inv ? ` · 当前库存 ${inv.totalBundles.toLocaleString()} 捆 · 利用率 ${(util * 100).toFixed(1)}%` : ''}`, PAD, H - 6);
-  let lx = W - PAD;
   ctx.textAlign = 'right';
-  for (const [name, tint] of Object.entries(YARD_ZONES).reverse()) {
-    const wTxt = ctx.measureText(name).width;
-    lx -= wTxt;
-    ctx.fillStyle = `rgba(${tint},.85)`;
-    ctx.fillText(name, lx, H - 20);
-    lx -= 14;
-    ctx.fillStyle = `rgba(${tint},.55)`;
-    ctx.fillRect(lx, H - 28, 10, 8);
-    lx -= 8;
-  }
+  ctx.font = '10px "Microsoft YaHei",sans-serif';
+  ctx.fillStyle = 'rgba(147,168,204,.8)';
+  ctx.fillText('分区名见跨内标注 · 角标：黄=逐库位覆盖 / 灰=物理垛数收窄', W - PAD, H - 6);
+  ctx.textAlign = 'left';
 }
 
 /* ---- 卡片七：垛体三维预览（左栏顶部：含规格/捆数共用控制条） ---- */
@@ -1320,10 +1371,12 @@ function cardRo() {
     ['竖向车辆通道', '3 条（列 7 / 19 / 31）'],
     ['横向通道', '4 条 × 2m（不含充电服务带）'],
     ['充电服务带', '3m（厂房外 C 跨一路）'],
-    ['库位', '91 个（含 14~16 整跨合并位 3 个）'],
-    ['垛格（物理）', '每库位最多 10 垛层 × 3.0m（跨深 30m）'],
-    ['每库位垛数', '可在「垛位与库容」按全局/逐库位配置 1~10 垛'],
-    ['库区分区', '铁姆肯区(1-2) · 大棒区域(3-13) · 大棒单支和长钢(14-16) · 中棒区域(17-33)'],
+    ['库位', '91 个（一跨 33 · 二跨 25 · 三跨 33；二跨 14~16/26~27/31~33 现场无库位）'],
+    ['垛格（物理）', '每库位 1/2/3/10 垛（按现场实际垛位列数，合计 555 垛；一跨 14~16 大棒头为整宽合并单垛）'],
+    ['每库位垛数', '可在「垛位与库容」按全局/逐库位配置（不超过该库位物理垛数）'],
+    ['库区分区 · 一跨 A', '装棒筒区(1-5) · 大棒区域(6-13) · 大棒头制光钢(14-16 整宽合并) · 中棒区域(17-27) · 备用区域(28-33)'],
+    ['库区分区 · 二跨 B', '扁钢杂区域(1-5) · 219及钢管长钢(6-9) · 460管(10-12) · 高钢管(13/17) · 小无缝短钢(18-25) · 钢管外贸(28-30)'],
+    ['库区分区 · 三跨 C', '冀鲁扁钢(1-5) · 大棒外贸(6-10) · 小中棒外贸(11-15) · 外贸长钢(16) · 小棒内贸(17-22) · 待定(23-25) · 扁棒圆钢(26-27) · 商品坯(28-33)'],
     ['天车', '6 台（每跨 2 台，TC-A1~TC-C2）'],
   ];
   for (const [k, v] of FACTS) {

@@ -42,9 +42,23 @@ backdate(db, v2.id, 6);
 const v2view = getVehicleView(db, v2.id);
 const load = v2view.loads[0];
 const claimed = new Set(v2view.loads.map(l => `${l.recSlotId}:${l.recStackNo}`));
-const cands = listCandidates(db, load.spec, 1)
+// 整车单跨装卸：改垛候选限同跨（anchor = 其余装载所在跨；整跨合并位按 B 跨停靠口径）
+const anchorRec = v2view.loads.find(l => l.id !== load.id) || load;
+const anchorSlot = db.prepare('SELECT span, merged FROM storage_slots WHERE id=?').get(anchorRec.recSlotId);
+const anchorSpan = anchorSlot.merged ? 1 : anchorSlot.span;
+const allCands = listCandidates(db, load.spec, 1)
   .filter(c => c.free >= load.bundles && !claimed.has(`${c.slotId}:${c.stackNo}`));
-assert(cands.length > 0, '存在可改垛的合法候选落点');
+// 跨外改垛守卫仅在「多组装载」时生效（整车已有限定跨）；单组车整车搬哪跨都合法
+const hasOthers = v2view.loads.some(l => l.id !== load.id);
+const cross = hasOthers ? allCands.find(c => (c.merged ? 1 : c.span) !== anchorSpan) : undefined;
+if (cross) {
+  const rej = adjustLoad(db, v2.id, load.id, cross.slotId, cross.stackNo);
+  assert(rej.error && rej.error.includes('整车单跨'), `跨外改垛被拒（${cross.code}）`);
+} else {
+  console.log('  · 本车单组或推荐已同跨，跨外守卫不适用（多组车时生效）');
+}
+const cands = allCands.filter(c => (c.merged ? 1 : c.span) === anchorSpan);
+assert(cands.length > 0, '存在可改垛的合法同跨候选落点');
 const target = cands[0];
 const adj = adjustLoad(db, v2.id, load.id, target.slotId, target.stackNo);
 assert(!adj.error, `人工改垛成功（${target.code} 第${target.stackNo}垛）${adj.error ? '：' + adj.error : ''}`);

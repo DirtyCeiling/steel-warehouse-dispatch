@@ -65,8 +65,11 @@ const el = id => documentStub.getElementById(id);
 console.log('== 阶段一：布局与库位（与调度沙盘同源） ==');
 check('库位总数 91', dbg.slots === 91, String(dbg.slots));
 const zc = dbg.zoneCounts;
-check('分区 中棒51/大棒33/长钢3/铁姆肯4',
-  zc['中棒区域'] === 51 && zc['大棒区域'] === 33 && zc['大棒单支和长钢'] === 3 && zc['铁姆肯区'] === 4,
+check('分区 20 个（一跨 33 · 二跨 25 · 三跨 33 库位）',
+  Object.keys(zc).length === 20
+    && zc['中棒区域'] === 11 && zc['大棒头（制光钢）'] === 3 && zc['备用区域'] === 6
+    && zc['小无缝及钢管短钢区域（8米以内）'] === 8 && zc['高钢管'] === 1 && zc['钢管外贸区域'] === 3
+    && zc['商品坯'] === 6 && zc['待定'] === 3,
   JSON.stringify(zc));
 const codes = dbg.slots && (() => sandbox.__probe)();
 
@@ -119,7 +122,7 @@ check('捆截面为类圆形密排（圆钢/螺纹钢排距 √3·r，方钢平�
   }));
 check('垛格坐标有限且落在库区范围内（含合并库位）',
   (() => {
-    for (const s of dbg.slotList) for (let si = 0; si < 10; si++) {
+    for (const s of dbg.slotList) for (let si = 0; si < s.stacks.length; si++) {
       const c = dbg.stackCell(s, si);
       if (!isFinite(c.x) || !isFinite(c.z) || c.x < 0 || c.x > 300 || c.z < 0 || c.z > 101) return false;
       if (Math.abs(c.x - s.x) > s.w / 2 + .1 || Math.abs(c.z - s.z) > s.d / 2 + .1) return false;

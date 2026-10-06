@@ -5,7 +5,13 @@ import { injectCoreSegs } from './sandbox-page-loader.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
-import { makeFeedFetch } from './feed-stub.mjs';
+import { makeFeedFetch, logisticsGenAvailable } from './feed-stub.mjs';
+if (!logisticsGenAvailable) {
+  console.log('SKIP：外部物流源项目 LogisticsData_Sim 不在本机（可选依赖，与本项目同级放置）。'
+    + ' 本脚本验证 ?feed 物流源模式，跳过——其余默认本地排产链路由 self-test 等覆盖。');
+  process.exit(0);
+}
+
 
 const here = dirname(fileURLToPath(import.meta.url));
 const html = injectCoreSegs(readFileSync(join(here, '调度仿真沙盘.html'), 'utf8'));

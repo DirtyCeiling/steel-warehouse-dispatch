@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>钢厂棒材库 · 库存三维查看</title>
 <!--
-  库存三维查看页（与《调度仿真沙盘.html》同一布局/库容模型：91 库位 × 10 垛 × 400 捆）
+  库存三维查看页（与《调度仿真沙盘.html》同一布局/库容模型：91 库位 × 物理垛数（共 555 垛）× 400 捆）
   · 左侧 Three.js 三维视图：库区总览 -> 库位 -> 垛 -> 捆 四级下钻，点击/悬停联动
   · 点击垛位：详情卡列出该垛全部捆明细（可再下钻单捆），右侧列表同步聚焦本垛
   · 捆体按类圆形打捆（圆钢/螺纹钢六方密排、方钢平铺），垛内按金字塔嵌槽自然码放
@@ -228,7 +228,7 @@
     <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></div>
     <div>
       <h1>库存三维查看</h1>
-      <p>棒材库快照 · 91 库位 × 10 垛 × 400 捆 · 捆级明细（钢种 / 长度 / 直径 / 支数）</p>
+      <p>棒材库快照 · 91 库位 × 物理垛数（共 555 垛）× 400 捆 · 捆级明细（钢种 / 长度 / 直径 / 支数）</p>
     </div>
   </div>
   <nav id="crumb"></nav>
@@ -251,12 +251,12 @@
   </section>
   <aside>
     <div class="kpis">
-      <div class="kpi"><div class="kl">库存捆数</div><div class="kv c1" id="kBundles">–</div><div class="ks">总库容 364,000 捆</div></div>
+      <div class="kpi"><div class="kl">库存捆数</div><div class="kv c1" id="kBundles">–</div><div class="ks">总库容 222,000 捆</div></div>
       <div class="kpi"><div class="kl">累计支数</div><div class="kv c2" id="kRods">–</div><div class="ks">Σ 每捆支数</div></div>
       <div class="kpi"><div class="kl">库存吨位</div><div class="kv c4" id="kTons">–</div><div class="ks">吨（按捆累计）</div></div>
       <div class="kpi"><div class="kl">有料库位</div><div class="kv c3" id="kSlots">–</div><div class="ks">共 91 库位</div></div>
-      <div class="kpi"><div class="kl">有料垛位</div><div class="kv c5" id="kStacks">–</div><div class="ks">共 910 垛</div></div>
-      <div class="kpi"><div class="kl">库容利用率</div><div class="kv c6" id="kUtil">–</div><div class="ks">捆数 ÷ 364,000</div></div>
+      <div class="kpi"><div class="kl">有料垛位</div><div class="kv c5" id="kStacks">–</div><div class="ks">共 555 垛</div></div>
+      <div class="kpi"><div class="kl">库容利用率</div><div class="kv c6" id="kUtil">–</div><div class="ks">捆数 ÷ 222,000</div></div>
     </div>
     <div class="panel specp">
       <h2>规格库存分布（按吨位）<span class="cnt" id="specCnt"></span></h2>
@@ -305,7 +305,7 @@ window.addEventListener('error', e => {
  * 钢厂棒材库 · 库存三维查看
  * 布局 / 库容模型与《调度仿真沙盘.html》同源：
  *   300m × 90m 三跨（A/B/C 各 30m）+ 4 条 2m 横向通道 + 3 条竖向车辆通道
- *   91 库位（每库位 10 垛 × 每垛 400 捆 = 4000 捆）-> 全库 364,000 捆
+ *   91 库位（物理垛数 1~10 · 共 555 垛 × 每垛 400 捆）-> 全库 222,000 捆
  * 本页为独立库存快照（捆级明细），three.js 不可用时自动降级为纯列表模式。
  * ===================================================================== */
 
@@ -323,7 +323,7 @@ const SPAN_ROWS = [1, 3, 5];
 const SPAN_NAMES = ['一跨 A', '二跨 B', '三跨 C'];
 const LANE_COLS = [7, 19, 31];
 const STACKS_PER_SLOT = 10, BUNDLES_PER_STACK = 400;
-const TOTAL_BUNDLE_CAP = M.SLOTS * STACKS_PER_SLOT * BUNDLES_PER_STACK;
+const TOTAL_BUNDLE_CAP = 555 * BUNDLES_PER_STACK;   // 现场物理总垛数 555 × 每垛上限
 const MAP_BOT = rowY(7) + M.SVC_W;                  // 101m（含充电服务带）
 const WX = x => x - M.L / 2;                        // 米制 x -> 世界 x（居中）
 const WZ = y => y - MAP_BOT / 2;                    // 米制 y -> 世界 z（居中）
@@ -336,17 +336,49 @@ function areaOfCol(c) {
   if (bx <= 28) return bx >= 18 ? bx - 1 : null;
   return bx >= 30 ? bx - 2 : null;
 }
-function zoneOfArea(a) {
-  if (a >= 17) return '中棒区域';
-  if (a >= 14) return '大棒单支和长钢';
-  if (a >= 3) return '大棒区域';
-  return '铁姆肯区';
+/* 分区表（现场平面图标注）：[起始号区, 截止号区, 分区名]，按跨（0=A/1=B/2=C）——与 server/layout.js 同源 */
+const SPAN_ZONES = [
+  [ [1, 5, '装棒筒区'], [6, 13, '大棒区域'], [14, 16, '大棒头（制光钢）'], [17, 27, '中棒区域'], [28, 33, '备用区域'] ],
+  [ [1, 5, '扁钢杂区域'], [6, 9, '219及钢管长钢区域（10米以上）'], [10, 12, '460管（9.5米左右）'], [13, 13, '高钢管'],
+    [17, 17, '高钢管（临时）'], [18, 25, '小无缝及钢管短钢区域（8米以内）'], [28, 30, '钢管外贸区域'] ],
+  [ [1, 5, '冀鲁扁钢区域'], [6, 10, '大棒外贸区域'], [11, 15, '小中棒外贸区域'], [16, 16, '外贸长钢区域'],
+    [17, 22, '小棒内贸区域'], [23, 25, '待定'], [26, 27, '扁棒圆钢区域'], [28, 33, '商品坯'] ],
+];
+const SPAN_B_VACANT = new Set([14, 15, 16, 26, 27, 31, 32, 33]);   // 二跨无库位号区
+function zoneOfSlot(span, area) {
+  for (const [lo, hi, name] of SPAN_ZONES[span] || []) if (area >= lo && area <= hi) return name;
+  return null;
+}
+/** 每库位物理垛数（现场垛位列数，与 server/layout.js 同源） */
+function physicalRacks(span, area) {
+  if (span === 1 && SPAN_B_VACANT.has(area)) return 0;
+  if (span === 0) { if (area >= 14 && area <= 16) return 1; return area <= 2 ? 2 : 3; }
+  if (area <= 2) return 2;
+  if (area <= 5) return 3;
+  if (span === 2 && area >= 28) return 3;
+  return 10;
 }
 const ZONES = {
-  '中棒区域':       { tint: 0x3884f6, label: '#7dd3fc' },
-  '大棒单支和长钢': { tint: 0x4ade80, label: '#86efac' },
-  '大棒区域':       { tint: 0xfb923c, label: '#fdba74' },
-  '铁姆肯区':       { tint: 0xfacc14, label: '#fde047' },
+  '装棒筒区':                    { tint: 0xfacc14, label: '#fde047' },
+  '大棒区域':                    { tint: 0x94a3b8, label: '#cbd5e1' },
+  '大棒头（制光钢）':            { tint: 0x4ade80, label: '#86efac' },
+  '中棒区域':                    { tint: 0x3884f6, label: '#7dd3fc' },
+  '备用区域':                    { tint: 0xcbd5e1, label: '#e2e8f0' },
+  '扁钢杂区域':                  { tint: 0x7dd3fc, label: '#bae6fd' },
+  '219及钢管长钢区域（10米以上）': { tint: 0xeab308, label: '#facc15' },
+  '460管（9.5米左右）':           { tint: 0xfb923c, label: '#fdba74' },
+  '高钢管':                      { tint: 0x22d3ee, label: '#67e8f9' },
+  '高钢管（临时）':               { tint: 0x67e8f9, label: '#a5f3fc' },
+  '小无缝及钢管短钢区域（8米以内）': { tint: 0xfde047, label: '#fef08a' },
+  '钢管外贸区域':                { tint: 0xca8a04, label: '#eab308' },
+  '冀鲁扁钢区域':                { tint: 0xfacc14, label: '#fde047' },
+  '大棒外贸区域':                { tint: 0x60a5fa, label: '#93c5fd' },
+  '小中棒外贸区域':              { tint: 0xfde047, label: '#fef08a' },
+  '外贸长钢区域':                { tint: 0x22d3ee, label: '#67e8f9' },
+  '小棒内贸区域':                { tint: 0x7dd3fc, label: '#bae6fd' },
+  '待定':                        { tint: 0xfdba74, label: '#fed7aa' },
+  '扁棒圆钢区域':                { tint: 0xfb923c, label: '#fdba74' },
+  '商品坯':                      { tint: 0xbef264, label: '#d9f99d' },
 };
 
 /* ---------------- 棒材规格（在沙盘 5 种规格上补充钢种/长度维度；rods 每捆支数按捆径 15~50cm 口径） ---------------- */
@@ -400,44 +432,35 @@ const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
 const rp = arr => arr[Math.floor(rnd() * arr.length)];
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 
-/* ---------------- 库位构建（91 个，与沙盘同规则） ---------------- */
+/* ---------------- 库位构建（91 个，与沙盘同规则；现场布局见 库房真实布局图.drawio） ---------------- */
 const slots = [];
 (function buildSlots() {
   for (let c = 2; c < M.COLS; c++) {
     if (LANE_COLS.includes(c)) continue;
     const area = areaOfCol(c);
     if (area == null) continue;
-    const zone = zoneOfArea(area);
-    if (area >= 14 && area <= 16) {   // 大棒单支和长钢：整跨合并库位（14/15/16）
+    for (let span = 0; span < 3; span++) {
+      if (span === 1 && SPAN_B_VACANT.has(area)) continue;   // 二跨 14~16/26~27/31~33 号区现场无库位
+      const merged = span === 0 && area >= 14 && area <= 16; // 一跨 14~16 大棒头（制光钢）：整宽合并单垛
+      const r = SPAN_ROWS[span];
       slots.push({
-        id: slots.length, code: String(area), zone, area, merged: true, col: c,
-        x: cellCX(c), z: (rowY(1) + rowY(5) + M.SPAN_W) / 2,
-        w: M.CELL_L, d: rowY(5) + M.SPAN_W - rowY(1),
-        state: 'free', stacks: Array.from({ length: STACKS_PER_SLOT }, () => null),
-      });
-      continue;
-    }
-    for (let i = 0; i < 3; i++) {
-      const r = SPAN_ROWS[i];
-      if (area <= 2 && i === 1) continue;            // 1、2 号区 B 跨为车辆通道
-      const suffix = area <= 2 ? (i === 0 ? 1 : 2) : i + 1;
-      slots.push({
-        id: slots.length, code: `${area}-${suffix}`, zone, area, merged: false, col: c, spanRow: r,
+        id: slots.length, code: merged ? String(area) : `${area}-${span + 1}`,
+        zone: zoneOfSlot(span, area), area, merged, col: c, spanRow: r,
         x: cellCX(c), z: rowY(r) + M.SPAN_W / 2,
         w: M.CELL_L, d: M.SPAN_W,
-        state: 'free', stacks: Array.from({ length: STACKS_PER_SLOT }, () => null),
+        state: 'free', stacks: Array.from({ length: physicalRacks(span, area) }, () => null),
       });
     }
   }
 })();
-const spanName = s => s.merged ? '整跨合并' : SPAN_NAMES[SPAN_ROWS.indexOf(s.spanRow)];
+const spanName = s => SPAN_NAMES[SPAN_ROWS.indexOf(s.spanRow)];
 /* 垛在库位内的网格：1 列(宽向) × N 排(深向，竖着排列，与主视图一致)；垛内捆沿宽度横放堆叠 */
 function stackCell(s, i) {
-  const dEff = Math.min(s.d, 40);
+  const dEff = Math.min(s.d, 40), n = s.stacks.length;
   return {
     x: s.x,
-    z: s.z + (i - (STACKS_PER_SLOT - 1) / 2) * (dEff / STACKS_PER_SLOT),
-    cw: s.w, cd: dEff / STACKS_PER_SLOT,
+    z: s.z + (i - (n - 1) / 2) * (dEff / n),
+    cw: s.w, cd: dEff / n,
   };
 }
 const stackCount = st => st ? st.bundles.length : 0;
@@ -451,8 +474,8 @@ const bundleById = new Map();
   const occ = shuffle(slots.slice()).slice(0, 46);   // 46 个库位有料
   for (const s of occ) {
     s.state = 'occupied';
-    const nSt = ri(2, 6);
-    const idxs = shuffle(Array.from({ length: STACKS_PER_SLOT }, (_, i) => i)).slice(0, nSt);
+    const nSt = Math.min(s.stacks.length, ri(2, 6));
+    const idxs = shuffle(Array.from({ length: s.stacks.length }, (_, i) => i)).slice(0, nSt);
     for (const si of idxs) {
       const specIdx = ri(0, SPECS.length - 1), sp = SPECS[specIdx];
       const grade = rp(sp.grades), len = rp(sp.lengths);
@@ -731,7 +754,7 @@ function highlightListSel() {
 function buildFilterOptions() {
   const zones = Object.keys(ZONES);
   $('fZone').innerHTML = '<option value="">全部区域</option>' + zones.map(z => `<option>${z}</option>`).join('');
-  $('fSpan').innerHTML = '<option value="">全部跨</option>' + SPAN_NAMES.map(z => `<option>${z}</option>`).join('') + '<option>整跨合并</option>';
+  $('fSpan').innerHTML = '<option value="">全部跨</option>' + SPAN_NAMES.map(z => `<option>${z}</option>`).join('');
   $('fSpec').innerHTML = '<option value="-1">全部规格</option>' + SPECS.map((s, i) => `<option value="${i}">${s.name}</option>`).join('');
   const grades = [...new Set(SPECS.flatMap(s => s.grades))].sort();
   $('fGrade').innerHTML = '<option value="">全部钢种</option>' + grades.map(g => `<option>${g}</option>`).join('');
@@ -989,8 +1012,6 @@ function buildEnv() {
   const labels = [
     ['一跨 A', '#7dd3fc', -14, WZ(17)], ['二跨 B', '#7dd3fc', -14, WZ(49)],
     ['三跨 C', '#7dd3fc', -14, WZ(81)], ['充电服务带', '#34d399', -20, WZ(rowY(7) + M.SVC_W / 2)],
-    ['铁姆肯区', '#fde047', -136, -76], ['大棒区域', '#fdba74', -80, -76],
-    ['大棒单支和长钢', '#86efac', -22, -76], ['中棒区域', '#7dd3fc', 62, -76],
     ['车辆通道', '#8fa7d6', 118, WZ(-4)],
   ];
   const addLabel = (txt, col, x, z, w) => {
@@ -999,6 +1020,16 @@ function buildEnv() {
     envGroup.add(lb);
   };
   for (const [txt, col, x, z] of labels) addLabel(txt, col, x, z, txt.length * 3.6);
+  /* 分区标注（北侧厂房外三行：各跨分区不同，按跨给出） */
+  const colOfArea = a => { for (let c = 2; c < M.COLS; c++) if (!LANE_COLS.includes(c) && areaOfCol(c) === a) return c; return 2; };
+  SPAN_ZONES.forEach((bands, si) => {
+    const zRow = -70 - si * 9;
+    addLabel(SPAN_NAMES[si], '#7dd3fc', -146, zRow, 13);
+    for (const [lo, hi, name] of bands) {
+      const xc = WX((cellCX(colOfArea(lo)) + cellCX(colOfArea(hi))) / 2);
+      addLabel(name, ZONES[name].label, xc, zRow, Math.min(60, name.length * 3.6));
+    }
+  });
   addLabel('← 南端（1 号区）', '#33507f', -135, 60, 26);
   addLabel('北端（33 号区）→', '#33507f', 135, 60, 26);
 }
@@ -1088,13 +1119,13 @@ function buildYardView() {
     plate.userData = { kind: 'slot', slot: s };
     g.add(pickable(plate));
   }
-  /* 垛位底座：每库位 10 个垛位（含空垛）全部显示，竖着一排 */
+  /* 垛位底座：每库位物理垛数个（含空垛）全部显示，竖着一排 */
   const posInst = new THREE.InstancedMesh(
     new THREE.BoxGeometry(1, 1, 1),
     T.mat('stackPosBase', () => new THREE.MeshStandardMaterial({ color: 0x0c1a33, roughness: .85 })),
-    slots.length * STACKS_PER_SLOT);
+    slots.reduce((n, s) => n + s.stacks.length, 0));
   let pi = 0; const pm = new THREE.Matrix4();
-  for (const s of slots) for (let si = 0; si < STACKS_PER_SLOT; si++) {
+  for (const s of slots) for (let si = 0; si < s.stacks.length; si++) {
     const cell = stackCell(s, si);
     pm.makeScale(cell.cw - .9, .12, cell.cd - .4);
     pm.setPosition(WX(cell.x), .36, WZ(cell.z));
@@ -1151,8 +1182,8 @@ function buildSlotView() {
   const lbSlot = makeLabel(`库位 ${s.code} · ${s.zone}`, ZONES[s.zone].label, 15);
   lbSlot.position.set(WX(s.x), 1.2, WZ(s.z) - dEff / 2 - 3);
   g.add(lbSlot);
-  /* 10 垛：基座 + 捆束堆（金字塔嵌槽码放）+ 序号标注 + 拾取代理盒 */
-  for (let si = 0; si < STACKS_PER_SLOT; si++) {
+  /* N 垛（物理垛数）：基座 + 捆束堆（金字塔嵌槽码放）+ 序号标注 + 拾取代理盒 */
+  for (let si = 0; si < s.stacks.length; si++) {
     const cell = stackCell(s, si), st = s.stacks[si];
     const pg = st ? pileGeom(st) : null;
     const base = new THREE.Mesh(

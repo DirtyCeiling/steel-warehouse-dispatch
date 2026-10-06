@@ -18,7 +18,7 @@ import {
   learnDeltas as saLearnDeltas,
 } from './stack-alloc.js';
 
-export const SPAN_LABELS = ['A跨', 'B跨', 'C跨', '整跨合并'];
+export const SPAN_LABELS = ['A跨', 'B跨', 'C跨', 'A跨·整宽合并'];
 const MILLS = ['承德建龙', '新兴铸管', '唐山瑞丰', '敬业集团', '首钢迁安', '石钢京诚'];
 const PROVINCES = ['冀', '京', '津', '鲁', '豫', '晋', '辽', '陕', '蒙'];
 
@@ -118,10 +118,21 @@ function candidateSlots(db) {
 /**
  * 为一组（spec × bundles 捆）生成垛位分配推荐：
  * 贪心取最优候选垛，装满后再荐次优（同车同规格集中码放、垛满另荐），返回分配数组。
+ * opts.onlySpan：整车单跨约束（货车单跨装卸、一车一天车）——仅该跨库位可作落点；
+ *   一跨 14~16 整宽合并位（merged=1）落在一跨，随 A 跨停靠组车（与沙盘 spanOfSlot 同口径）。
+ * opts.claims：同车前序组已计划占量（slotId:stackNo -> 捆数），并入垛占用防跨组重复荐同一垛。
  */
-export function recommendAllocation(db, spec, bundles) {
+const effSpanOfSlot = s => s.span;   // 有效跨 = 所属跨（一跨 14~16 整宽合并位 span=0，随 A 跨停靠）
+export function recommendAllocation(db, spec, bundles, opts = {}) {
   const { W, yard, slots } = candidateSlots(db);
-  const r = saRecommendAllocation({ slots, nearSlots: yard, spec, bundles, W, ...allocCtx() });
+  let pool = opts.onlySpan == null ? slots : slots.filter(s => effSpanOfSlot(s) === opts.onlySpan);
+  if (opts.claims) {
+    pool = pool.map(s => ({ ...s, stacks: s.stacks.map(k => {
+      const c = opts.claims.get(s.id + ':' + k.stack_no) || 0;
+      return c ? { ...k, count: k.count + c } : k;   // 本车前序组已计划量并入占用量（防同垛重复超荐）
+    }) }));
+  }
+  const r = saRecommendAllocation({ slots: pool, nearSlots: yard, spec, bundles, W, ...allocCtx() });
   return {
     allocations: r.allocations.map(a => ({
       slotId: a.slot.id, code: a.slot.code, zone: a.slot.zone,
@@ -171,7 +182,9 @@ function spawnLocalVehicle(db) {
     plate: makePlate(), waybill: `YD26-${randint(10000, 99999)}`, mill: pick(MILLS) };
 }
 
-/** 按识别结果（车牌/运单/逐组配载）落库并生成垛位分配推荐 */
+/** 按识别结果（车牌/运单/逐组配载）落库并生成垛位分配推荐
+ *  整车单跨约束：货车单跨装卸（一车一天车），全部装载须落同一跨——
+ *  首组（配载主组）推荐定跨，后续组限同跨推荐；同跨容量不足时回退全库（保证可登记）。 */
 function insertVehicleWithLoads(db, v) {
   const insVeh = db.prepare(
     'INSERT INTO inbound_vehicles (plate, waybill, mill, arrive_time, state) VALUES (?, ?, ?, ?, \'pending\')');
@@ -181,10 +194,28 @@ function insertVehicleWithLoads(db, v) {
     VALUES (?, ?, ?, ?, ?, ?, ?)`);
   return db.transaction(() => {
     const id = insVeh.run(v.plate, v.waybill, v.mill, nowIso()).lastInsertRowid;
+    // 首组干跑一次推荐确定本车停靠跨（组内垛满拆垛也可能跨跨，故以首组首个落点定跨后统一限跨重荐）；
+    // 跨外推荐会把一车拆进两个车次，凑不齐最少吊数导致货车永不出车、台账无法闭环。
+    let vehSpan = null;
+    const claims = new Map();   // 本车已计划占量（跨组传递，防同垛重复超荐）
+    if (v.groups[0]) {
+      const probe = recommendAllocation(db, v.groups[0].spec, v.groups[0].bundles);
+      if (probe.allocations.length) {
+        const a = probe.allocations[0];
+        vehSpan = effSpanOfSlot({ span: a.span });   // 落点库位所属跨（含一跨整宽合并位 span=0）
+      }
+    }
     for (const g of v.groups) {
-      const { allocations } = recommendAllocation(db, g.spec, g.bundles);   // 逐组推荐（垛满自动拆垛）
-      for (const a of allocations) {
+      let r = vehSpan == null
+        ? recommendAllocation(db, g.spec, g.bundles, { claims })
+        : recommendAllocation(db, g.spec, g.bundles, { onlySpan: vehSpan, claims });
+      if (vehSpan != null && r.shortfall > 0) {
+        r = recommendAllocation(db, g.spec, g.bundles);   // 同跨容量不足：回退全库兜底（保证可登记）
+      }
+      for (const a of r.allocations) {
         insLoad.run(id, g.spec, a.bundles, a.slotId, a.stackNo, a.score, JSON.stringify(a.parts));
+        const key = a.slotId + ':' + a.stackNo;           // 本车跨组已计划量：后续组推荐时并入占用
+        claims.set(key, (claims.get(key) || 0) + a.bundles);
       }
     }
     return id;
@@ -305,6 +336,17 @@ export function listInboundVehicles(db, limit = 25) {
     .map(r => getVehicleView(db, r.id, codes));
 }
 
+/** 操作端快照用车辆清单：未完成车辆全量（在途不可丢——前端对账据此判定"服务器侧已消失=已取消"）
+ *  + 最近 doneLimit 辆已完成（历史展示）。上限列表会把在途车滚出窗口，被前端误判为已取消。 */
+export function listSnapshotVehicles(db, doneLimit = 15) {
+  const codes = slotCodeMap(db);
+  const ids = [
+    ...db.prepare("SELECT id FROM inbound_vehicles WHERE state != 'completed' ORDER BY id DESC").all(),
+    ...db.prepare("SELECT id FROM inbound_vehicles WHERE state = 'completed' ORDER BY id DESC LIMIT ?").all(doneLimit),
+  ];
+  return ids.map(r => getVehicleView(db, r.id, codes));
+}
+
 /** 批量取车辆视图（车辆记录页分页接口用）：一次码表 + 逐车查详情 */
 export function listVehicleViews(db, ids) {
   const codes = slotCodeMap(db);
@@ -352,6 +394,18 @@ export function adjustLoad(db, vehicleId, loadId, slotId, stackNo) {
   if (!v || !l) return { error: '车辆或分配组不存在' };
   if (v.state !== 'pending') return { error: '该车已确认下发，不可再调整' };
   const yard = loadYard(db);
+  // 整车单跨装卸：改垛不得把一车拆到两跨（否则车次拆分凑不齐最少吊数，货车永不出车）
+  const others = db.prepare('SELECT * FROM inbound_loads WHERE vehicle_id=? AND id<>? ORDER BY id').all(vehicleId, loadId);
+  if (others.length) {
+    const stById = id => yard.find(s => s.id === id);
+    const anchorSlot = stById(others[0].slot_id ?? others[0].rec_slot_id);
+    const targetSlot = stById(slotId);
+    const anchorSpan = anchorSlot ? effSpanOfSlot(anchorSlot) : null;
+    const targetSpan = targetSlot ? effSpanOfSlot(targetSlot) : null;
+    if (anchorSpan != null && targetSpan != null && anchorSpan !== targetSpan) {
+      return { error: `整车单跨装卸：该车其余装载在${SPAN_LABELS[anchorSpan]}，不能改到${SPAN_LABELS[targetSpan]}（请选同跨库位）` };
+    }
+  }
   const err = validateTarget(db, yard, buildClaims(db, vehicleId, loadId), l.spec, slotId, stackNo, l.bundles);
   if (err) return { error: err };
   db.prepare('UPDATE inbound_loads SET slot_id=?, stack_no=?, adjusted=1 WHERE id=?').run(slotId, stackNo, loadId);
@@ -429,11 +483,13 @@ export function confirmVehicle(db, vehicleId) {
   return { vehicle: getVehicleView(db, vehicleId), deltas: appliedDeltas };
 }
 
-/** 删除待确认车辆（误识别/演练数据清理）；已确认车辆保留台账 */
+/** 删除未完成车辆（误识别/演练数据清理/沙盘重置清场）；
+ *  pending（待确认）与 confirmed（已确认未完成）均可取消——否则沙盘重置后台账滞留幽灵车
+ *  （P10 永远显示"待核验/已核验"但现场已无此车）；completed 属历史台账保留。 */
 export function deleteVehicle(db, vehicleId) {
   const v = db.prepare('SELECT * FROM inbound_vehicles WHERE id=?').get(vehicleId);
   if (!v) return { error: '车辆不存在' };
-  if (v.state !== 'pending') return { error: '已确认车辆属作业台账，不可删除' };
+  if (v.state === 'completed') return { error: '已完成车辆属历史台账，不可删除' };
   db.transaction(() => {
     db.prepare('DELETE FROM inbound_loads WHERE vehicle_id=?').run(vehicleId);
     db.prepare('DELETE FROM inbound_vehicles WHERE id=?').run(vehicleId);
@@ -476,11 +532,12 @@ export function matchConfirmedVehicle(db, plate, waybill) {
   return r ? getVehicleView(db, r.id) : null;
 }
 
-/** 沙盘回传：该车卸货完毕离场（台账生命周期 pending -> confirmed -> completed） */
+/** 沙盘回传：该车卸货完毕离场（台账生命周期 pending -> confirmed -> completed）
+ * 本地排产模式下沙盘不等人确认即自动执行卸货（确认是管理工的推荐核对环节，不拦截现场执行），
+ * 卸毕回传即物理事实：pending 车也直接置 completed（账随实走），否则离场车会永远滞留待确认队列。 */
 export function completeVehicle(db, vehicleId) {
   const v = db.prepare('SELECT * FROM inbound_vehicles WHERE id=?').get(vehicleId);
   if (!v) return { error: '车辆不存在' };
-  if (v.state === 'pending') return { error: '该车尚未确认，不能标记作业完成' };
   if (v.state !== 'completed') {
     db.prepare("UPDATE inbound_vehicles SET state='completed', departed_time=? WHERE id=?").run(nowIso(), vehicleId);
   }
