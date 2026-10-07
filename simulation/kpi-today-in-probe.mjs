@@ -62,6 +62,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(`Math.random = (() => { let s = 20260824; return () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; }; })();`, sandbox);
 vm.runInContext(code, sandbox, { filename: 'sandbox-inline.js' });
+sandbox.setDeviceParam('production', 'operatorPlanWaitMin', 0);   // 本测走本地排产链路:关闭平板规划等待(旧行为,启动即排产)
 sandbox.setPaused(false);
 
 const flushMicrotasks = () => new Promise(r => setImmediate(r));

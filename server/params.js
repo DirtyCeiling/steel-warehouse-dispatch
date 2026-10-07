@@ -5,10 +5,11 @@
 export const PARAM_SCHEMA = [
   {
     sec: 'production', secLabel: '生产节奏',
-    desc: '每日进厂 / 出厂车辆数，订单全天均匀铺开（不一次性下完）；进厂确认页超时未确认的车辆按推荐方案自动确认下发（0 = 关闭）',
+    desc: '每日进厂 / 出厂车辆数，订单全天均匀铺开（不一次性下完）；平板规划等待：等待窗口内未收到操作端推送的入库/出库规划，沙盘才本地自主排产兜底（0 = 关闭等待，始终本地排产）；进厂确认页超时未确认的车辆按推荐方案自动确认下发（0 = 关闭）',
     defs: [
       { key: 'inPerDay',  label: '每日进厂车辆', min: 1, max: 600, step: 1, unit: '辆/日', def: 150 },
       { key: 'outPerDay', label: '每日出厂车辆', min: 1, max: 600, step: 1, unit: '辆/日', def: 100 },
+      { key: 'operatorPlanWaitMin', label: '平板规划等待', min: 0, max: 60, step: 1, unit: '分钟', def: 15 },
       { key: 'autoConfirmMin', label: '确认超时自动下发', min: 0, max: 60, step: 1, unit: '分钟', def: 5 },
     ],
   },

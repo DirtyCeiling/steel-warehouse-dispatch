@@ -92,6 +92,7 @@ function check(name, cond, detail = '') {
 sandbox.init();
 for (let i = 0; i < 10; i++) await pump(0.1);
 sandbox.setSpeed(16);
+sandbox.setDeviceParam('production', 'operatorPlanWaitMin', 0);   // 本测走本地排产链路:关闭平板规划等待(旧行为,启动即排产)
 sandbox.setPaused(false);
 const D = sandbox.__dbg;
 

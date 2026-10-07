@@ -99,6 +99,7 @@ function mkHarness(search) {
   vm.createContext(sandbox);
   vm.runInContext(`Math.random = (() => { let s = 20261004; return () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; }; })();`, sandbox);
   vm.runInContext(code, sandbox, { filename: 'sandbox-inline.js' });
+  sandbox.setDeviceParam('production', 'operatorPlanWaitMin', 0);   // 本测依赖本地排产供车：关闭平板规划等待（旧行为）
   sandbox.setPaused(false);   // 沙盘默认暂停：载入后立即开跑
   sandbox.setSpeed(24);
   sandbox.setDeviceParam('crew', 'count', 0);   // 关人力环节：吊运节奏加快，缩短自检时长（与异常链路正交）

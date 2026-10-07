@@ -695,6 +695,7 @@ window.__dbg = {
   get codes() { return storages.map(s => s.code); },
   get storages() { return storages; },   // 库区引用（自检：构造确认单落点/盘点垛容）
   get inDebtLen() { return inDebt.length; },   // 本地排产补配队列长度（自检：库满暂缓 -> 容量释放续配）
+  get operatorPlan() { return { lastAt: lastOperatorPlanAt, degraded: localSchedDegraded, waitMin: CFG.production.operatorPlanWaitMin }; },   // 平板规划优先状态（自检：等待窗口/降级标记）
   get viewOnly() { return VIEW_ONLY; },   // 只读观景初值（?view=1；运行时模式以 simMode 为准）
   get simMode() { return simMode; },   // 驾驶/观景运行时模式（自检/调试；顶栏「驾驶·数据源」按钮切换）
   get storageStates() { return storages.map(s => ({ code: s.code, state: s.state, goalR: s.goalR, goalC: s.goalC })); },
@@ -702,7 +703,8 @@ window.__dbg = {
   get navDims() { return { rows: NAV.ROWS, cols: NAV.COLS }; },   // 机器狗导航栅格尺寸（自检）
   get layout() { return { ox, oy, scale }; },
   get trucks() { return trucks.map(t => ({ taskId: t.taskId, kind: t.kind, lane: t.lane, state: t.state, loaded: t.loaded, plate: t.plate, plateScanned: !!(t.batch && t.batch.plateScanned), manifestFetched: !!(t.batch && t.batch.manifestFetched), loads: t.batch ? t.batch.tasks.length : 0, remaining: t.remaining })); },
-  get batches() { return batches.map(b => ({ id: b.id, kind: b.kind, span: b.span, loads: b.tasks.length, dispatched: !!b.truck, plateScanned: !!b.plateScanned, manifestFetched: !!b.manifestFetched, createdAt: b.created, plate: b.plate || null, vehId: b.vehId != null ? b.vehId : null })); },   // plate/vehId：物流源车辆身份贯穿（自检）
+  get batches() { return batches.map(b => ({ id: b.id, kind: b.kind, span: b.span, loads: b.tasks.length, dispatched: !!b.truck, plateScanned: !!b.plateScanned, manifestFetched: !!b.manifestFetched, createdAt: b.created, plate: b.plate || null, vehId: b.vehId != null ? b.vehId : null, awaitConfirm: !!b.awaitConfirm })); },   // plate/vehId：物流源车辆身份贯穿（自检）；awaitConfirm：确认闸门挂起中
+  get lifts() { return tasks.map(t => ({ id: t.id, type: t.type, spec: t.spec.name, code: t.slot.code, stackNo: t.stackIdx + 1, vehId: t.vehId != null ? t.vehId : null, plate: t.plate || null, state: t.state, cranePushed: !!t.cranePushed, orderId: t.order ? t.order.id : null })); },   // 任务落位快照（自检：平板确认单校正/轮询放行断言现场执行与规划一致；与 get tasks 原始引用并存）
   get columns() { return columns.map(c => ({ span: c.span, active: c.active })); },
   get activeCams() { return columns.filter(c => c.active).length; },
   get batchLoads() { return window.__batchLoads || []; },
@@ -785,7 +787,7 @@ window.__dbg = {
     orderRequired: t.order ? t.order.required : null,   // 合同需求捆数（自检：按订单配满校验）
   })); },
   /* 订单履约 / 时序 KPI / 异常注入探针（自检与调试） */
-  get orders() { return orders.map(o => ({ id: o.id, spec: o.spec.name, required: o.required, assigned: o.assigned, done: o.done, tons: o.tonsLoaded })); },
+  get orders() { return orders.map(o => ({ id: o.id, spec: o.spec.name, required: o.required, assigned: o.assigned, done: o.done, tons: o.tonsLoaded, awaitConfirm: !!o.awaitConfirm, bundleIds: o.tasks.map(t => t.bundleId).filter(Boolean) })); },   // awaitConfirm/bundleIds：出库确认闸门自检
   get kpiSeriesLen() { return kpiSeries.length; },
   get kpiSeriesLast() { return kpiSeries.length ? { ...kpiSeries[kpiSeries.length - 1] } : null; },
   get assess() { return assessScanCapacity(); },   // 扫描能力评估快照（自检/调试：结论与需求/能力明细）
@@ -916,6 +918,7 @@ const CFG = {
     dayHours: 24,                        // 一个仿真日 = 24 仿真小时
     inPerDay: 150,                       // 每日进厂车辆数（入库卸货）
     outPerDay: 100,                      // 每日出厂车辆数（出库取货）
+    operatorPlanWaitMin: 15,             // 平板规划等待窗口（分钟）：窗口内未收到操作端推送的入库/出库规划才本地自主排产（0 = 关闭等待，始终本地排产）
   },
   abnormal: {                            // 异常注入概率（0 = 关闭，「调度参数」页可调）
     scanFailPct: 4,                      // 机器狗扫码失败率 %（失败原地重扫，超限按 scanHoldPct 挂起人工处置或转人工介入放行）
@@ -1175,6 +1178,7 @@ const PARAM_DEFS = [
   { sec: 'task', key: 'restackWaitMax', label: '倒垛等待上限', min: 60, max: 7200, step: 60, unit: '秒' },
   { sec: 'production', key: 'inPerDay',  label: '每日进厂车辆', min: 1, max: 600, step: 1, unit: '辆/日' },
   { sec: 'production', key: 'outPerDay', label: '每日出厂车辆', min: 1, max: 600, step: 1, unit: '辆/日' },
+  { sec: 'production', key: 'operatorPlanWaitMin', label: '平板规划等待', min: 0, max: 60, step: 1, unit: '分钟' },
   { sec: 'placement', key: 'sameSpecBase', label: '同规格归堆基础分', min: 0, max: 200, step: 5, unit: '分' },
   { sec: 'placement', key: 'sameSpecFill', label: '填充率加励系数',   min: 0, max: 100, step: 5, unit: '分' },
   { sec: 'placement', key: 'emptyBase',    label: '空垛兜底基础分',   min: 0, max: 100, step: 5, unit: '分' },
@@ -1229,7 +1233,7 @@ const SEC_GROUPS = {
   truck: '货车（3 条竖向通道 · 组车规则：一车最少/最多吊数 · 混装车比例 · 立柱摄像头识别车牌 / 物流系统吊取运单）',
   task: '出库选捆（严格先进先出 = 目标捆取全库最早已扫码捆，被压即先把上方整层压货倒垛再装车；关闭 = 垛顶直取免倒垛 · 倒垛等不到落点超时换捆重配）',
   production: FEED_MODE === 'local'
-    ? '生产节奏（每日进厂 / 出厂车辆数 · 订单全天均匀铺开，不一次下完）'
+    ? '生产节奏（平板规划优先：等待窗口内未收到操作端推送的入库/出库规划才本地自主排产 · 每日进厂 / 出厂车辆数 · 订单全天均匀铺开，不一次下完）'
     : '生产节奏 —— 外部物流源模式（?feed）下已由 LogisticsData_Sim 控制台（http://127.0.0.1:5288）接管，本页参数仅作对照',
   placement: '归堆策略权重（卸货推荐评分 · 同车同规格归并同一垛 · 权重越大越优先，实时生效）',
   abnormal: '异常注入（扫码失败 / 运单差异 / 复验异常概率 · 0 = 关闭）',
@@ -2490,6 +2494,11 @@ function updateTrucks(dt) {
           tk.state = 'ENTER';
           tk.enterAt = simTime;   // 进场时刻（进厂等待分段：通道排队 = enterAt - summonAt）
           logEvent('truck', `货车进场：${tk.taskId} ${tk.plate} ${tk.kind === 'in' ? '载料' : '空车'}经 ${laneNo(tk.lane)} 号通道前往 ${SPANS[batch.span]}`);
+          if (batch.regPend && !batch.regPend.done) {   // 进场才登记服务器确认队列：P10 待办/进厂确认只出现已进场车辆（厂外排队车不占待办）
+            batch.regPend.done = true;
+            registerLocalVehicle(batch.regPend.veh, batch.regPend);
+            batch.regPend = null;
+          }
         }
         break;
       }
@@ -2918,10 +2927,17 @@ function restackScopeCheck(t) { // 倒垛确认监测范围判定：源/目标�
 }
 function maybePushCraneJob(task) { // 天车作业条件：货车就位 + 车牌识别 + 运单吊取确认；出库天车先行吊运装车，机器狗吊走后再扫码确认
   if (task.cranePushed) return;
-  if (task.batch && task.batch.awaitConfirm) {         // 确认闸门：车已进场停靠，但垛位未经管理工确认（P10）——天车不接活
+  if (task.batch && task.batch.awaitConfirm) {         // 入库确认闸门：车已进场停靠，但垛位未经管理工确认（P10）——天车不接活
     if (!task.batch.awaitLogged) {
       task.batch.awaitLogged = true;
       logEvent('truck', `车次 ${task.batch.id}（${task.batch.plate || '—'}）已进场待确认垛位：管理工在 P10「入库规划」确认推送后开始吊运（超时自动确认兜底）`);
+    }
+    return;
+  }
+  if (task.order && task.order.awaitConfirm) {         // 出库确认闸门：本地排产订单未推送前，天车不接装车吊（等管理工 P10「出库规划」确认）
+    if (!task.order.awaitLogged) {
+      task.order.awaitLogged = true;
+      logEvent('truck', `出库单 ${task.order.id}（${task.order.buyer || '—'}）已进场待确认装车：管理工在 P10「出库规划」推送后开始装车`);
     }
     return;
   }
@@ -3442,6 +3458,7 @@ function createOutOrder() { // 生产排产：出厂提货订单（一辆车一�
     id: `HT26-${String(++orderSeq).padStart(4, '0')}`, spec: SPECS[best], span: bestSpan,
     required, assigned: 0, done: 0, tonsLoaded: 0, tasks: [], created: simTime, doneAt: null,
     buyer: pick(BUYERS),   // 采购商（台账「采购商」列随出库回填）
+    awaitConfirm: true,    // 本地排产出库订单：等管理工 P10 点「出库规划」推送确认后才放行装车（与入库确认闸门对称）
   };
   orders.push(order);
   const made = fulfillOrder(order);
@@ -3472,7 +3489,12 @@ function routeToBatch(type, task) { // 挂入待组车次：出库按「同订�
   const span = spanOfSlot(task.slot);
   let b;
   if (type === 'out' && task.order) {
-    b = batches.find(x => x.order === task.order && x.span === span && !x.truck);
+    // 一单一车：换捆重配（deferRestackTask 释放配捆名额后周期续配）的新任务回填原车次——
+    // 原车尚未离场则补记吊数（remaining++），装完本吊再离场；绝不另组第二车次，
+    // 否则同一订单会先后派两辆车（操作端一张出库跟踪卡挂两个车牌）。
+    b = batches.find(x => x.order === task.order && x.span === span);
+    if (b && b.truck && (!trucks.includes(b.truck) || b.truck.state === 'LEAVE')) b = undefined;   // 原车已离场/离场中：余捆只能另派车
+    if (b && b.truck) b.truck.remaining++;   // 派车时 remaining=任务数快照：补一吊
   } else {
     // 不同车牌（不同物理车）不得并入同一车次：并车会导致后车台账无人回传（车牌/vehId 以首车为准）
     b = batches.find(x => x.kind === type && x.span === span && !x.truck
@@ -3908,8 +3930,30 @@ function toast(msg) {
 
 /* ---------------- 本地车辆排产（默认模式：沙盘自己生成车辆数据） ----------------
  * 入库 = 随车运单批次（一车 6-10 吊）；出厂 = 提货订单（合同号 + 需求捆数，凑捆履约）。
- * 库满暂缓的随车吊进入补配队列 inDebt，容量释放后自动续配（与物流源模式挂起续接同语义，不丢吊）。 */
+ * 库满暂缓的随车吊进入补配队列 inDebt，容量释放后自动续配（与物流源模式挂起续接同语义，不丢吊）。
+ * 平板规划优先：操作端（管理工平板）推送的入库/出库规划（dispatch-inbound / dispatch-outbound 命令）
+ * 是现场执行的唯一依据；本地排产仅是等待窗口（production.operatorPlanWaitMin 分钟，默认 15，0 = 关闭）
+ * 内未收到任何平板规划的自主兜底——窗口过后恢复排产，平板再度推送即回到平板优先并重新计时。 */
 let inDebt = [];   // [{spec}] 本地排产：暂未落下的入库吊（重置仿真时清空）
+let lastOperatorPlanAt = 0;    // 最近一次收到平板规划的仿真时刻（初值 0：自仿真启动起算等待）
+let localSchedDegraded = false;   // 本地自主排产降级中（状态切换时打一次日志，避免每车刷屏）
+function noteOperatorPlan(source) {   // 收到平板规划推送（dispatch-inbound / dispatch-outbound 等）时调用
+  lastOperatorPlanAt = simTime;
+  if (localSchedDegraded) {
+    localSchedDegraded = false;
+    logEvent('system', `收到操作端规划推送（${source}）——恢复平板规划优先，本地自主排产暂停（等待窗口重新计时）`);
+  }
+}
+function operatorScheduleAllowed() {   // 本地排产门控：true = 允许自主排产（等待窗口内没有平板规划）
+  const waitSec = Math.max(0, CFG.production.operatorPlanWaitMin) * 60;
+  if (waitSec <= 0) return true;   // 0 = 关闭等待：始终本地排产
+  const allowed = simTime - lastOperatorPlanAt >= waitSec;
+  if (allowed && !localSchedDegraded) {
+    localSchedDegraded = true;
+    logEvent('system', `⚠ ${Math.round(waitSec / 60)} 分钟内未收到操作端（平板）入库/出库规划——沙盘启用本地自主排产兜底（车照常登记进厂确认队列，平板接管规划推送后即恢复平板优先）`);
+  }
+  return allowed;
+}
 function spawnVehicleManifest(type) {
   if (type === 'out') {   // 出厂 = 下发提货订单（合同号 + 需求捆数），按订单凑捆履约，凑齐才闭环
     const made = createOutOrder();
@@ -3921,8 +3965,9 @@ function spawnVehicleManifest(type) {
   }
   // 进厂车随车运单：整车按 1~2 种规格配载——钢厂按规格整车发运为主，
   // 仅 mixedSpecPct 比例的车混装第二种规格；同车同规格由 createTask 归并到同一垛。
-  // 本地排产车也带完整身份（车牌/运单/钢厂）生成即登记服务器确认队列——
-  // 操作端 P10 待办/车辆记录与沙盘进厂车同源一致（登记回传 vehId 盖到任务/车次，卸毕台账闭环）。
+  // 本地排产车也带完整身份（车牌/运单/钢厂），车辆进场时才登记服务器确认队列（regPend 暂存，
+  // 见 updateTrucks QUEUE 解除处）——厂外排队车不进 P10 待办/进厂确认队列，只有已进场车辆才是
+  // 管理工可调度的现场（登记回传 vehId 盖到任务/车次，卸毕台账闭环）。
   const n = Math.round(rand(CFG.truck.minLoads, CFG.truck.maxLoads));
   const main = pick(SPECS);
   const second = Math.random() * 100 < CFG.truck.mixedSpecPct ? pick(SPECS.filter(s => s !== main)) : null;
@@ -3940,7 +3985,8 @@ function spawnVehicleManifest(type) {
     if (t) { made++; if (spanLock == null) spanLock = spanOfSlot(t.slot); }
     else if (spec) { inDebt.push({ spec, plate: veh.plate, waybill: veh.waybill, spanLock }); deferred++; }   // 库满/锁定暂缓：转补配队列，容量释放后续配（身份随吊保留）
   }
-  registerLocalVehicle(veh, { main, second, mainN, made });
+  const regPend = { veh, main, second, mainN, made, done: false };   // 共享引用：同运单多车次也只登记一次
+  for (const b of batches) if (b.plate === veh.plate && !b.regPend) b.regPend = regPend;
   if (made || deferred) {
     const manifest = second ? `${main.name} ×${Math.min(mainN, made)} + ${second.name} ×${Math.max(0, made - mainN)}（混装）` : `${main.name} ×${made}（整车单规格）`;
     logEvent('task', `生产排产：进厂车 ${veh.plate}（运单 ${veh.waybill} · ${veh.mill}）随车 ${made} 吊（入库卸货 · ${manifest}）${deferred ? ` · 另有 ${deferred} 吊库区暂无落点，转补配队列（容量释放后自动续配）` : ''}`);
@@ -3952,20 +3998,21 @@ function spawnVehicleManifest(type) {
   return made;
 }
 
-/** 本地进厂车登记服务器（fire-and-forget）：进确认队列（待核验+推荐垛位），
+/** 本地进厂车登记服务器（fire-and-forget，车辆进场时调用）：进确认队列（待核验+推荐垛位），
  *  回传 vehId 盖到该车全部任务与车次上（inbound.lift 进度 / 卸毕回传 / 出厂闭环全程对账）。
- *  确认闸门：登记同时对该车未派车车次挂起派车（awaitConfirm）——管理工在 P10 确认规划
- *  （或确认超时自动确认）后才放行派车执行；服务离线登记失败则放行（沙盘自主运行不受阻）。 */
+ *  调用时机 = 货车 QUEUE 解除进场（updateTrucks）——厂外排队车不进 P10 待办/进厂确认队列。
+ *  确认闸门：登记同时对该车车次挂起天车吊运（awaitConfirm）——管理工在 P10 确认规划
+ *  （或确认超时自动确认）后才放行吊运；服务离线登记失败则放行（沙盘自主运行不受阻）。 */
 function registerLocalVehicle(veh, { main, second, mainN, made }) {
   if (simMode !== 'drive' || typeof fetch !== 'function' || made <= 0) return;
   const groups = second
     ? [{ spec: main.name, bundles: Math.min(mainN, made) }, { spec: second.name, bundles: Math.max(0, made - mainN) }]
     : [{ spec: main.name, bundles: made }];
-  for (const b of batches) {   // 挂起：待确认（任务已建、车次已组，仅暂缓派车）
-    if (b.plate !== veh.plate || b.truck || b.awaitConfirm) continue;
+  for (const b of batches) {   // 挂起确认闸门：拦天车接活（maybePushCraneJob），车已进场停靠，确认后才开吊
+    if (b.plate !== veh.plate || b.awaitConfirm) continue;
     b.awaitConfirm = true;
     b.awaitConfirmWall = Date.now();
-    logEvent('truck', `进厂车 ${veh.plate} 车次 ${b.id} 已排产：进场停靠后待管理工在 P10「入库规划」确认垛位（超时自动确认兜底），确认后开始吊运`);
+    logEvent('truck', `进厂车 ${veh.plate} 车次 ${b.id} 已进场停靠：待管理工在 P10「入库规划」确认垛位（超时自动确认兜底），确认后开始吊运`);
   }
   simFetch(`${DB_API}/api/inbound/register`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4169,7 +4216,7 @@ function updateFeedStatus() {
   if (FEED_MODE === 'local') {
     el.className = 'feeddot on';
     el.textContent = '本地生成';
-    el.title = '车辆数据来源：沙盘本地排产（生产节奏参数见「⚙ 设备参数」/「调度参数」页）—— 接入外部物流源可打开 ?feed=all（LogisticsData_Sim）';
+    el.title = '车辆数据来源：平板规划优先 —— 入库/出库按操作端（平板）推送的规划执行，等待窗口内未收到规划才本地排产兜底（窗口时长见「⚙ 设备参数」/「调度参数」页·平板规划等待）—— 接入外部物流源可打开 ?feed=all（LogisticsData_Sim）';
     return;
   }
   el.className = 'feeddot ' + (feed.online ? 'on' : 'off');
@@ -4245,10 +4292,11 @@ function tick(dt) {
   if (FEED_MODE === 'local') {
     // 生产节奏（本地排产）：按「每日进厂/出厂车辆数」把车辆订单均匀铺到一整天（带抖动），不一次性下完。
     // 进厂间隔 = 一天 / 每日进厂数，出厂同理；待处理任务堆积到上限时暂缓，防队列失控。
+    // 平板规划优先：等待窗口内未收到操作端推送的规划时不自主排产（operatorScheduleAllowed，见 spawnVehicleManifest 注释）。
     if (autoTaskOn) {
       const dayLen = CFG.production.dayHours * 3600;
       const pending = tasks.filter(t => t.state === 'pending').length;
-      const canSpawn = pending < CFG.task.maxPending;
+      const canSpawn = pending < CFG.task.maxPending && operatorScheduleAllowed();
       // 入库补配：此前库满暂缓的随车吊，容量释放后自动续配（先进先出，不重复计入新车；身份随吊保留）
       if (inDebt.length && canSpawn) {
         const rest = [];
@@ -5251,6 +5299,7 @@ function markRunStarted() {   // 首次启动：定场次起点与启动时参�
   runRobotBase = snapshotRobotStats();
   runCrewBase = { per: snapshotCrewStats(), stat: { ...crewStat } };
   backlogSeries = []; runBacklogMax = 0; lastAssessAt = -1e9; lastAssess = null;   // 评估窗口随场次重切
+  emitSimEvent('sim.start', { runId, startTime: runWallStart });   // 广播场次启动：操作端据此设置 sessionStart（已出场过滤基准），而非用当前服务器时间
 }
 const RUN_REASON_TEXT = { reset: '重置前', end: '手动结束', unload: '关闭页面前' };
 function archiveSession(reason) {   // reason: 'end'（手动结束）| 'reset'（重置前）| 'unload'（关页前）；未启动过/已归档不留档
@@ -6360,6 +6409,7 @@ function init() {
   runId = newRunId(); runStartedOnce = false; runWallStart = null; runParamsStart = null; runArchived = false;   // 新场次：待「▶ 启动」后开跑留档
   runStartSim = 0; runHistBase = 0; runRobotBase = null; runCrewBase = null;   // 场次统计切片基线（启动时由 markRunStarted 重记）
   nextInAt = 2; nextOutAt = 3;   // 本地排产：首辆进厂/出厂车时间
+  lastOperatorPlanAt = 0; localSchedDegraded = false;   // 平板规划等待窗口随新世界重新计时（重置 = 回到平板优先）
   Object.assign(feed, { cursor: null, online: false, lastSeq: 0, processed: 0, holding: null,
     holdWarnAt: -1e9, lastPollWall: -1e9, lastHealthWall: -1e9, lastOfflineLogAt: -1e9, busy: false,
     resumed: false, invLoaded: false,
@@ -6413,7 +6463,7 @@ function init() {
   logEvent('system', '归堆规则：进厂车按规格整车配载（少量混装），同车同规格归并同一垛集中码放，垛满才另荐；其余入库按推荐评分归堆（权重见「调度参数」页归堆策略，全站同源）');
   logEvent('system', '出库履约：出厂车 = 提货订单（合同号 + 需求捆数/吨数），捆级先进先出选捆（目标捆 = 全库最早已扫码捆，被压即先倒垛——上方整层压货全倒；可在「调度参数」页切回垛顶直取免倒垛），合同捆齐套才闭环；货车离场前须出场复验');
   logEvent('system', FEED_MODE === 'local'
-    ? `车辆数据来源：沙盘本地排产 —— 每日进厂 ${CFG.production.inPerDay} 辆 / 出厂 ${CFG.production.outPerDay} 辆（可在「⚙ 设备参数」/「调度参数」页调整），订单按天均匀铺开；如需多实例同进度可加 ?feed=all 接入外部物流源`
+    ? `车辆数据来源：平板规划优先 —— 入库/出库规划按操作端（管理工平板）推送执行（命令通道 dispatch-inbound / dispatch-outbound）；${CFG.production.operatorPlanWaitMin > 0 ? `等待窗口 ${CFG.production.operatorPlanWaitMin} 分钟内未收到平板规划，才由沙盘本地排产兜底（每日进厂 ${CFG.production.inPerDay} 辆 / 出厂 ${CFG.production.outPerDay} 辆，可在「⚙ 设备参数」/「调度参数」页调整）` : '等待已关闭（operatorPlanWaitMin=0），沙盘始终本地排产'}；如需多实例同进度可加 ?feed=all 接入外部物流源`
     : `车辆数据来源：车辆进出库物流数据仿真 LogisticsData_Sim（${LOGISTICS_API}）—— 沙盘不本地生成车辆，进厂车/提货订单由数据源统一下发${FEED_MODE === 'all' ? '（全量回放：任意实例打开即从流头消费，进度一致）' : '（跟随最新模式：跳过历史事件）'}；排产节奏（每日进厂/出厂）在数据源控制台调整`);
   logEvent('system', `仿真默认未启动（场次号 ${runId}）—— 点击「▶ 启动」开跑；重置或关闭页面前本场自动归档（调度参数 / 车辆记录 / 扫描时效，「📊 仿真场次」页回看）`);
   logEvent('system', '通行规则：机器狗沿 4 条 2m 横向廊道 + 3 条竖向车辆通道 + 服务带机动，并可转入库位之间的空道深入跨内（不进库位内部）；到目标垛前的库位间空道站位站定，转身面向垛位扫码');
@@ -7720,6 +7770,7 @@ if (_integOn) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         driveId: DRIVE_ID, driveLabel: DRIVE_LABEL,   // 帧即租约心跳（服务端据此独占仲裁）
+        simStartTime: runWallStart,                    // 沙盘启动/重置时刻（ISO）：前端「已出场」过滤旧世界留痕的基准
         cranes: cranes.map(c => ({ name: c.name, span: c.span, x: +c.x.toFixed(1), y: +c.y.toFixed(1), state: c.state,
           awaitConfirm: c.state === 'WAIT_CONFIRM', awaitDesc: c.awaitDesc || null })),   // 完工待确认：操作端平板据此弹「确认上个任务已完成」
         dogs: robots.map(r => ({ id: r.id, name: r.name, state: r.state, battery: Math.round(r.battery), x: +r.x.toFixed(1), y: +r.y.toFixed(1),
@@ -7741,6 +7792,127 @@ if (_integOn) {
     }).catch(() => {});
   }
 
+  /** 把已建任务挂回指定车次（平板确认单校正重建用）：createTask 的 routeToBatch 只并「未派车」车次，
+   *  而待校正的车多已派车在场——摘出 routeToBatch 的归属，强挂原车次并回补车辆待吊数。 */
+  function attachTaskToBatch(t, homeBatch) {
+    if (!t || !homeBatch || t.batch === homeBatch) return;
+    if (t.batch) {
+      t.batch.tasks = t.batch.tasks.filter(x => x !== t);
+      if (!t.batch.tasks.length && !t.batch.truck) {   // 为本吊临时新开的空车次一并清掉
+        const bi = batches.indexOf(t.batch);
+        if (bi >= 0) batches.splice(bi, 1);
+      }
+    }
+    t.batch = homeBatch;
+    homeBatch.tasks.push(t);
+    const tk = homeBatch.truck;
+    if (tk) {
+      t.truck = tk;
+      t.truckParked = tk.state !== 'QUEUE' && tk.state !== 'ENTER';   // 车已过进场段即视为停靠就位
+      tk.remaining++;   // 撤销时扣过一吊，重建回补（同步块内完成，tick 无窗口误判车完工）
+    }
+  }
+
+  /** 撤销该车全部「未开吊」的入库任务（平板确认单校正落位前的清场）：
+   *  回退组车预占 reserved、摘出车次并扣减车辆待吊数、释放不再被任何任务持有的库位锁。 */
+  function revokePendingVehicleLifts(vehId) {
+    let removed = 0;
+    const touched = new Set();
+    for (let i = tasks.length - 1; i >= 0; i--) {
+      const t = tasks[i];
+      if (t.type !== 'in' || t.vehId !== vehId) continue;
+      if (t.state !== 'pending' || t.cranePushed) continue;   // 已开吊/执行中不可逆，保留
+      const k = t.slot.stacks[t.stackIdx];
+      if (k && k.reserved > 0) k.reserved--;
+      if (t.batch) {
+        t.batch.tasks = t.batch.tasks.filter(x => x !== t);
+        const tk = t.batch.truck;
+        if (tk && tk.remaining > 0) tk.remaining--;
+      }
+      touched.add(t.slot);
+      tasks.splice(i, 1);
+      removed++;
+    }
+    for (const st of touched) {
+      if (st.state !== 'locked') continue;
+      const still = tasks.some(t => t.slot === st && (t.state === 'pending' || t.state === 'crane' || t.cranePushed));
+      if (!still) { st.state = slotBundles(st) === 0 ? 'free' : 'occupied'; st.lockSpec = null; st.lockStack = null; }
+    }
+    return removed;
+  }
+
+  /** 现场未开吊任务的落位是否已与平板确认单一致（一致则零开销跳过校正，不扰动预占/车次）。 */
+  function confirmedPlanMatchesCurrent(v) {
+    const want = [];
+    for (const l of v.loads) {
+      const spec = SPECS.find(s => s.name === l.spec);
+      if (!spec || !(l.bundles > 0)) continue;
+      for (let i = 0; i < l.bundles; i++) want.push(`${spec.name}|${l.code ?? l.recCode}|${l.stackNo ?? l.recStackNo}`);
+    }
+    want.sort();
+    const cur = tasks
+      .filter(t => t.type === 'in' && t.vehId === v.id && t.state === 'pending' && !t.cranePushed)
+      .map(t => `${t.spec.name}|${t.slot.code}|${t.stackIdx + 1}`)
+      .sort();
+    return want.length > 0 && want.join('\n') === cur.join('\n');
+  }
+
+  /** 按服务器确认单视图逐吊建入库任务（dispatch-inbound 新建 / 平板改垛后校正重建共用）。
+   *  homeBatch 给定时（校正路径）：整车单跨以该车次跨为准（车已定跨不可换），任务强挂回原车次。
+   *  返回成功创建的吊数。 */
+  function makeTasksFromConfirmed(v, homeBatch = null) {
+    // 整车单跨防御：货车单跨装卸（一车一天车）——确认单若跨两跨（历史数据/外部源登记），
+    // 新建以最大装载组定跨；校正以车次既有跨为准；跨外落位回退同跨推荐。
+    const spanOfCode = code => { const st = storages.find(s => s.code === code); return st ? spanOfSlot(st) : -1; };
+    let anchorSpan = -1, anchorN = -1;
+    if (homeBatch) anchorSpan = homeBatch.span;
+    else for (const l of v.loads) {
+      const sp = spanOfCode(l.code ?? l.recCode), n = l.bundles > 0 ? l.bundles : 0;
+      if (sp >= 0 && n > anchorN) { anchorN = n; anchorSpan = sp; }
+    }
+    let made = 0;
+    for (const l of v.loads) {
+      const spec = SPECS.find(s => s.name === l.spec);
+      if (!spec || !(l.bundles > 0)) continue;
+      const code = l.code ?? l.recCode;
+      const useStorage = (spanOfCode(code) !== anchorSpan)
+        ? recommendInPlacement(spec, anchorSpan >= 0 ? anchorSpan : null) : null;   // 跨外落位 -> 同跨推荐兜底
+      if (useStorage) logEvent('system', `确认单跨外落位 ${code}（${l.spec} ×${l.bundles}）${homeBatch ? `超出该车次 ${SPANS[anchorSpan]}` : `调整为${SPANS[anchorSpan]}同跨`}——按同跨推荐 ${useStorage.st.code} 落位（货车单跨装卸）`);
+      for (let i = 0; i < l.bundles; i++) {
+        const t = createTask('in', {
+          silent: true, spec,
+          ...(useStorage ? { storage: useStorage.st } : { target: { code, stackIdx: (l.stackNo ?? l.recStackNo) - 1 } }),
+          plate: v.plate, waybill: v.waybill, vehId: v.id,
+        });
+        if (!t) break;   // 库满等：已建吊保留，容量释放后可再次下发
+        if (homeBatch) attachTaskToBatch(t, homeBatch);
+        made++;
+      }
+    }
+    return made;
+  }
+
+  /** 平板确认单校正：确认单最终落位与现场任务不一致时，撤销该车未开吊的吊并按确认单重建——
+   *  「平板推送的规划 = 现场执行」。已开吊/完成不可逆（推送迟到），保留现状并留痕。
+   *  返回 'rebuild'（已重建）/ 'match'（本就一致或现场无任务，未动）/ 'late'（已部分执行，保持现状）。 */
+  function realignVehicleByConfirm(v, sourceLabel) {
+    if (!v || !Array.isArray(v.loads)) return 'match';
+    const active = tasks.filter(t => t.type === 'in' && t.vehId === v.id);
+    if (!active.length) return 'match';   // 现场无此车任务：由调用方按需新建
+    const started = active.filter(t => t.state !== 'pending' || t.cranePushed);
+    if (started.length) {
+      logEvent('task', `${sourceLabel}：${v.plate}（运单 ${v.waybill}）已有 ${started.length} 吊在执行/已完成，确认单推送迟到——已开吊不可逆，其余按现状继续执行`);
+      return 'late';
+    }
+    if (confirmedPlanMatchesCurrent(v)) return 'match';
+    const homeBatch = active[0].batch || null;   // 撤销前留原车次引用：车照跑，只换未开吊的落点
+    const removed = revokePendingVehicleLifts(v.id);
+    const made = makeTasksFromConfirmed(v, homeBatch);
+    logEvent('task', `${sourceLabel}：${v.plate}（运单 ${v.waybill}）按平板确认单校正落位——撤销原推荐 ${removed} 吊，按确认单重建 ${made} 吊${made < removed ? '（余吊库容不足暂缓，容量释放后可再推送）' : ''}`);
+    emitSimEvent('inbound.realign', { vehId: v.id, plate: v.plate, waybill: v.waybill, removed, made, source: sourceLabel });
+    return 'rebuild';
+  }
+
   async function handleSimCommand(cmd) {
     const p = cmd.payload || {};
     if (cmd.kind === 'dispatch-inbound') {   // P3 确认规划：按服务器确认单视图直接生成进厂车
@@ -7750,43 +7922,27 @@ if (_integOn) {
       if (window.__doneVehIds && window.__doneVehIds.has(vehId))
         return finishSimCommand(cmd, true, { skipped: 'already-departed' });   // 本场已卸毕离场：防迟到的确认/超时自动确认重放
       if (tasks.some(t => t.vehId === vehId) || batches.some(b => b.vehId === vehId)) {
-        for (const b of batches) if (b.vehId === vehId) releaseAwaitConfirm(b, '规划已推送执行');   // 确认闸门即时放行（任务已在，无需重建）
-        return finishSimCommand(cmd, true, { skipped: 'duplicate' });
+        // 任务已在（本地排产/物流源登记时已按沙盘推荐建好）：平板规划推送 = 现场执行依据——
+        // 先按服务器确认单最终落位校正未开吊的吊（管理工在平板改垛后推送，现场即按改后垛位执行），再放行闸门
+        let realigned = 'match';
+        try {
+          const r0 = await fetch(`${DB_API}/api/vehicles/${vehId}`);
+          if (r0.ok) realigned = realignVehicleByConfirm(await r0.json(), '操作端确认进厂');
+        } catch { /* 车辆视图拉取失败：保持现有任务落位仅放行（降级为旧行为，下轮轮询兜底） */ }
+        for (const b of batches) if (b.vehId === vehId) releaseAwaitConfirm(b, realigned === 'rebuild' ? '平板确认单已校正落位，放行吊运' : '规划已推送执行');   // 确认闸门即时放行
+        noteOperatorPlan('入库规划推送');
+        return finishSimCommand(cmd, true, { skipped: 'duplicate', realigned });
       }
       try {
         const r = await fetch(`${DB_API}/api/vehicles/${vehId}`);
         if (!r.ok) return finishSimCommand(cmd, false, { error: `车辆 #${vehId} 不存在` });
         const v = await r.json();
         if (v.state !== 'confirmed') return finishSimCommand(cmd, false, { error: `车辆 #${vehId} 尚未确认或已完成（state=${v.state}）` });
-        // 整车单跨防御：货车单跨装卸（一车一天车）——确认单若跨两跨（历史数据/外部源登记），
-        // 以最大装载组定跨，跨外落位回退同跨推荐；否则任务会拆进两个车次，凑不齐最少吊数永不出车。
-        const spanOfCode = code => { const st = storages.find(s => s.code === code); return st ? spanOfSlot(st) : -1; };
-        let anchorSpan = -1, anchorN = -1;
-        for (const l of v.loads) {
-          const sp = spanOfCode(l.code ?? l.recCode), n = l.bundles > 0 ? l.bundles : 0;
-          if (sp >= 0 && n > anchorN) { anchorN = n; anchorSpan = sp; }
-        }
-        let made = 0;
-        for (const l of v.loads) {
-          const spec = SPECS.find(s => s.name === l.spec);
-          if (!spec || !(l.bundles > 0)) continue;
-          const code = l.code ?? l.recCode;
-          const useStorage = (spanOfCode(code) !== anchorSpan)
-            ? recommendInPlacement(spec, anchorSpan >= 0 ? anchorSpan : null) : null;   // 跨外落位 → 同跨推荐兜底
-          if (useStorage) logEvent('system', `确认单跨外落位 ${code}（${l.spec} ×${l.bundles}）调整为${SPANS[anchorSpan]}同跨推荐 ${useStorage.st.code}——货车单跨装卸`);
-          for (let i = 0; i < l.bundles; i++) {
-            const t = createTask('in', {
-              silent: true, spec,
-              ...(useStorage ? { storage: useStorage.st } : { target: { code, stackIdx: (l.stackNo ?? l.recStackNo) - 1 } }),
-              plate: v.plate, waybill: v.waybill, vehId,
-            });
-            if (!t) break;   // 库满等：已建吊保留，容量释放后可再次下发
-            made++;
-          }
-        }
+        const made = makeTasksFromConfirmed(v);
         if (!made) return finishSimCommand(cmd, false, { error: '确认单规格不在契约内或库区无可用落点' });
         logEvent('task', `操作端确认进厂：${v.plate}（运单 ${v.waybill}）按确认单 ${v.loads.length} 项落位执行，共 ${made} 吊`);
         emitSimEvent('vehicle.arrived', { plate: v.plate, waybill: v.waybill, mill: v.mill, bundles: made, vehId });
+        noteOperatorPlan('入库规划推送');
         return finishSimCommand(cmd, true, { made });
       } catch (e) {
         return finishSimCommand(cmd, false, { error: String((e && e.message) || e) });
@@ -7801,11 +7957,13 @@ if (_integOn) {
         id: p.orderNo || `CK-${cmd.id}`, spec,
         required: Math.round(p.bundles), assigned: 0, done: 0, tonsLoaded: 0, tasks: [], created: simTime, doneAt: null,
         buyer: p.buyer || pick(BUYERS),   // 采购商（操作端出库单可携带，否则随机；台账「采购商」列随出库回填）
+        awaitConfirm: true,    // 等管理工 P10「出库规划」确认后才放行装车（与本地排产订单一致）
       };
       orders.push(order);
       const made = fulfillOrder(order);
       logEvent('task', `操作端下发提货订单 ${order.id}：${spec.name} ×${order.required} 捆（合同需求 ${(order.required * spec.weight).toFixed(1)}t），已配捆 ${made}/${order.required}${made < order.required ? '（余捆待库存回补）' : ''}`);
       emitSimEvent('outbound.order', { orderNo: order.id, specName: spec.name, bundles: order.required, source: 'operator', plate: p.plate || null, items: outboundOrderItems(order) });
+      noteOperatorPlan('出库下发');
       return finishSimCommand(cmd, true, { made, required: order.required });
     }
     if (cmd.kind === 'dispatch-outbound-order') {   // P10 装车顺序确认推送：按管理工给定捆序重排该订单的装车顺序
@@ -7833,8 +7991,11 @@ if (_integOn) {
         return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
       });
       craneJobs.unshift(...removed);   // 新序插队首：天车下一个接的就是管理工定的第 1 捆
+      order.awaitConfirm = false;      // 确认闸门放行：管理工已推送装车顺序，天车可以开始装车
+      for (const t of order.tasks) maybePushCraneJob(t);   // 确认后立即开吊：闸门在货车转 WORKING 时已拦过一次，需补触发（与入库 releaseAwaitConfirm 对称）
       logEvent('task', `操作端确认装车顺序 ${order.id}（${p.plate || order.buyer || '—'}）：${picked.map(t => t.bundleId).join(' → ')}${rest.length ? `（其余 ${rest.length} 捆按原序随后）` : ''}${skipped ? ` · 跳过 ${skipped} 个无效捆号` : ''}`);
       emitSimEvent('outbound.order', { orderNo: order.id, specName: order.spec.name, bundles: order.required, source: 'order-confirmed', plate: p.plate || null, items: outboundOrderItems(order) });
+      noteOperatorPlan('装车顺序推送');
       return finishSimCommand(cmd, true, { applied: picked.length, skipped, rest: rest.length });
     }
     if (cmd.kind === 'dispatch-restack') {   // P5 倒垛下发：源垛顶层 N 捆倒至目标库位（天车真实吊运，狗双点核验）
@@ -7931,7 +8092,10 @@ if (_integOn) {
       const byId = new Map(list.map(v => [v.id, v]));
       for (const b of pending) {
         const v = b.vehId != null ? byId.get(b.vehId) : null;
-        if (v && (v.state === 'confirmed' || v.state === 'completed')) releaseAwaitConfirm(b, v.state === 'completed' ? '该单已完成' : '确认超时自动下发');
+        if (v && (v.state === 'confirmed' || v.state === 'completed')) {
+          realignVehicleByConfirm(v, '确认状态轮询');   // 服务器已确认（平板推送确认 / 超时自动确认）：按确认单最终落位校正未开吊的吊，再放行——现场执行与平板规划保持一致
+          releaseAwaitConfirm(b, v.state === 'completed' ? '该单已完成' : '确认超时自动下发');
+        }
         else if (!v && Date.now() - (b.awaitConfirmWall || 0) > 20000) releaseAwaitConfirm(b, '台账未见本车登记，兜底放行');
       }
     } catch { /* 网络/服务异常：下轮重试，超时兜底在上方覆盖 */ }
@@ -7944,6 +8108,7 @@ if (_integOn) {
     get queue() { return _evQueue.length; },
     get driveId() { return DRIVE_ID; },   // 驾驶租约身份（自检/调试：断言独占仲裁归属）
     cmd: (kind, payload, refId) => handleSimCommand({ id: 99000 + Math.floor(Math.random() * 999), kind, refId: refId || null, payload }),
+    setOperatorPlanWaitMin: v => { CFG.production.operatorPlanWaitMin = Math.max(0, +v || 0); return CFG.production.operatorPlanWaitMin; },   // 测试钩子：调整平板规划等待窗口（分钟；0 = 关闭）
     get mode() { return simMode; },   // 驾驶/观景运行时模式（与 __dbg.simMode 同源；按钮与探针共用 setSimMode）
     setMode: setSimMode,
     requestDrive,

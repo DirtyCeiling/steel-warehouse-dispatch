@@ -82,6 +82,7 @@ vm.createContext(sandbox);
 // 固定随机种子：占用库位分布 / 任务流可复现，保证自检确定性
 vm.runInContext(`Math.random = (() => { let s = 20260824; return () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; }; })();`, sandbox);
 vm.runInContext(code, sandbox, { filename: 'sandbox-inline.js' });
+sandbox.setDeviceParam('production', 'operatorPlanWaitMin', 0);   // 本测走本地排产链路:关闭平板规划等待(旧行为,启动即排产)
 sandbox.setPaused(false);   // 沙盘默认暂停：无头自检载入后立即开跑
 
 /* 本地排产模式（默认）：车辆由沙盘 tick 内生产节奏生成，无需注入 fetch；

@@ -46,6 +46,7 @@ export function getFrontendSnapshot(db, { withBundles = false } = {}) {
   const tele = getTelemetry();
   return {
     serverTime: new Date().toISOString(),
+    simStartTime: tele?.simStartTime ?? null,   // 沙盘启动/重置时刻（ISO）：前端「已出场」过滤旧世界留痕的基准（departedTime 早于它 = 旧世界，不显示）
     rev: _rev,
     capacity: {
       globalStacksPerSlot: globalStacksPerSlot(),
