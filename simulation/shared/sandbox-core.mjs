@@ -725,7 +725,8 @@ window.__dbg = {
   get runId() { return runId; },   // 当前场次号（自检：结束场次后应更新）
   get craneStates() { return cranes.map(c => ({ name: c.name, span: c.span, state: c.state, jobsDone: c.jobsDone,
     jobKind: c.job ? c.job.kind : null, truckTaskId: c.job && c.job.task.truck ? c.job.task.truck.taskId : null,
-    awaitDesc: c.awaitDesc || null, awaitAt: c.awaitPoint ? { x: +c.awaitPoint.x.toFixed(1), y: +c.awaitPoint.y.toFixed(1) } : null })); },
+    awaitDesc: c.awaitDesc || null, awaitAt: c.awaitPoint ? { x: +c.awaitPoint.x.toFixed(1), y: +c.awaitPoint.y.toFixed(1) } : null,
+    awaitSince: c.awaitSince == null ? null : +c.awaitSince.toFixed(1) })); },   // awaitSince：完工待确认计时起点（超时兜底放行探针）
   get crewStates() { return riggers.map(r => ({ name: r.name, state: r.state, x: +r.x.toFixed(1), y: +r.y.toFixed(1),
     jobs: r.jobsDone, walk: Math.round(r.walkDist), busy: Math.round(r.busyTime),
     req: r.req ? { kind: r.req.kind, crane: r.req.crane.name } : null })); },   // 库区吊运工探针（人因环节自检）
@@ -884,6 +885,7 @@ const CFG = {
     trolleySpeed: 1.0,               // 小车运行速度（m/s，沿主梁横跨方向）
     hoistTime: 2.0, lowerTime: 1.8,  // 吊取 / 放下耗时（秒，设备固有常数：已挪出「调度参数」页；绳索环节由吊运工完成，见 crew 段）
     confirmGate: 0,                  // 完工人工确认（内置默认关：服务不可达时兜底放行，无人值守可继续跑；浏览器经「调度参数」页同源默认开）
+    confirmTimeout: 300,             // 完工确认超时放行（仿真秒）：待确认超此时长未获天车工确认 → 兜底放行恢复接单（0 = 一直等，可能停摆）
   },
   crew: {                            // 吊运工（人因环节：吊运前挂绳 → 落位放绳 → 出库取绳）
     count: 6,                        // 库区吊运工人数（库位侧作业班组；0 = 关闭人力环节：天车自动挂/放绳、出库免取绳、不等待）
@@ -1163,6 +1165,7 @@ const PARAM_DEFS = [
   { sec: 'crane', key: 'speed',      label: '行进速度',     min: 0.5, max: 10, step: 0.1, unit: 'm/s' },
   { sec: 'crane', key: 'trolleySpeed', label: '小车运行速度', min: 0.2, max: 4, step: 0.1, unit: 'm/s' },
   { sec: 'crane', key: 'confirmGate', label: '完工人工确认', min: 0,  max: 1,  step: 1,  unit: '开/关', toggle: true },
+  { sec: 'crane', key: 'confirmTimeout', label: '确认超时放行', min: 0, max: 3600, step: 30, unit: '秒' },
   { sec: 'crew', key: 'count',       label: '库区吊运工人数', min: 0, max: 12,  step: 1,   unit: '人' },
   { sec: 'crew', key: 'walkSpeed',   label: '行进速度',     min: 0.5, max: 3,   step: 0.1, unit: 'm/s' },
   { sec: 'crew', key: 'hookTime',    label: '挂绳时间',     min: 0,   max: 300, step: 1,   unit: '秒' },
@@ -2751,6 +2754,8 @@ function maybeVerifyTruck(tk, excludeCr) {   // 末吊绳索收清（同车各�
  * 天车完成一个调运任务（一车装卸 / 一张提货订单 / 一组倒垛的末吊）后，驶回汽车通道上方待命，
  * 须天车工在平板（操作端）手动确认「上个任务已完成」——确认经命令通道（crane-confirm）回沙盘放行。
  * 未确认前本车不接新活（遥测 state=WAIT_CONFIRM + awaitDesc 下发操作端，平板据此弹确认卡）。
+ * 超时兜底（confirmTimeout，仿真秒，0 = 关）：待确认超时未获确认 → 自动放行恢复接单，
+ * 防「平板无人确认 → 天车全停 → 全场静默」的无限期停摆（与进厂确认超时自动下发同思路）。
  * 开关：「调度参数」页天车段「完工人工确认」（同源默认开；本文件内置默认关兜底）；
  *      URL ?confirm=1/0 强制开/关（优先级最高，无头自测用）。 */
 const LANE_X = LANE_COLS.map(cellCX);   // 三条汽车通道中心 x（完工待命位 = 所在跨与最近通道交汇处上方）
@@ -2781,12 +2786,12 @@ function enterCraneAwaitConfirm(cr, j) {   // 完工转待确认：驶回汽车�
   cr.awaitSince = simTime;
   logEvent('crane', `${cr.name} 完成一个调运任务（${cr.awaitDesc}），已回到汽车通道上方待命——等待天车工确认「上个任务已完成」后恢复接单`);
 }
-function releaseCraneConfirm(cr, why) {    // 放行：天车工已确认（或人工确认环节关闭）
+function releaseCraneConfirm(cr, why) {    // 放行：天车工已确认 / 超时兜底 / 人工确认环节关闭
   if (cr.state !== 'WAIT_CONFIRM') return;
   const desc = cr.awaitDesc || '';
   cr.state = 'IDLE'; cr.timer = 0;
   cr.awaitPoint = null; cr.awaitDesc = null; cr.awaitSince = null;
-  logEvent('crane', `天车工确认：${cr.name} 上个任务已完成（${desc}），恢复接单派活${why ? `（${why}）` : ''}`);
+  logEvent('crane', `${cr.name} 完工待确认放行（${desc}），恢复接单派活${why ? `——${why}` : ''}`);
 }
 function finishCraneJob(cr) {   // 一吊收尾：末吊货车放行复验 + 留痕 + 天车转待命（吊运工放绳完成 / 人力环节关闭共用）
   const j = cr.job, tk = j && j.task.truck;
@@ -3155,6 +3160,11 @@ function updateCranes(dt) {
       }
       case 'WAIT_CONFIRM': {   // 完工待确认：停在汽车通道上方待命位，天车工确认（crane-confirm 命令）后才恢复接单
         if (!craneGateOn()) { releaseCraneConfirm(cr, '完工人工确认环节已关闭'); break; }
+        const cto = CFG.crane.confirmTimeout ?? 0;   // 看门狗：平板无人确认（忘点/离岗）超时兜底放行，防整场停摆
+        if (cto > 0 && cr.awaitSince != null && simTime - cr.awaitSince >= cto) {
+          releaseCraneConfirm(cr, `超 ${cto}s 未获天车工确认，超时兜底放行`);
+          break;
+        }
         const ap = cr.awaitPoint || cr.home;
         const yieldX = craneYieldTarget(cr);         // 待命位挡住搭档才能做的吊时先让位（让完回待命位）
         const gx = yieldX == null ? ap.x : yieldX;
@@ -3275,7 +3285,7 @@ function updateCranes(dt) {
             logEvent('inventory', `倒垛更新：${st.code} 第${j.fromStack + 1}垛 压货一捆移至 ${j.dest.code} 第${j.destStack + 1}垛（库存总量不变 ${occupiedCount}/${TOTAL_BUNDLE_CAP}）`);
             j.bundleId = top ? top.id : '';
             spawnRestackScanTask(j);   // 倒垛确认：机器狗随后扫描源垛 + 目标垛（事后核验，不阻塞该车装车吊）
-            emitSimEvent('restack.done', { refId: t.refId || null, from: st.code, fromStack: j.fromStack + 1, to: j.dest.code, toStack: j.destStack + 1, bundleId: j.bundleId });   // 操作端倒垛单闭环
+            emitSimEvent('restack.done', { refId: t.refId || null, from: st.code, fromStack: j.fromStack + 1, to: j.dest.code, toStack: j.destStack + 1, bundleId: j.bundleId, orderNo: t.order ? t.order.id : null, plate: t.truck ? t.truck.plate : null, forBundle: t.bundleId || null });   // 操作端倒垛单闭环（orderNo/plate/forBundle：出库装车引发的倒垛按车辆订单归集，P10 已出场可追溯）
           } else { // 装车完成：订单履约推进；任务待机器狗扫码确认核销后闭环（免检/已确认即时闭环），最后一吊装毕后货车转出场复验
             const tk = j.task.truck;
             tk.remaining--;
@@ -3482,7 +3492,9 @@ function newBatch(kind, span, order = null) {
 function outboundOrderItems(o) {   // 出库订单捆明细（事件负载：操作端 P4/P10 展示真实捆号，不再占位）
   return o.tasks.filter(t => t.bundleId).map(t => {
     const b = t.slot.stacks[t.stackIdx].bundles.find(x => x.id === t.bundleId);
-    return { qrCode: t.bundleId, stackId: t.slot.code, layer: (b && b.pos ? b.pos.layer : (t.dropLayer || 0)) + 1 };
+    // stackNo 随事件直发（垛位级定位的源头）：操作端锁定捆不依赖捆级明细到达时序，
+    // 取货垛位/高亮直接落到具体垛（"库位#垛号"），不再整库位高亮
+    return { qrCode: t.bundleId, stackId: t.slot.code, stackNo: t.stackIdx + 1, layer: (b && b.pos ? b.pos.layer : (t.dropLayer || 0)) + 1 };
   });
 }
 function routeToBatch(type, task) { // 挂入待组车次：出库按「同订单 + 同跨」组车（一单一车），入库按「同类型 + 同跨」凑车
@@ -3773,6 +3785,7 @@ function slotMonitored(slot) { // 库位是否在机器狗扫描范围内（监�
 }
 function skipScan(t) { // 机器狗不进该区域，跳过扫码环节、直接产生与扫码完成相同的效果：
   // 监测跨内、扫描号区之外 -> 「人工核对」（scanManual 单独标记）；未监测跨/全关 -> 「免检直通」
+  if (t.scanSkipped) return;   // 已直通过：出库任务装车完成前保持 pending，每拍重入只留痕一次（防日志刷屏挤占事件窗口）
   const sp = spanOfSlot(t.slot);
   const where = `${SPANS[sp]}${t.slot.zone ? ` · ${t.slot.zone}` : ''}`;
   const manual = monitoredSpanIdx().includes(sp);   // 监测跨内非扫描列：转人工核对（其余为免检直通）
@@ -7764,6 +7777,35 @@ if (_integOn) {
   /** 遥测回推（帧即驾驶租约心跳）：供 _teleTimer 周期推送与 setSimMode('drive') 切驾驶即时补发共用。
    *  暂停中也照常推遥测：暂停=同一世界停帧（数据保留，操作端会话数据不清空）；位姿冻结无闪烁
    *  （世界不动，帧与帧相同）。只有观景/关页/失联才停止推送（数据源下线）。 */
+  /** 天车任务简报（操作端天车工平板的任务源——仿真端作为任务后端推送）：
+   *  入库 = 目标垛（toCode#toStack）；出库 = 源垛（fromCode#fromStack）；倒垛 = 源垛→目标垛。 */
+  function craneJobBrief(j, current) {
+    const t = j.task || {};
+    const tk = t.truck || (t.batch && t.batch.truck) || null;
+    const plate = (t.batch && t.batch.plate) || t.plate || (tk && tk.plate) || null;
+    const vehId = t.vehId != null ? t.vehId : (t.batch && t.batch.vehId != null ? t.batch.vehId : null);
+    const orderId = t.order ? t.order.id : (t.refId || null);
+    const tStack = t.stackIdx != null ? t.stackIdx + 1 : null;
+    return {
+      taskId: j.taskId, kind: j.kind, plate, vehId, orderId,
+      bundleId: j.bundleId || null, spec: j.spec ? j.spec.name : (t.spec ? t.spec.name : null),
+      fromCode: j.kind === 'in' ? null : (j.slot ? j.slot.code : null),
+      fromStack: j.fromStack != null ? j.fromStack + 1 : (j.kind === 'in' ? null : tStack),
+      toCode: j.kind === 'out' ? null : (j.dest ? j.dest.code : (j.slot ? j.slot.code : null)),
+      toStack: j.destStack != null ? j.destStack + 1 : (j.kind === 'in' ? tStack : (j.dest ? tStack : null)),
+      ...(current ? { current: true } : {}),
+    };
+  }
+  /** 本机天车的任务队列（按排队序）：当前执行吊 + 本车认领车辆的排队吊 + 本跨未认领/倒垛吊（待接） */
+  function craneJobsFor(c) {
+    const mine = (j) => {
+      const tk = j.task && (j.task.truck || (j.task.batch && j.task.batch.truck));
+      const owner = tk && tk.craneSrv;
+      if (owner) return owner === c;        // 一车一天车：他车认领的吊不进本车列表
+      return j.span === c.span;             // 未认领/无车（倒垛）：本跨待接（显示层按跨归属）
+    };
+    return [...(c.job ? [craneJobBrief(c.job, true)] : []), ...craneJobs.filter(mine).map(j => craneJobBrief(j, false))];
+  }
   function sendTelemetry() {
     if (simMode !== 'drive') return;
     simFetch(`${DB_API}/api/telemetry`, {
@@ -7772,12 +7814,15 @@ if (_integOn) {
         driveId: DRIVE_ID, driveLabel: DRIVE_LABEL,   // 帧即租约心跳（服务端据此独占仲裁）
         simStartTime: runWallStart,                    // 沙盘启动/重置时刻（ISO）：前端「已出场」过滤旧世界留痕的基准
         cranes: cranes.map(c => ({ name: c.name, span: c.span, x: +c.x.toFixed(1), y: +c.y.toFixed(1), state: c.state,
-          awaitConfirm: c.state === 'WAIT_CONFIRM', awaitDesc: c.awaitDesc || null })),   // 完工待确认：操作端平板据此弹「确认上个任务已完成」
+          awaitConfirm: c.state === 'WAIT_CONFIRM', awaitDesc: c.awaitDesc || null,
+          jobs: craneJobsFor(c) })),   // 完工待确认 + 本机任务队列：操作端天车工平板据此展示/排程（仿真端是任务后端）
         dogs: robots.map(r => ({ id: r.id, name: r.name, state: r.state, battery: Math.round(r.battery), x: +r.x.toFixed(1), y: +r.y.toFixed(1),
           fault: r.fault ? { kind: r.fault.kind, alarmId: r.fault.alarmId, text: FAULT_KIND_TEXT[r.fault.kind] } : null,
           taskId: r.task ? r.task.id : null })),   // FAULT 挂起：操作端平板据此显示故障狗并引导处置
         trucks: trucks.map(t => ({ kind: t.kind, plate: t.plate, state: t.state, x: +t.x.toFixed(1), y: +t.y.toFixed(1),
           loaded: !!t.loaded, remaining: t.remaining })),   // 在场货车（含通道排队/装卸/离场）：操作端地图画车
+        lockedSlots: storages.filter(s => s.state === 'locked').map(s =>
+          s.lockStack != null ? `${s.code}#${s.lockStack + 1}` : s.code),   // 作业锁定（垛位级优先）：操作端只给被锁的具体垛上「任务中」色，不再整库位变色
       }),
     }).then(r => { if (r.status === 409) driveLeaseDenied(); })   // 驾驶位被他人持有 → 自动降级观景
       .catch(() => {});
@@ -7979,6 +8024,11 @@ if (_integOn) {
       for (const qr of q) { const t = byBundle.get(qr); if (t) { picked.push(t); byBundle.delete(qr); } else skipped++; }
       const rest = [...byBundle.values()];   // 未提及的剩余捆保持原相对序垫后
       const seq = [...picked, ...rest];
+      // order.tasks 同步为执行序（已完成/在途吊保持原相对序在前，未执行按管理工给定序）——
+      // outboundOrderItems 按 tasks 序发事件：从此事件流的捆明细顺序 = 管理工推送的装车顺序，
+      // 各平板按事件重建的 locked/任务卡序与推送端一致（不再被 assign/order 事件冲回原序）
+      const pendingSet = new Set(pending);
+      order.tasks = [...order.tasks.filter(t => !pendingSet.has(t)), ...seq];
       // 重排 craneJobs：先移除该订单未执行的装车吊，再按新序插回队首（管理工确认的顺序优先执行）
       const mine = new Set(pending.map(t => t.id));
       const removed = [];
@@ -8031,11 +8081,22 @@ if (_integOn) {
       logEvent('crane', `操作端下发倒垛 ${cmd.refId || cmd.id}：${p.from} 第${si + 1}垛顶 ${idxs.length} 捆 -> ${p.to} 第${di + 1}垛（天车排队执行，机器狗双点核验）`);
       return finishSimCommand(cmd, true, { count: idxs.length, fromStack: si + 1, toStack: di + 1 });
     }
+    if (cmd.kind === 'outbound-confirm') {   // P10 出库确定（管理工人工闸门）：确认留痕并广播——全端平板状态同步
+      const order = orders.find(o => o.id === cmd.refId || o.id === p.orderNo);
+      if (order) {
+        logEvent('task', `操作端出库确定：${order.id}（${p.plate || order.buyer || '—'}）料到齐、核对车牌与装车实物一致（留痕），允许出厂`);
+        emitSimEvent('outbound.confirmed', { orderNo: order.id, plate: p.plate || null, done: order.done, required: order.required });
+      } else {
+        // 订单不在本仿真（已闭环/历史/重放）：仍广播确认事件，操作端据此幂等推进状态
+        emitSimEvent('outbound.confirmed', { orderNo: cmd.refId, plate: p.plate || null });
+      }
+      return finishSimCommand(cmd, true, order ? {} : { skipped: 'order-not-found' });
+    }
     if (cmd.kind === 'crane-confirm') {   // 天车工完工确认：放行完工待确认的天车（上个任务已完成，恢复接单）
       const cr = cranes.find(c => c.name === (p.crane || cmd.refId));
       if (!cr) return finishSimCommand(cmd, false, { error: `天车不存在：${p.crane || cmd.refId}` });
       if (cr.state !== 'WAIT_CONFIRM') return finishSimCommand(cmd, true, { skipped: 'not-awaiting', state: cr.state });
-      releaseCraneConfirm(cr);
+      releaseCraneConfirm(cr, '天车工确认（平板 crane-confirm）');
       return finishSimCommand(cmd, true, { crane: cr.name });
     }
     if (cmd.kind === 'alarm-handled') {   // P7 报警处置：挂起中的机器狗（卡死/损坏/扫码异常）恢复执行原任务；非阻断类报警确认即闭环

@@ -44,7 +44,10 @@ check('容量参数（全局垛数/每垛上限）', snap.capacity.globalStacksP
 check('汇总含库容/占用/吨位', snap.inventory.totalBundles > 3000 && snap.inventory.totalCapacity > 0
   && snap.inventory.occupiedSlots >= 0 && snap.inventory.totalTons > 0,
   `${snap.inventory.totalBundles} 捆 / ${snap.inventory.totalTons} 吨 / 占用 ${snap.inventory.occupiedSlots}`);
-check('P2 占位字段存在（cranes/dogs/kpiToday）', Array.isArray(snap.cranes) && Array.isArray(snap.dogs) && snap.kpiToday === null);
+check('统计/倒垛单字段存在（cranes/dogs/kpiToday/restackPlans）',
+  Array.isArray(snap.cranes) && Array.isArray(snap.dogs)
+  && !!snap.kpiToday && typeof snap.kpiToday.todayInCount === 'number' && 'successRate' in snap.kpiToday
+  && Array.isArray(snap.restackPlans));
 check('rev 修订号存在', Number.isFinite(snap.rev), String(snap.rev));
 check('轻量快照不含捆级明细', !('bundles' in snap));
 

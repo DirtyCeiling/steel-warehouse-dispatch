@@ -5,7 +5,7 @@
 // rev 为进程内修订号：沙盘每次写库存/捆位/车辆后 bumpRev()，前端比对 rev 决定是否重拉捆级明细，
 // 避免 2s 轮询反复传输 ~6000 捆全量。进程重启 rev 重置，客户端按不等即重拉处理。
 import {
-  getSlots, getSpecs, getInventory, getBundlePositions, getGeoCfg, globalStacksPerSlot,
+  getSlots, getSpecs, getInventory, getBundlePositions, getGeoCfg, globalStacksPerSlot, getSimParams,
 } from './database.js';
 import { listSnapshotVehicles } from './inbound.js';
 
@@ -36,8 +36,55 @@ function totalTons(db) {
   return +est.toFixed(1);
 }
 
+/** 本地某日 00:00 的 ISO 串（台账/事件均为 UTC ISO，字典序可比较）；offsetDays=0 今天、1 昨天… */
+function localDayStartIso(offsetDays = 0) {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - offsetDays);
+  return d.toISOString();
+}
+
+/** 今日统计（全部出自服务端落库数据，操作端不得自行编造）：
+ *  入库/出库件数与吨位 = 钢材台账（inbound_time / outbound_time 今日）；
+ *  倒垛次数 = 事件流 restack.done；识别成功率 = 扫码闭环 /（扫码闭环 + 复核报警）；
+ *  安全违章暂无真实采集源，恒 0（不造假）。successRate 无样本时为 null（前端显示「—」）。 */
+function computeKpiToday(db) {
+  const t0 = localDayStartIso(0);
+  const inAgg = db.prepare('SELECT COUNT(*) n, COALESCE(SUM(weight_kg),0) w FROM steel_ledger WHERE inbound_time >= ?').get(t0);
+  const outAgg = db.prepare('SELECT COUNT(*) n, COALESCE(SUM(weight_kg),0) w FROM steel_ledger WHERE outbound_time >= ?').get(t0);
+  const restackCount = db.prepare("SELECT COUNT(*) n FROM sim_events WHERE type='restack.done' AND time >= ?").get(t0).n;
+  const scan = db.prepare(`SELECT
+      SUM(CASE WHEN type='inbound.scan' THEN 1 ELSE 0 END) ok,
+      SUM(CASE WHEN type='alarm.raise' THEN 1 ELSE 0 END) bad
+    FROM sim_events WHERE time >= ?`).get(t0);
+  const ok = scan.ok || 0, bad = scan.bad || 0;
+  return {
+    todayInCount: inAgg.n,
+    todayInTon: +(inAgg.w / 1000).toFixed(1),
+    todayOutCount: outAgg.n,
+    todayOutTon: +(outAgg.w / 1000).toFixed(1),
+    restackCount,
+    violations: 0,
+    successRate: (ok + bad) > 0 ? +((ok / (ok + bad)) * 100).toFixed(1) : null,
+  };
+}
+
+/** 近 7 日出入库趋势（件）：钢材台账按自然日聚合（in=入库件数，out=出库件数），day 为本地 MM-DD */
+function computeWeekTrend(db) {
+  const inQ = db.prepare('SELECT COUNT(*) n FROM steel_ledger WHERE inbound_time >= ? AND inbound_time < ?');
+  const outQ = db.prepare('SELECT COUNT(*) n FROM steel_ledger WHERE outbound_time >= ? AND outbound_time < ?');
+  const p = n => String(n).padStart(2, '0');
+  const rows = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i);
+    rows.push({ day: `${p(d.getMonth() + 1)}-${p(d.getDate())}`, in: inQ.get(d.toISOString(), localDayStartIso(i - 1)).n, out: outQ.get(d.toISOString(), localDayStartIso(i - 1)).n });
+  }
+  return rows;
+}
+
 /** 轻量快照（不含捆级明细）；withBundles=true 时附带 bundle_positions 全量 */
 export function getFrontendSnapshot(db, { withBundles = false } = {}) {
+  ensureIntegrTables(db);   // kpiToday/weekTrend 查 sim_events：新库首次快照前须先建表
   const slots = getSlots(db);
   const specs = getSpecs(db);
   const vehicles = listSnapshotVehicles(db);   // 未完成全量 + 最近完成（在途不滚出窗口，取消判定可靠）
@@ -73,7 +120,19 @@ export function getFrontendSnapshot(db, { withBundles = false } = {}) {
       const h = driveHolder();
       return (h && tele) ? { holderId: h.holderId, label: h.holderLabel, heartbeatAt: tele.at } : null;
     })(),
-    kpiToday: null,
+    // 调度参数下发（倒计时口径同源）：操作端进厂车「超时自动确认」倒计时 = arriveTime + autoConfirmMin，
+    // 窗口值必须来自这里（各标签页/刷新/重开全部一致），禁止前端本地另起口径
+    params: { autoConfirmMin: Number(getSimParams(db).production.autoConfirmMin) || 0 },
+    kpiToday: computeKpiToday(db),     // 今日统计（台账+事件流真实聚合，替代前端 mock）
+    weekTrend: computeWeekTrend(db),   // 近 7 日出入库趋势（台账按自然日聚合）
+    // 倒垛单（跨平板同步：生成/下发/完成均落库，此前纯本地导致他端无此单）
+    restackPlans: listRestackPlans(db),
+    // 出库装车顺序/置顶（跨平板同步：装车序调整/置顶捆号落库，此前推送前纯本地）
+    outboundQueue: listOutboundQueue(db),
+    // 任务认领（管理工独占规划权）：其他客户端只读可看不可改
+    claims: listClaims(db),
+    // 沙盘作业锁定中的库位（遥测随帧携带）：操作端「作业中」视觉的服务端权威来源
+    ...(Array.isArray(tele?.lockedSlots) ? { lockedSlots: tele.lockedSlots } : {}),
     ...(withBundles ? { bundles: getBundlePositions(db) } : {}),
   };
 }
@@ -88,9 +147,12 @@ export function getFrontendSnapshot(db, { withBundles = false } = {}) {
  *     执行完回写（POST /:id/finish，可附带事件一并落表）。
  * ===================================================================== */
 
-const EVENTS_KEEP = 5000;   // 结构化生命周期事件保留量（游标重放窗口）
-const OUTBOUND_KEEP = 400;  // 出库订单事件独立保留量（在办订单不被洪流挤出，重放必含）
+const EVENTS_KEEP = 5000;   // 其余结构化事件保留量（游标重放窗口；仅裁未受独立保护的类型）
+const OUTBOUND_KEEP = 1200; // 出库订单事件独立保留量（在办订单不被洪流挤出，重放必含；一单多车/装载重播事件多，1200 覆盖整日高负载）
 const LOGS_KEEP = 400;      // log 类事件保留量（操作端留痕仅显近 50 条，采样足够）
+const ALARM_KEEP = 200;     // 报警事件独立保留量（报警卡仅由事件重建，被挤出则操作端丢警）
+const RESTACK_KEEP = 600;   // 倒垛完成事件独立保留量（P10 已出场按车归集倒垛史，被挤出则出场追溯缺吊）
+const LEFT_KEEP = 600;      // 车辆离场事件独立保留量（已出场留痕/出场时刻由它回放，被挤出则出场记录丢时刻）
 
 function ensureIntegrTables(db) {
   db.exec(`
@@ -110,6 +172,32 @@ function ensureIntegrTables(db) {
       create_time TEXT NOT NULL,
       finish_time TEXT,
       claim_time  TEXT               -- 认领时刻（租约：超时未回写视为认领方失联，重新可领）
+    );
+    CREATE TABLE IF NOT EXISTS restack_plans (
+      id          TEXT PRIMARY KEY,        -- 倒垛单号（DD-xx / DD-Mx，操作端分配，单写者免对账）
+      status      TEXT NOT NULL,           -- 编辑中 / 已下发 / 已完成
+      payload     TEXT NOT NULL,           -- 计划全量 JSON（items/target/forbidden/forOutboundId/...）
+      create_time TEXT NOT NULL,
+      update_time TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS outbound_queue (
+      order_no    TEXT PRIMARY KEY,        -- 出库单号（CK-xx / HT26-xxxx，与事件流 outbound.order 同号）
+      qr_codes    TEXT NOT NULL,           -- 装车顺序（捆号数组 JSON，last-writer-wins）
+      pinned      TEXT,                    -- 置顶捆号（单卡置顶语义，NULL = 无）
+      update_time TEXT NOT NULL
+    );
+    -- 管理工账户（免密自动分配）：平板打开网页即分配一个新账户（会话级，刷新不丢）
+    CREATE TABLE IF NOT EXISTS users (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL,            -- 管理工-NN
+      created_at TEXT NOT NULL
+    );
+    -- 任务认领（先到者独占规划权）：一辆车/一张单被认领后，其他客户端只读可看不可改
+    CREATE TABLE IF NOT EXISTS task_claims (
+      ref_id     TEXT PRIMARY KEY,         -- in:<vehId>（入库车）/ out:<orderNo>（出库单）
+      owner_id   INTEGER NOT NULL,
+      owner_name TEXT NOT NULL,
+      claimed_at TEXT NOT NULL
     );
   `);
   // 旧库迁移：补 claim_time 列
@@ -139,13 +227,29 @@ export function appendEvents(db, events) {
           db.prepare(`DELETE FROM inbound_vehicles WHERE id IN (${ph})`).run();
           console.log(`[台账] sim.reset：作废旧世界未完成车辆 ${ghost.length} 辆（id: ${ghost.map(g => g.id).join(',')}）`);   // appendEvents 无 log 注入参数：直接走控制台
         }
+        // 旧世界倒垛单一并作废（未完成的已下发/编辑中计划均属已消亡世界；已完成历史保留）
+        db.prepare("DELETE FROM restack_plans WHERE status != '已完成'").run();
+        // 旧世界出库装车序/置顶一并作废（订单随世界消亡）
+        db.prepare('DELETE FROM outbound_queue').run();
+        // 旧世界任务认领一并释放（车辆/订单随世界消亡，规划权回收）
+        db.prepare('DELETE FROM task_claims').run();
+      }
+      // 出库单出场（vehicle.left kind=out）：订单随车闭环，认领释放（refId = out:<orderNo>）
+      if (e.type === 'vehicle.left' && e.payload && e.payload.kind === 'out' && e.payload.orderNo) {
+        releaseClaimByRef(db, `out:${e.payload.orderNo}`);
       }
     }
     db.prepare(`DELETE FROM sim_events WHERE type='log' AND seq <= (SELECT MAX(seq) FROM sim_events WHERE type='log') - ?`).run(LOGS_KEEP);
     // 出库订单事件（order/assign/progress）独立保留窗口：低频但必须可重放——被洪流挤出会导致
     // 新开操作端永远重建不出「出库跟踪」卡（车都在跑、订单却无据可查）
     db.prepare(`DELETE FROM sim_events WHERE type LIKE 'outbound.%' AND seq <= (SELECT MAX(seq) FROM sim_events WHERE type LIKE 'outbound.%') - ?`).run(OUTBOUND_KEEP);
-    db.prepare(`DELETE FROM sim_events WHERE seq <= (SELECT MAX(seq) FROM sim_events) - ?`).run(EVENTS_KEEP);
+    db.prepare(`DELETE FROM sim_events WHERE type LIKE 'alarm.%' AND seq <= (SELECT MAX(seq) FROM sim_events WHERE type LIKE 'alarm.%') - ?`).run(ALARM_KEEP);
+    db.prepare(`DELETE FROM sim_events WHERE type = 'restack.done' AND seq <= (SELECT MAX(seq) FROM sim_events WHERE type = 'restack.done') - ?`).run(RESTACK_KEEP);
+    db.prepare(`DELETE FROM sim_events WHERE type = 'vehicle.left' AND seq <= (SELECT MAX(seq) FROM sim_events WHERE type = 'vehicle.left') - ?`).run(LEFT_KEEP);
+    // 总窗口只裁「未受独立保护的类型」（log / outbound.% / alarm.% / restack.done / vehicle.left 各有按类窗口；sim.start/sim.reset
+    // 是操作端重放建立会话起点的锚点，一场一条不淘汰）——若总窗口连受保护类型一起按 seq 距离砍，
+    // 日志洪流几分钟就能把数小时前的事件全部顶掉，独立窗口形同虚设（实测：环里只剩最近 2 分钟）
+    db.prepare(`DELETE FROM sim_events WHERE seq <= (SELECT MAX(seq) FROM sim_events) - ? AND type <> 'log' AND type NOT LIKE 'outbound.%' AND type NOT LIKE 'alarm.%' AND type NOT LIKE 'sim.%' AND type <> 'restack.done' AND type <> 'vehicle.left'`).run(EVENTS_KEEP);
   });
   return tx(), events.length;
 }
@@ -237,10 +341,17 @@ export function takeoverDrive(holderId, holderLabel = '') {
   return true;
 }
 
-/** 操作端写入命令 */
+/** 操作端写入命令（幂等去重：同 kind+refId 已有 pending/claimed 在途命令时返回既有命令——
+ *  多标签/多平板同时打开时，同一到期扫描会在每个标签页各触发一次自动推送/自动确认，
+ *  不去重沙盘会把同一张出库单执行两遍） */
 export function createCommand(db, { kind, refId = null, payload = null }) {
   if (!kind) return null;
   ensureIntegrTables(db);
+  if (refId != null) {
+    const dup = db.prepare("SELECT id FROM sim_commands WHERE kind=? AND ref_id=? AND status IN ('pending','claimed') ORDER BY id LIMIT 1")
+      .get(kind, refId);
+    if (dup) return getCommand(db, dup.id);
+  }
   const r = db.prepare('INSERT INTO sim_commands (kind, ref_id, payload, create_time) VALUES (?, ?, ?, ?)')
     .run(kind, refId ?? null, payload == null ? null : JSON.stringify(payload), new Date().toISOString());
   return getCommand(db, Number(r.lastInsertRowid));
@@ -295,4 +406,147 @@ export function finishCommand(db, id, { ok = true, result = null, events = [] } 
   if (!r.changes) return getCommand(db, id);   // 已被重新认领或已完成：迟到回执不覆盖
   if (events.length) appendEvents(db, events);
   return getCommand(db, id);
+}
+
+/* ===================== 倒垛单落库（跨平板同步） =====================
+ * 操作端是倒垛单的唯一写者（生成端分配单号，单写者免对账）：生成（编辑中）/
+ * 下发（已下发）/完成（restack.done 事件驱动任一端回写）全生命周期落库，
+ * 随快照下发——此前计划纯本地，发起端之外的平板既看不到计划也收不了口。 */
+
+export function upsertRestackPlan(db, plan) {
+  if (!plan || typeof plan.id !== 'string' || !plan.id) return { ok: false, error: '缺少计划 id' };
+  if (!['编辑中', '已下发', '已完成'].includes(plan.status)) return { ok: false, error: '非法计划状态' };
+  ensureIntegrTables(db);
+  const t = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO restack_plans (id, status, payload, create_time, update_time)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET status=excluded.status, payload=excluded.payload, update_time=excluded.update_time`)
+    .run(plan.id, plan.status, JSON.stringify(plan), t, t);
+  bumpRev();
+  return { ok: true, plan: listRestackPlans(db).find(p => p.id === plan.id) };
+}
+
+export function listRestackPlans(db) {
+  ensureIntegrTables(db);
+  return db.prepare('SELECT * FROM restack_plans ORDER BY create_time, id').all()
+    .map(r => {
+      let p = {};
+      try { p = JSON.parse(r.payload) || {}; } catch { /* 损坏行跳过内容，仅保底 id/status */ }
+      return { ...p, id: r.id, status: r.status };   // 列值状态权威（payload 内为保存时快照）
+    });
+}
+
+/* ===================== 管理工账户（免密分配）+ 任务认领 =====================
+ * 多平板多管理工：打开网页即自动分配一个新账户（免密，演示期）；
+ * 认领（进某车/某单的任务队列视图即认领）先到者独占规划权——
+ * 其他客户端能打开看该车信息，但规划顺序不可改（平板端 UI 只读化；
+ * 服务端不做强制拒绝——演示期 UI 门禁即可，后续接真实权限再上服务端鉴权）。
+ * 释放时机：车辆完成/离场（台账收口）、出库单出场（vehicle.left 事件）、sim.reset、认领者主动释放。 */
+
+export function allocateUser(db) {
+  ensureIntegrTables(db);
+  const r = db.prepare('INSERT INTO users (name, created_at) VALUES (?, ?)').run('', new Date().toISOString());
+  const id = Number(r.lastInsertRowid);
+  const name = `管理工-${String(id).padStart(2, '0')}`;
+  db.prepare('UPDATE users SET name=? WHERE id=?').run(name, id);
+  return { id, name };
+}
+
+/** 认领任务（先到者独占）：已有他人认领 → ok:false + 现有认领者；自己重复认领幂等 ok:true */
+export function claimTask(db, refId, ownerId, ownerName) {
+  if (!refId || typeof refId !== 'string') return { ok: false, error: '缺少 refId' };
+  if (!(ownerId > 0)) return { ok: false, error: '缺少 ownerId' };
+  ensureIntegrTables(db);
+  const cur = db.prepare('SELECT * FROM task_claims WHERE ref_id=?').get(refId);
+  if (cur) {
+    return cur.owner_id === ownerId
+      ? { ok: true, claim: { refId, ownerId: cur.owner_id, ownerName: cur.owner_name } }
+      : { ok: false, claim: { refId, ownerId: cur.owner_id, ownerName: cur.owner_name } };
+  }
+  db.prepare('INSERT INTO task_claims (ref_id, owner_id, owner_name, claimed_at) VALUES (?, ?, ?, ?)')
+    .run(refId, ownerId, ownerName || `管理工-${ownerId}`, new Date().toISOString());
+  return { ok: true, claim: { refId, ownerId, ownerName } };
+}
+
+/** 释放认领：仅认领者本人可释放 */
+export function releaseTask(db, refId, ownerId) {
+  ensureIntegrTables(db);
+  const cur = db.prepare('SELECT * FROM task_claims WHERE ref_id=?').get(refId);
+  if (!cur) return { ok: true, released: false };
+  if (cur.owner_id !== ownerId) return { ok: false, error: '非认领者不可释放', claim: { refId, ownerId: cur.owner_id, ownerName: cur.owner_name } };
+  db.prepare('DELETE FROM task_claims WHERE ref_id=?').run(refId);
+  return { ok: true, released: true };
+}
+
+export function listClaims(db) {
+  ensureIntegrTables(db);
+  return db.prepare('SELECT ref_id, owner_id, owner_name, claimed_at FROM task_claims ORDER BY claimed_at').all()
+    .map(r => ({ refId: r.ref_id, ownerId: r.owner_id, ownerName: r.owner_name, claimedAt: r.claimed_at }));
+}
+
+/** 认领释放（系统侧收口用）：入库车台账收口/出库单离场/车辆删除时直接按 refId 释放 */
+export function releaseClaimByRef(db, refId) {
+  ensureIntegrTables(db);
+  db.prepare('DELETE FROM task_claims WHERE ref_id=?').run(refId);
+}
+
+/* ===================== 出库装车顺序/置顶（跨平板同步） =====================
+ * 出库单本体由沙盘事件流承载（outbound.order/progress），但其「装车顺序/置顶捆号」
+ * 是管理工在平板上的规划意图（推送前纯本地、他端不可见）：落库 last-writer-wins，
+ * 快照下发全端；推送（dispatch-outbound-order）时推送方按推送捆序覆写本表——
+ * 他端因此与沙盘实际装车序对齐（outbound.progress 的按序已装标记才不会错位）。 */
+
+export function saveOutboundQueue(db, orderNo, qrCodes, pinned = null) {
+  if (!orderNo || typeof orderNo !== 'string') return { ok: false, error: '缺少 orderNo' };
+  if (!Array.isArray(qrCodes) || qrCodes.some(q => typeof q !== 'string')) return { ok: false, error: 'qrCodes 须为捆号数组' };
+  if (pinned != null && typeof pinned !== 'string') return { ok: false, error: 'pinned 须为捆号或 null' };
+  ensureIntegrTables(db);
+  // 顺带清理 24h 前的陈旧行（历史订单的装车序不再有意义）
+  db.prepare('DELETE FROM outbound_queue WHERE update_time < ?')
+    .run(new Date(Date.now() - 86400000).toISOString());
+  db.prepare(`
+    INSERT INTO outbound_queue (order_no, qr_codes, pinned, update_time)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(order_no) DO UPDATE SET qr_codes=excluded.qr_codes, pinned=excluded.pinned, update_time=excluded.update_time`)
+    .run(orderNo, JSON.stringify(qrCodes), pinned ?? null, new Date().toISOString());
+  return { ok: true };
+}
+
+export function listOutboundQueue(db) {
+  ensureIntegrTables(db);
+  return db.prepare('SELECT * FROM outbound_queue ORDER BY update_time DESC').all()
+    .map(r => {
+      let qr = [];
+      try { qr = JSON.parse(r.qr_codes) || []; } catch { /* 损坏行按空序 */ }
+      return { orderNo: r.order_no, qrCodes: qr, ...(r.pinned ? { pinned: r.pinned } : {}), updateTime: r.update_time };
+    });
+}
+
+/* ===================== 平板报警直达事件流 =====================
+ * 天车工「异常上报」等人工报警此前纯本地（仅上报端可见）：这里提供直达事件流的
+ * 上报/关闭端点，不经沙盘认领（人工观察无需仿真执行），全端 1s 内可见；
+ * 仿真侧产生的报警仍走沙盘 emitSimEvent 通道，两源同流（source 区分）。 */
+
+const TABLET_ALARM_TYPES = ['识别失败', '账实差异', '设备故障', '安全违章'];
+
+export function raiseTabletAlarm(db, { alarmId, type, slot, desc, level } = {}) {
+  if (!alarmId || typeof alarmId !== 'string') return { ok: false, error: '缺少 alarmId' };
+  if (!TABLET_ALARM_TYPES.includes(type)) return { ok: false, error: '非法报警类型' };
+  ensureIntegrTables(db);
+  // 幂等：同 alarmId 已在事件流（重试/多标签并发）不重复上报——kpiToday 按 alarm.raise 计数，重复会虚增
+  const dup = db.prepare(`SELECT seq FROM sim_events WHERE type='alarm.raise' AND json_extract(payload,'$.alarmId')=? LIMIT 1`)
+    .get(alarmId);
+  if (dup) return { ok: true, skipped: 'duplicate' };
+  appendEvents(db, [{
+    type: 'alarm.raise',
+    payload: { alarmId, type, slot: slot || null, desc: desc || null, level: level || null, source: 'tablet' },
+  }]);
+  return { ok: true };
+}
+
+export function closeTabletAlarm(db, alarmId, method = '现场处置') {
+  if (!alarmId || typeof alarmId !== 'string') return { ok: false, error: '缺少 alarmId' };
+  appendEvents(db, [{ type: 'alarm.closed', payload: { alarmId, method, source: 'tablet' } }]);
+  return { ok: true };
 }

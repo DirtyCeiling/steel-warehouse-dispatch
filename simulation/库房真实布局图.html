@@ -6,20 +6,41 @@
 <style>
   body { margin: 0; background: #f7f8fa; font-family: "Microsoft YaHei", sans-serif; }
   .wrap { padding: 18px; }
+  .bar { display: flex; align-items: center; gap: 12px; margin: 0 0 10px; flex-wrap: wrap; }
+  .seg { display: inline-flex; border: 1px solid #c3cad6; border-radius: 8px; overflow: hidden; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  .seg button { border: none; padding: 6px 18px; font-size: 13px; background: #fff; color: #475569; cursor: pointer; }
+  .seg button + button { border-left: 1px solid #c3cad6; }
+  .seg button.on { background: #1d4ed8; color: #fff; font-weight: 600; }
+  .stat { font-size: 12px; color: #64748b; }
+  .stat.err { color: #dc2626; }
   canvas { background: #fff; border: 1px solid #d0d4da; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
 </style>
 </head>
 <body>
-<div class="wrap"><canvas id="cv"></canvas></div>
+<div class="wrap">
+  <div class="bar">
+    <div class="seg">
+      <button id="btnNo" class="on">垛位号</button>
+      <button id="btnQty">钢材数量</button>
+    </div>
+    <span id="stat" class="stat">静态布局图</span>
+  </div>
+  <canvas id="cv"></canvas>
+</div>
 <script>
 'use strict';
-/* 与 simulation/layout-diagram-gen.mjs 同一份布局数据（现场 Excel 平面图还原） */
+/* 与 simulation/layout-diagram-gen.mjs 同一份布局数据（现场 Excel 平面图还原）。
+   标签双模式：垛位号（号区-垛位序，静态）；钢材数量（该垛在库捆数，实时取自
+   Robot_Sim 仿真服务 /api/slots，库位编码 = 号区-跨号，如 6-2 = 6 号区二跨；
+   一跨 14~16 整宽合并垛位取该库位全部垛之和）。 */
 const POS_W = 44, LANE_W = 22, X0 = 110;
 const Y_TITLE = 6, Y_HDR = 34, Y_A = 56, RH_A = 24, Y_ZA = Y_A + 3 * RH_A + 4;
 const RH_B = 14, Y_B = Y_ZA + 20, Y_ZB = Y_B + 10 * RH_B + 4;
 const Y_C = Y_ZB + 20, Y_ZC = Y_C + 10 * RH_B + 4;
 const Y_NOTE = Y_ZC + 26;
 const LANES_AFTER = [5, 16, 27];
+const API = 'http://127.0.0.1:3001/api/slots';
+const REFRESH_MS = 5000;
 const laneX = after => xOfPos(after) + POS_W;
 function xOfPos(p) {
   let x = X0 + (p - 1) * POS_W;
@@ -92,12 +113,11 @@ SPANS[2].cells = p => {
   });
 };
 
-const W = xOfPos(33) + POS_W + 20, H = Y_NOTE + 92;
+const W = xOfPos(33) + POS_W + 20, H = Y_NOTE + 112;
 const cv = document.getElementById('cv');
 cv.width = W; cv.height = H;
 cv.style.width = W + 'px'; cv.style.height = H + 'px';
 const ctx = cv.getContext('2d');
-ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
 
 function box(x, y, w, h, text, { fill = '#fff', fs = 9, bold = false, color = '#222', dash = false, v = false } = {}) {
   ctx.fillStyle = fill;
@@ -128,43 +148,128 @@ function text(x, y, str, fs = 11, bold = false, align = 'left') {
   ctx.fillText(str, x, y);
 }
 
-text(10, Y_TITLE + 12, '钢厂成品库房真实布局（一跨 / 二跨 / 三跨）—— 按现场平面图还原', 16, true);
-for (let p = 1; p <= 33; p++) text(xOfPos(p) + POS_W / 2, Y_HDR + 7, String(p), 8, false, 'center');
+/* —— 实时库存（钢材数量模式）：仿真服务 /api/slots —— */
+let mode = 'no';                 // 'no' = 垛位号（静态）；'qty' = 钢材数量（实时）
+let byCode = null;               // code -> slot（含 stacks）
+let totalBundles = 0, dataAt = null, dataErr = null;
+let timer = 0, fetching = false;
 
-for (const sp of SPANS) {
-  box(10, sp.y, 92, sp.rows * sp.rh, sp.name, { fill: '#EDEDED', fs: 13, bold: true, v: true });
-  for (let p = 1; p <= 33; p++) {
-    const x = xOfPos(p);
-    if (sp.missing && sp.missing.includes(p)) {
-      box(x, sp.y, POS_W, sp.rows * sp.rh, '无库位', { fill: C.none, fs: 7, color: '#999', dash: true });
-      continue;
+async function loadData() {
+  if (fetching) return;
+  fetching = true;
+  try {
+    const r = await fetch(API, { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    byCode = new Map();
+    totalBundles = 0;
+    for (const s of d.slots) {
+      byCode.set(s.code, s);
+      totalBundles += s.stacks.reduce((t, k) => t + k.count, 0);
     }
-    for (const cl of sp.cells(p)) {
-      const y = sp.y + cl.rows[0] * sp.rh, h = (cl.rows[1] - cl.rows[0] + 1) * sp.rh;
-      box(x, y, POS_W, h, cl.label, { fill: cl.color, fs: sp.fs });
-    }
-    for (const cl of sp.endLane(p)) {
-      const y = sp.y + cl.rows[0] * sp.rh, h = (cl.rows[1] - cl.rows[0] + 1) * sp.rh;
-      box(x, y, POS_W, h, cl.label, { fill: C.green, fs: 7 });
-    }
+    dataAt = new Date();
+    dataErr = null;
+  } catch (e) {
+    dataErr = e.message || String(e);
   }
-  const zy = sp.key === 'A' ? Y_ZA : sp.key === 'B' ? Y_ZB : Y_ZC;
-  for (const [name, from, to, color] of sp.zones) {
-    const x = xOfPos(from), w = xOfPos(to) + POS_W - x;
-    box(x, zy, w, 16, `${name} ${from}~${to}`, { fill: color, fs: 8, bold: true });
-  }
-  for (const l of LANES_AFTER) box(laneX(l), zy, LANE_W, 16, '', { fill: C.green });
+  fetching = false;
+  updateStat();
+  render();
 }
-for (const [i, l] of LANES_AFTER.entries())
-  box(laneX(l), Y_A, LANE_W, Y_C + 10 * RH_B - Y_A, `${i + 1}号车辆进出通道`, { fill: C.green, fs: 9, bold: true, v: true });
 
-const notes = [
-  '图例：每格 = 一个垛位（编号 = 号区-垛位序）；绿色 = 车辆进出通道；绿色整宽格（一跨 14/15/16）= 大棒头(制光钢)整宽合并垛位。',
-  '一跨：1~2 号区各 2 垛（中间被通道隔开）、3~5 号区各 3 垛（装棒筒区）；6~13 大棒区域、17~27 中棒区域、28~33 备用区域各 3 垛。',
-  '二跨：6~30 号区各 10 垛（扁钢杂区域 1~5 为 2~3 个宽垛位）；14~16、26~27、31~33 号区无库位。',
-  '三跨：6~27 号区各 10 垛；28~33 商品坯各 3 个宽垛位；1~5 号区（冀鲁扁钢）2~3 个宽垛位；1|2 号区中间为纵向车辆通道。',
-];
-notes.forEach((t, i) => text(10, Y_NOTE + i * 20 + 9, t, 11));
+/* 垛位格文案：垛位号模式 = 原编号；数量模式 = 该垛在库捆数（合并位 = 全部位之和） */
+function cellText(spIdx, p, cl) {
+  if (mode === 'no') return { text: cl.label, color: '#222' };
+  const merged = !cl.label.includes('-');          // 一跨 14~16 整宽合并垛位（编号 = 纯号区数字）
+  const code = merged ? String(p) : `${p}-${spIdx + 1}`;   // 库位编码 = 号区-跨号
+  const slot = byCode && byCode.get(code);
+  if (!slot) return { text: '–', color: '#b0b6bf' };
+  let n;
+  if (merged) n = slot.stacks.reduce((t, k) => t + k.count, 0);
+  else {
+    const rack = +cl.label.split('-')[1];          // 垛位序 = stacks.stack_no
+    const st = slot.stacks.find(k => k.stack_no === rack);
+    if (!st) return { text: '–', color: '#b0b6bf' };
+    n = st.count;
+  }
+  return { text: String(n), color: n > 0 ? '#222' : '#999' };
+}
+
+function render() {
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+  text(10, Y_TITLE + 12, '钢厂成品库房真实布局（一跨 / 二跨 / 三跨）—— 按现场平面图还原', 16, true);
+  for (let p = 1; p <= 33; p++) text(xOfPos(p) + POS_W / 2, Y_HDR + 7, String(p), 8, false, 'center');
+
+  for (const [spIdx, sp] of SPANS.entries()) {
+    box(10, sp.y, 92, sp.rows * sp.rh, sp.name, { fill: '#EDEDED', fs: 13, bold: true, v: true });
+    for (let p = 1; p <= 33; p++) {
+      const x = xOfPos(p);
+      if (sp.missing && sp.missing.includes(p)) {
+        box(x, sp.y, POS_W, sp.rows * sp.rh, '无库位', { fill: C.none, fs: 7, color: '#999', dash: true });
+        continue;
+      }
+      for (const cl of sp.cells(p)) {
+        const y = sp.y + cl.rows[0] * sp.rh, h = (cl.rows[1] - cl.rows[0] + 1) * sp.rh;
+        const t = cellText(spIdx, p, cl);
+        box(x, y, POS_W, h, t.text, { fill: cl.color, fs: sp.fs, color: t.color });
+      }
+      for (const cl of sp.endLane(p)) {
+        const y = sp.y + cl.rows[0] * sp.rh, h = (cl.rows[1] - cl.rows[0] + 1) * sp.rh;
+        box(x, y, POS_W, h, cl.label, { fill: C.green, fs: 7 });
+      }
+    }
+    const zy = sp.key === 'A' ? Y_ZA : sp.key === 'B' ? Y_ZB : Y_ZC;
+    for (const [name, from, to, color] of sp.zones) {
+      const x = xOfPos(from), w = xOfPos(to) + POS_W - x;
+      box(x, zy, w, 16, `${name} ${from}~${to}`, { fill: color, fs: 8, bold: true });
+    }
+    for (const l of LANES_AFTER) box(laneX(l), zy, LANE_W, 16, '', { fill: C.green });
+  }
+  for (const [i, l] of LANES_AFTER.entries())
+    box(laneX(l), Y_A, LANE_W, Y_C + 10 * RH_B - Y_A, `${i + 1}号车辆进出通道`, { fill: C.green, fs: 9, bold: true, v: true });
+
+  const notes = [
+    '图例：每格 = 一个垛位（垛位号模式编号 = 号区-垛位序）；绿色 = 车辆进出通道；绿色整宽格（一跨 14/15/16）= 大棒头(制光钢)整宽合并垛位。',
+    '一跨：1~2 号区各 2 垛（中间被通道隔开）、3~5 号区各 3 垛（装棒筒区）；6~13 大棒区域、17~27 中棒区域、28~33 备用区域各 3 垛。',
+    '二跨：6~30 号区各 10 垛（扁钢杂区域 1~5 为 2~3 个宽垛位）；14~16、26~27、31~33 号区无库位。',
+    '三跨：6~27 号区各 10 垛；28~33 商品坯各 3 个宽垛位；1~5 号区（冀鲁扁钢）2~3 个宽垛位；1|2 号区中间为纵向车辆通道。',
+    '钢材数量模式：格内数字 = 该垛位在库捆数（件），每 5 秒自动刷新自仿真服务 :3001；灰色 0 = 空垛，「–」= 服务端无该垛数据。',
+  ];
+  notes.forEach((t, i) => text(10, Y_NOTE + i * 20 + 9, t, 11));
+}
+
+const statEl = document.getElementById('stat');
+function updateStat() {
+  if (mode === 'no') { statEl.textContent = '静态布局图（垛位号）'; statEl.className = 'stat'; return; }
+  if (dataErr) {
+    statEl.textContent = `⚠ 无法连接仿真服务 ${API} —— 数量显示为 –`;
+    statEl.className = 'stat err';
+    return;
+  }
+  const ts = dataAt ? dataAt.toLocaleTimeString('zh-CN', { hour12: false }) : '—';
+  statEl.textContent = `实时库存：全库共 ${totalBundles} 捆 · 更新于 ${ts} · 每 ${REFRESH_MS / 1000} 秒自动刷新`;
+  statEl.className = 'stat';
+}
+
+const btnNo = document.getElementById('btnNo'), btnQty = document.getElementById('btnQty');
+function setMode(m) {
+  if (mode === m) return;
+  mode = m;
+  btnNo.classList.toggle('on', m === 'no');
+  btnQty.classList.toggle('on', m === 'qty');
+  clearInterval(timer);
+  if (m === 'qty') {
+    loadData();                                  // 立即拉一次，之后周期刷新
+    timer = setInterval(loadData, REFRESH_MS);
+  }
+  updateStat();
+  render();
+}
+btnNo.addEventListener('click', () => setMode('no'));
+btnQty.addEventListener('click', () => setMode('qty'));
+
+updateStat();
+render();
 </script>
 </body>
 </html>

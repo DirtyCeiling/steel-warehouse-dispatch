@@ -71,7 +71,7 @@ await fetch(`${API}/api/params`, {
 
 console.log('== 页面（VM 无头渲染） ==');
 const { readFileSync } = await import('node:fs');
-const { buildBrowserBundle } = await import('../../stack-alloc/browser.js');   // 垛位推荐算法包（/*@@stack-alloc@@*/ 占位注入，与 serve.mjs 同口径）
+const { buildBrowserBundle } = await import('../../StackAlloc/browser.js');   // 垛位推荐算法包（/*@@stack-alloc@@*/ 占位注入，与 serve.mjs 同口径）
 const html = readFileSync(new URL('./库房参数设计.html', import.meta.url), 'utf8')
   .replace(/\/\*@@stack-alloc@@\*\//g, () => buildBrowserBundle());
 const blocks = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);

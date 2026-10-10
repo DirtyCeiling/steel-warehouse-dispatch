@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildBrowserBundle } from '../../stack-alloc/browser.js';
+import { buildBrowserBundle } from '../../StackAlloc/browser.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 

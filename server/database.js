@@ -154,9 +154,11 @@ function migrate(db) {
       waybill        TEXT NOT NULL,
       mill           TEXT NOT NULL,
       arrive_time    TEXT NOT NULL,
-      state          TEXT NOT NULL DEFAULT 'pending',   -- pending / confirmed / completed
+      state          TEXT NOT NULL DEFAULT 'pending',   -- pending / verified / confirmed / completed
+      verified_time  TEXT,                              -- 核验时刻（平板「入库规划」= 核验+生成队列，推送前状态）
       confirmed_time TEXT,
-      departed_time  TEXT                               -- 卸毕离场时刻（沙盘回传，台账闭环）
+      departed_time  TEXT,                              -- 卸毕离场时刻（沙盘回传，台账闭环）
+      queue_order    INTEGER                            -- 组间顺序（管理工拖组/跨端同步；NULL = 保持登记序）
     );
     -- 进厂车辆的垛位分配（一组 = 同规格连续吊装、集中码放同一垛，垛满拆多组）
     CREATE TABLE IF NOT EXISTS inbound_loads (
@@ -170,7 +172,9 @@ function migrate(db) {
       rec_parts    TEXT NOT NULL DEFAULT '[]',        -- 推荐评分分解 JSON
       slot_id      INTEGER,                           -- 最终垛位（未调整为空，取推荐值）
       stack_no     INTEGER,
-      adjusted     INTEGER NOT NULL DEFAULT 0
+      adjusted     INTEGER NOT NULL DEFAULT 0,
+      queue_order  INTEGER,                           -- 装载组顺序（管理工拖任务卡/置顶；NULL = 保持登记序）
+      pinned       INTEGER                            -- 组内置顶标记（跨端同步：他端拖动/置顶上报后快照同显）
     );
     -- 人工确认/调整留痕：调整组的推荐落点 vs 实际落点 + 触发的权重优化量
     CREATE TABLE IF NOT EXISTS placement_feedback (
@@ -227,6 +231,16 @@ function migrate(db) {
   // 轻量迁移：历史库文件补列（CREATE TABLE IF NOT EXISTS 不会给已存在的表加新列）
   try { db.prepare('SELECT departed_time FROM inbound_vehicles LIMIT 1').get(); }
   catch { db.exec('ALTER TABLE inbound_vehicles ADD COLUMN departed_time TEXT'); }
+  // 跨端调序持久化（管理工拖任务卡/置顶 → 快照全端同序）：NULL = 未调序，保持登记序
+  try { db.prepare('SELECT queue_order FROM inbound_vehicles LIMIT 1').get(); }
+  catch { db.exec('ALTER TABLE inbound_vehicles ADD COLUMN queue_order INTEGER'); }
+  try { db.prepare('SELECT queue_order FROM inbound_loads LIMIT 1').get(); }
+  catch { db.exec('ALTER TABLE inbound_loads ADD COLUMN queue_order INTEGER'); }
+  // 入库状态机扩展（verified = 平板已核验/已规划队列，推送前态）+ 组内置顶跨端同步
+  try { db.prepare('SELECT verified_time FROM inbound_vehicles LIMIT 1').get(); }
+  catch { db.exec('ALTER TABLE inbound_vehicles ADD COLUMN verified_time TEXT'); }
+  try { db.prepare('SELECT pinned FROM inbound_loads LIMIT 1').get(); }
+  catch { db.exec('ALTER TABLE inbound_loads ADD COLUMN pinned INTEGER'); }
   // 每库位垛数上限调整（8 -> 10 等）：旧库文件的 CHECK 约束写死在建表语句里，
   // SQLite 改约束必须重建表（建新表 -> 拷数据 -> 换名），否则写入第 9/10 垛会被拒
   widenStackChecks(db);

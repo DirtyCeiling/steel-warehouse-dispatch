@@ -17,6 +17,7 @@ import {
   recommendAllocation as saRecommendAllocation, listCandidates as saListCandidates,
   learnDeltas as saLearnDeltas,
 } from './stack-alloc.js';
+import { releaseClaimByRef } from './frontend.js';
 
 export const SPAN_LABELS = ['A跨', 'B跨', 'C跨', 'A跨·整宽合并'];
 const MILLS = ['承德建龙', '新兴铸管', '唐山瑞丰', '敬业集团', '首钢迁安', '石钢京诚'];
@@ -307,19 +308,22 @@ function slotCodeMap(db) {
 export function getVehicleView(db, id, codes = slotCodeMap(db)) {
   const v = db.prepare('SELECT * FROM inbound_vehicles WHERE id=?').get(id);
   if (!v) return null;
-  const loads = db.prepare('SELECT * FROM inbound_loads WHERE vehicle_id=? ORDER BY id').all(id)
+  // 装载组顺序：管理工调过序（queue_order）按 1,2,3… 排前，未调序保持登记序（旧行为 ORDER BY id）
+  const loads = db.prepare('SELECT * FROM inbound_loads WHERE vehicle_id=? ORDER BY COALESCE(queue_order, id)').all(id)
     .map(l => ({
       id: l.id, spec: l.spec, bundles: l.bundles, adjusted: !!l.adjusted,
       recSlotId: l.rec_slot_id, recStackNo: l.rec_stack_no,
       recCode: codes.get(l.rec_slot_id) || String(l.rec_slot_id),
       recScore: l.rec_score, recParts: safeParse(l.rec_parts),
+      ...(l.pinned ? { pinned: true, pinnedBundle: l.pinned } : {}),   // pinned = 该装载内第 N 捆置顶（1-based 组内捆号）
       ...(l.slot_id != null
         ? { slotId: l.slot_id, stackNo: l.stack_no, code: codes.get(l.slot_id) || String(l.slot_id) }
         : {}),
     }));
   return {
     id: v.id, plate: v.plate, waybill: v.waybill, mill: v.mill,
-    arriveTime: v.arrive_time, state: v.state, ...(v.confirmed_time ? { confirmedTime: v.confirmed_time } : {}),
+    arriveTime: v.arrive_time, state: v.state, ...(v.verified_time ? { verifiedTime: v.verified_time } : {}),
+    ...(v.confirmed_time ? { confirmedTime: v.confirmed_time } : {}),
     ...(v.departed_time ? { departedTime: v.departed_time } : {}),
     bundles: loads.reduce((n, l) => n + l.bundles, 0),
     loads,
@@ -337,11 +341,14 @@ export function listInboundVehicles(db, limit = 25) {
 }
 
 /** 操作端快照用车辆清单：未完成车辆全量（在途不可丢——前端对账据此判定"服务器侧已消失=已取消"）
- *  + 最近 doneLimit 辆已完成（历史展示）。上限列表会把在途车滚出窗口，被前端误判为已取消。 */
+ *  + 最近 doneLimit 辆已完成（历史展示）。上限列表会把在途车滚出窗口，被前端误判为已取消。
+ *  组间顺序：调过序的车（queue_order 从 1 起）按 1,2,3… 排前；未调序的维持旧 id DESC（新登记在前）——
+ *  首键 (queue_order IS NULL) 先分组，次键 CASE：有序行 queue_order ASC、无序行 -id ASC（= id DESC）。 */
 export function listSnapshotVehicles(db, doneLimit = 15) {
   const codes = slotCodeMap(db);
   const ids = [
-    ...db.prepare("SELECT id FROM inbound_vehicles WHERE state != 'completed' ORDER BY id DESC").all(),
+    ...db.prepare(`SELECT id FROM inbound_vehicles WHERE state != 'completed'
+      ORDER BY (queue_order IS NULL), CASE WHEN queue_order IS NULL THEN -id ELSE queue_order END`).all(),
     ...db.prepare("SELECT id FROM inbound_vehicles WHERE state = 'completed' ORDER BY id DESC LIMIT ?").all(doneLimit),
   ];
   return ids.map(r => getVehicleView(db, r.id, codes));
@@ -387,12 +394,12 @@ function validateTarget(db, yard, claims, spec, slotId, stackNo, bundles) {
 
 /* ================= 调整 / 确认 ================= */
 
-/** 管理工改垛：仅待确认车辆可改；合法即更新最终落点并标记 adjusted */
+/** 管理工改垛：待确认/已核验（推送前）均可改；合法即更新最终落点并标记 adjusted */
 export function adjustLoad(db, vehicleId, loadId, slotId, stackNo) {
   const v = db.prepare('SELECT * FROM inbound_vehicles WHERE id=?').get(vehicleId);
   const l = db.prepare('SELECT * FROM inbound_loads WHERE id=? AND vehicle_id=?').get(loadId, vehicleId);
   if (!v || !l) return { error: '车辆或分配组不存在' };
-  if (v.state !== 'pending') return { error: '该车已确认下发，不可再调整' };
+  if (v.state !== 'pending' && v.state !== 'verified') return { error: '该车已确认下发，不可再调整' };
   const yard = loadYard(db);
   // 整车单跨装卸：改垛不得把一车拆到两跨（否则车次拆分凑不齐最少吊数，货车永不出车）
   const others = db.prepare('SELECT * FROM inbound_loads WHERE vehicle_id=? AND id<>? ORDER BY id').all(vehicleId, loadId);
@@ -410,6 +417,55 @@ export function adjustLoad(db, vehicleId, loadId, slotId, stackNo) {
   if (err) return { error: err };
   db.prepare('UPDATE inbound_loads SET slot_id=?, stack_no=?, adjusted=1 WHERE id=?').run(slotId, stackNo, loadId);
   return { vehicle: getVehicleView(db, vehicleId) };
+}
+
+/* ================= 调序（管理工拖任务卡/置顶/拖组 → 跨端同步持久化） =================
+ * 顺序只落库不改变分配/状态；两端平板与刷新页面经快照（loadMeta 顺序 / 车辆数组序）读回同序。 */
+
+/** 在厂车辆组间顺序：按数组序写 queue_order=1..n；未知/离场车辆忽略（前端以快照为准，竞态自动剔除）。
+ *  未列出的车辆保持 NULL（排在不序车辆之后，按 id DESC 维持旧序）。 */
+export function setVehicleQueueOrder(db, vehIds) {
+  if (!Array.isArray(vehIds) || !vehIds.length) return { error: 'vehicleIds 不能为空' };
+  const ids = [...new Set(vehIds.map(Number))];
+  if (ids.some(id => !Number.isInteger(id))) return { error: 'vehicleIds 含非法车辆 id' };
+  const known = new Set(db.prepare('SELECT id FROM inbound_vehicles').all().map(r => r.id));
+  const valid = ids.filter(id => known.has(id));
+  if (!valid.length) return { error: '车辆不存在' };
+  const up = db.prepare('UPDATE inbound_vehicles SET queue_order=? WHERE id=?');
+  db.transaction(() => { valid.forEach((id, i) => up.run(i + 1, id)); })();
+  return { ok: true };
+}
+
+/** 某车装载组顺序（一个 load 展开多张捆卡，卡序归并回组序）：loadIds 须为该车装载全集
+ *  （数量一致、无重复、无外来 id——部分序会让快照 loadMeta 缺组、任务按捆展开断层）。
+ *  pinnedLoadId / pinnedBundleNo（可选）：置顶标记跨端同步——粒度为「某装载内第 N 捆」
+ *  （单卡置顶语义，快照只高亮该捆任务卡）；pinnedLoadId=null 时全车清除置顶。
+ *  校验通过事务内按数组序写 queue_order=1..n；失败返回 { error }。 */
+export function setLoadQueueOrder(db, vehicleId, loadIds, pinnedLoadId = undefined, pinnedBundleNo = undefined) {
+  const v = db.prepare('SELECT * FROM inbound_vehicles WHERE id=?').get(vehicleId);
+  if (!v) return { error: '车辆不存在' };
+  if (!Array.isArray(loadIds) || !loadIds.length) return { error: 'loadIds 不能为空' };
+  const ids = loadIds.map(Number);
+  if (ids.some(id => !Number.isInteger(id))) return { error: 'loadIds 含非法装载 id' };
+  if (new Set(ids).size !== ids.length) return { error: 'loadIds 存在重复' };
+  const own = db.prepare('SELECT id, bundles FROM inbound_loads WHERE vehicle_id=?').all(vehicleId).map(r => ({ id: r.id, bundles: r.bundles }));
+  if (ids.length !== own.length) return { error: `loadIds 须为该车装载全集（车上 ${own.length} 组，传入 ${ids.length} 组）` };
+  const ownSet = new Map(own.map(r => [r.id, r.bundles]));
+  if (ids.some(id => !ownSet.has(id))) return { error: 'loadIds 含不属于该车的装载' };
+  const pinBundle = Math.max(1, Math.round(Number(pinnedBundleNo) || 1));
+  if (pinnedLoadId != null) {
+    if (!ownSet.has(Number(pinnedLoadId))) return { error: 'pinnedLoadId 不属于该车装载' };
+    if (pinBundle > ownSet.get(Number(pinnedLoadId))) return { error: 'pinnedBundleNo 超出该装载捆数' };
+  }
+  const up = db.prepare('UPDATE inbound_loads SET queue_order=? WHERE id=?');
+  db.transaction(() => {
+    ids.forEach((id, i) => up.run(i + 1, id));
+    if (pinnedLoadId !== undefined) {
+      db.prepare('UPDATE inbound_loads SET pinned=CASE WHEN id=? THEN ? ELSE 0 END WHERE vehicle_id=?')
+        .run(Number(pinnedLoadId) || null, pinBundle, vehicleId);
+    }
+  })();
+  return { ok: true };
 }
 
 /** 在当前权重下对比推荐落点与人工落点的分维差异，累计各权重的微调方向（算法包 learnDeltas） */
@@ -430,11 +486,24 @@ function learnDeltas(db, yard, adjustedLoads) {
   });
 }
 
-/** 管理工确认：校验全部组 -> 留痕 -> 人工调整沉淀为权重优化 -> 置已确认 */
+/** 管理工核验（平板「入库规划」= 核验 + 生成任务队列）：pending → verified，推送（confirm）前状态。
+ *  状态落库持久化 + 事件广播（inbound.verified）——多平板打开时，任一端核验，其余端
+ *  快照/事件 2s 内同步为「已核验」（此前该状态纯本地，跨端不可见是双平板不同步的根因之一）。 */
+export function verifyVehicle(db, vehicleId) {
+  const v = db.prepare('SELECT * FROM inbound_vehicles WHERE id=?').get(vehicleId);
+  if (!v) return { error: '车辆不存在' };
+  if (v.state === 'verified') return { error: '该车已核验' };
+  if (v.state !== 'pending') return { error: '该车已确认' };
+  db.prepare("UPDATE inbound_vehicles SET state='verified', verified_time=? WHERE id=?")
+    .run(nowIso(), vehicleId);
+  return { vehicle: getVehicleView(db, vehicleId) };
+}
+
+/** 管理工确认（推送）：校验全部组 -> 留痕 -> 人工调整沉淀为权重优化 -> 置已确认 */
 export function confirmVehicle(db, vehicleId) {
   const v = db.prepare('SELECT * FROM inbound_vehicles WHERE id=?').get(vehicleId);
   if (!v) return { error: '车辆不存在' };
-  if (v.state !== 'pending') return { error: '该车已确认' };
+  if (v.state !== 'pending' && v.state !== 'verified') return { error: '该车已确认' };
   const yard = loadYard(db);
   const loads = db.prepare('SELECT * FROM inbound_loads WHERE vehicle_id=? ORDER BY id').all(vehicleId);
   if (!loads.length) return { error: '该车无有效垛位分配（库区可能已满），请先释放库容' };
@@ -494,6 +563,7 @@ export function deleteVehicle(db, vehicleId) {
     db.prepare('DELETE FROM inbound_loads WHERE vehicle_id=?').run(vehicleId);
     db.prepare('DELETE FROM inbound_vehicles WHERE id=?').run(vehicleId);
   })();
+  try { releaseClaimByRef(db, `in:${vehicleId}`); } catch { /* 认领表未建（旧库首跑）：忽略 */ }
   return { ok: true };
 }
 
@@ -508,7 +578,7 @@ export function autoConfirmExpired(db) {
   if (!(minutes > 0)) return [];
   const cutoff = new Date(Date.now() - minutes * 60000).toISOString();   // arrive_time 为 ISO 串，可字典序比较
   const ids = db.prepare(
-    "SELECT id FROM inbound_vehicles WHERE state='pending' AND arrive_time <= ? ORDER BY id")
+    "SELECT id FROM inbound_vehicles WHERE state IN ('pending','verified') AND arrive_time <= ? ORDER BY id")
     .all(cutoff).map(r => r.id);
   return ids.map(id => {
     const r = confirmVehicle(db, id);
@@ -533,13 +603,15 @@ export function matchConfirmedVehicle(db, plate, waybill) {
 }
 
 /** 沙盘回传：该车卸货完毕离场（台账生命周期 pending -> confirmed -> completed）
- * 本地排产模式下沙盘不等人确认即自动执行卸货（确认是管理工的推荐核对环节，不拦截现场执行），
- * 卸毕回传即物理事实：pending 车也直接置 completed（账随实走），否则离场车会永远滞留待确认队列。 */
+ *  本地排产模式下沙盘不等人确认即自动执行卸货（确认是管理工的推荐核对环节，不拦截现场执行），
+ *  卸毕回传即物理事实：pending 车也直接置 completed（账随实走），否则离场车会永远滞留待确认队列。
+ *  车辆收口同时释放其任务认领（规划权随单据终结回收）。 */
 export function completeVehicle(db, vehicleId) {
   const v = db.prepare('SELECT * FROM inbound_vehicles WHERE id=?').get(vehicleId);
   if (!v) return { error: '车辆不存在' };
   if (v.state !== 'completed') {
     db.prepare("UPDATE inbound_vehicles SET state='completed', departed_time=? WHERE id=?").run(nowIso(), vehicleId);
+    try { releaseClaimByRef(db, `in:${vehicleId}`); } catch { /* 认领表未建（旧库首跑）：忽略 */ }
   }
   return { vehicle: getVehicleView(db, vehicleId) };
 }

@@ -9,7 +9,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { join, normalize, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliCompressSync, gzipSync } from 'node:zlib';
-import { buildBrowserBundle, stackAllocStamp } from '../../stack-alloc/browser.js';
+import { buildBrowserBundle, stackAllocStamp } from '../../StackAlloc/browser.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.SIM_PORT || 5199);

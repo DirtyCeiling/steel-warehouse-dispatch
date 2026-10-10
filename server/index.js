@@ -13,13 +13,16 @@ import {
 import { PARAM_SCHEMA } from './params.js';
 import {
   spawnIncomingVehicle, registerIncomingVehicle, listInboundVehicles, getVehicleView, listVehicleViews,
-  adjustLoad, confirmVehicle, deleteVehicle, listCandidates, feedbackStats,
+  adjustLoad, confirmVehicle, verifyVehicle, deleteVehicle, listCandidates, feedbackStats,
   matchConfirmedVehicle, completeVehicle, autoConfirmExpired, pollInboundFromSource,
+  setVehicleQueueOrder, setLoadQueueOrder,
 } from './inbound.js';
 import {
   getFrontendSnapshot, bumpRev, appendEvents, listEvents, latestEventSeq,
   setTelemetry, createCommand, listCommands, finishCommand,
   touchDrive, driveHolder, checkDriveAuth, releaseDrive, takeoverDrive,
+  upsertRestackPlan, raiseTabletAlarm, closeTabletAlarm, saveOutboundQueue,
+  allocateUser, claimTask, releaseTask,
 } from './frontend.js';
 
 const HOST = process.env.HOST || '127.0.0.1';
@@ -137,6 +140,46 @@ export function startServer({ host = HOST, port = PORT } = {}) {
         const body = await readBody(req);
         const cmd = createCommand(db, { kind: body.kind, refId: body.refId, payload: body.payload });
         return cmd ? json(res, 200, cmd) : json(res, 400, { error: '缺少 kind' });
+      }
+      // —— 平板报警直达事件流（人工上报/关闭，不经沙盘认领，全端 1s 可见）——
+      if (req.method === 'POST' && p === '/api/frontend/alarms') {
+        const body = await readBody(req);
+        const r = raiseTabletAlarm(db, body || {});
+        return r.ok ? json(res, 200, r) : json(res, 400, { error: r.error });
+      }
+      const mAlarmClose = p.match(/^\/api\/frontend\/alarms\/([^/]+)\/close$/);
+      if (mAlarmClose && req.method === 'POST') {
+        const body = await readBody(req);
+        const r = closeTabletAlarm(db, decodeURIComponent(mAlarmClose[1]), (body && body.method) || '现场处置');
+        return r.ok ? json(res, 200, r) : json(res, 400, { error: r.error });
+      }
+      // —— 倒垛单落库（跨平板同步）：生成/下发/完成全生命周期持久化，随快照下发 ——
+      if (req.method === 'POST' && p === '/api/frontend/restack-plans') {
+        const body = await readBody(req);
+        const r = upsertRestackPlan(db, body || {});
+        return r.ok ? json(res, 200, r) : json(res, 400, { error: r.error });
+      }
+      // —— 出库装车顺序/置顶落库（跨平板同步）：管理工调序/置顶/推送时按捆序覆写，快照下发 ——
+      const mObQueue = p.match(/^\/api\/frontend\/outbound-queue\/([^/]+)$/);
+      if (mObQueue && req.method === 'PUT') {
+        const body = await readBody(req);
+        const r = saveOutboundQueue(db, decodeURIComponent(mObQueue[1]), body.qrCodes, body.pinned ?? null);
+        return r.ok ? json(res, 200, r) : json(res, 400, { error: r.error });
+      }
+      // —— 管理工账户（免密自动分配）+ 任务认领（先到者独占规划权，他端只读）——
+      if (req.method === 'POST' && p === '/api/users/allocate') {
+        return json(res, 200, allocateUser(db));
+      }
+      if (req.method === 'POST' && p === '/api/frontend/claims') {
+        const body = await readBody(req);
+        const r = claimTask(db, body.refId, body.ownerId, body.ownerName);
+        return r.ok ? json(res, 200, r) : json(res, 409, r);   // 409 = 已被他人认领（body 带 claim 供 UI 提示）
+      }
+      const mClaim = p.match(/^\/api\/frontend\/claims\/([^/]+)$/);
+      if (mClaim && req.method === 'DELETE') {
+        const body = await readBody(req);
+        const r = releaseTask(db, decodeURIComponent(mClaim[1]), body.ownerId);
+        return r.ok ? json(res, 200, r) : json(res, 403, r);
       }
       if (req.method === 'GET' && p === '/api/frontend/commands') {
         const claim = url.searchParams.get('claim') === '1';
@@ -258,6 +301,34 @@ export function startServer({ host = HOST, port = PORT } = {}) {
         if (!r.error) bumpRev();
         return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r);
       }
+      // —— 跨端调序持久化（管理工平板拖任务卡/置顶/拖组 → 快照全端同序）——
+      // 与 adjustLoad 同为人工操作通道（不设驾驶租约闸）。路由顺序：字面量 /queue-order
+      // 放在参数化 /:id 系列之前；现有 mInbound 正则 ^\/api\/inbound\/(\d+)$ 只匹配纯数字不误吞，
+      // 但按「字面量优先」放置更稳妥。
+      if (req.method === 'PUT' && p === '/api/inbound/queue-order') {
+        const body = await readBody(req);
+        const vehicleIds = Array.isArray(body.vehicleIds) ? body.vehicleIds : [];
+        const r = setVehicleQueueOrder(db, vehicleIds);
+        if (!r.error) {
+          bumpRev();
+          appendEvents(db, [{ type: 'inbound.reorder', payload: { scope: 'vehicles', vehicleIds } }]);
+        }
+        return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r);
+      }
+      const mQueue = p.match(/^\/api\/inbound\/(\d+)\/queue$/);
+      if (req.method === 'PUT' && mQueue) {
+        const body = await readBody(req);
+        const loadIds = Array.isArray(body.loadIds) ? body.loadIds : [];
+        // pinnedLoadId/pinnedBundleNo：单卡置顶跨端同步（该装载内第 N 捆置顶；null = 清除；缺省 = 不动）
+        const pinnedLoadId = 'pinnedLoadId' in body ? (body.pinnedLoadId == null ? null : Number(body.pinnedLoadId)) : undefined;
+        const pinnedBundleNo = 'pinnedBundleNo' in body ? (body.pinnedBundleNo == null ? 1 : Number(body.pinnedBundleNo)) : undefined;
+        const r = setLoadQueueOrder(db, +mQueue[1], loadIds, pinnedLoadId, pinnedBundleNo);
+        if (!r.error) {
+          bumpRev();
+          appendEvents(db, [{ type: 'inbound.reorder', payload: { scope: 'loads', vehicleId: +mQueue[1], loadIds } }]);
+        }
+        return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r);
+      }
       const mLoad = p.match(/^\/api\/inbound\/(\d+)\/loads\/(\d+)$/);
       if (req.method === 'PUT' && mLoad) {
         const body = await readBody(req);
@@ -265,10 +336,30 @@ export function startServer({ host = HOST, port = PORT } = {}) {
         if (!r.error) bumpRev();
         return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r.vehicle);
       }
+      const mVerify = p.match(/^\/api\/inbound\/(\d+)\/verify$/);
+      if (mVerify && req.method === 'POST') {
+        // 核验（入库规划）落库 + 事件广播：多平板时任一端核验，其余端快照/事件 2s 内同步「已核验」
+        const r = verifyVehicle(db, +mVerify[1]);
+        if (!r.error) {
+          bumpRev();
+          appendEvents(db, [
+            { type: 'inbound.verified', payload: { vehId: r.vehicle.id, plate: r.vehicle.plate, waybill: r.vehicle.waybill, bundles: r.vehicle.bundles } },
+            { type: 'log', payload: { cat: 'task', msg: `管理工已核验入库单：${r.vehicle.plate}（运单 ${r.vehicle.waybill}）任务队列已生成，待推送执行` } },
+          ]);
+        }
+        return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r);
+      }
       const mInbound = p.match(/^\/api\/inbound\/(\d+)$/);
       if (mInbound && req.method === 'POST') {
         const r = confirmVehicle(db, +mInbound[1]);
-        if (!r.error) bumpRev();
+        if (!r.error) {
+          bumpRev();
+          // 推送确认事件广播：他端（本地停在待核验/已核验）据此 1s 内推进「已规划」，不再等终态
+          appendEvents(db, [
+            { type: 'inbound.confirmed', payload: { vehId: r.vehicle.id, plate: r.vehicle.plate, waybill: r.vehicle.waybill, bundles: r.vehicle.bundles } },
+            { type: 'log', payload: { cat: 'task', msg: `管理工已推送入库规划：${r.vehicle.plate}（运单 ${r.vehicle.waybill}）确认下发，${r.vehicle.loads.length} 组落位执行` } },
+          ]);
+        }
         return r.error ? json(res, 400, { error: r.error }) : json(res, 200, r);
       }
       if (mInbound && req.method === 'DELETE') {
@@ -440,6 +531,11 @@ function startAutoConfirmTimer(db) {
         } else {
           failed.delete(r.id);
           console.log(`[进厂确认] 车辆 #${r.id}（${r.plate} / ${r.waybill}）超时未确认，已按推荐方案自动确认下发`);
+          // 事件广播（与人工推送同轨）：他端平板 1s 内同步「已规划」，不依赖快照对账
+          appendEvents(db, [
+            { type: 'inbound.confirmed', payload: { vehId: r.id, plate: r.plate, waybill: r.waybill, auto: true } },
+            { type: 'log', payload: { cat: 'task', msg: `${r.plate} 超时未确认，系统已按推荐方案自动确认下发（${r.waybill}）` } },
+          ]);
         }
       }
     } catch (e) {

@@ -219,14 +219,35 @@ check('⑥ 默认关闸：整车完成离场（trucksDone ≥ 1）', sa.__dbg.tr
 check('⑥ 默认关闸：全程无完工待确认', !sawWaiting);
 
 // 「调度参数」页路径开闸（setDeviceParam = 参数页同源入口）→ 下一个整车收尾触发待确认
+// 同时设「确认超时放行」= 60 仿真秒：⑦ 观察到待确认后不平板确认 → ⑧ 断言超时兜底自动放行
+sa.setDeviceParam('crane', 'confirmTimeout', 60);
 sa.setDeviceParam('crane', 'confirmGate', 1);
 check('⑦ 调度参数页开闸（craneCfg.confirmGate = 1）', sa.__dbg.craneCfg.confirmGate === 1);
+check('⑦ 确认超时放行参数（craneCfg.confirmTimeout = 60）', sa.__dbg.craneCfg.confirmTimeout === 60,
+  JSON.stringify(sa.__dbg.craneCfg));
 let waiter2 = null;
 for (let i = 0; i < 200 && !waiter2; i++) {
   await sa.__pump(2);
   waiter2 = sa.__dbg.craneStates.find(c => c.state === 'WAIT_CONFIRM') || null;
 }
 check('⑦ 参数开闸后：下一整车收尾转入完工待确认', !!waiter2, waiter2 ? `${waiter2.name} · ${waiter2.awaitDesc}` : '未触发');
+
+// 超时兜底：不发 crane-confirm 命令，待确认超 60 仿真秒自动放行（防平板无人确认全场停摆）
+if (waiter2) {
+  let timedOut = null;
+  for (let i = 0; i < 50 && !timedOut; i++) {
+    await sa.__pump(2);
+    const c = sa.__dbg.craneStates.find(x => x.name === waiter2.name);
+    if (c && c.state !== 'WAIT_CONFIRM') timedOut = c;
+  }
+  check('⑧ 超时兜底放行：未发确认命令也转出待确认', !!timedOut, timedOut ? timedOut.state : '仍 WAIT_CONFIRM');
+  check('⑧ 日志留痕：超时兜底放行', A.logText().includes('超时兜底放行'));
+  check('⑧ 计时起点清空（awaitSince 置空，不留悬挂状态）', timedOut && timedOut.awaitSince == null, JSON.stringify(timedOut && { st: timedOut.state, since: timedOut.awaitSince }));
+} else {
+  check('⑧ 超时兜底放行：未发确认命令也转出待确认', false, '未进入 WAIT_CONFIRM，前置失败');
+  check('⑧ 日志留痕：超时兜底放行', false, '前置失败');
+  check('⑧ 计时起点清空（awaitSince 置空，不留悬挂状态）', false, '前置失败');
+}
 
 console.log(failed === 0 ? '\n全部通过' : `\n${failed} 项失败`);
 process.exit(failed === 0 ? 0 : 1);
