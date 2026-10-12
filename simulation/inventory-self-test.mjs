@@ -79,8 +79,9 @@ const SPECS = dbg.specs;
 const SPECS_NAMES = SPECS.map(s => s.name);
 check('库存捆数在合理区间', B.length >= 20000 && B.length <= 55000, B.length + ' 捆');
 check('捆号唯一且格式 B-xxxx', new Set(B.map(b => b.id)).size === B.length && /^B-\d{4}$/.test(B[0].id));
-check('每捆字段完整（钢种/长度/直径/支数/吨位/入库时间/二维码）',
-  B.every(b => b.grade && b.len > 0 && b.rods > 0 && b.wt > 0 && b.inDay && b.inTime && b.qr.includes(b.id)));
+check('每捆字段完整（卡片号/钢种/长度/直径/支数/吨位/入库时间/二维码）',
+  B.every(b => /^T\d{8}$/.test(b.cardNo) && b.grade && b.len > 0 && b.rods > 0 && b.wt > 0
+    && b.inDay && b.inTime && b.qr.includes(b.cardNo) && b.qr.includes(b.grade)));
 check('长度/钢种/支数与所属规格定义一致',
   B.every(b => SPECS[b.specIdx].lengths.includes(b.len) && SPECS[b.specIdx].grades.includes(b.grade)
     && b.rods === SPECS[b.specIdx].rods));
@@ -120,6 +121,16 @@ check('捆截面为类圆形密排（圆钢/螺纹钢排距 √3·r，方钢平�
     if (rows.reduce((a, x) => a + x, 0) !== sp.rods) return false;
     return sp.shape === 'square' ? true : rows.every((w, i) => i === 0 || Math.abs(w - rows[i - 1]) === 1);
   }));
+console.log('== 阶段二点五：真实标签样例（大冶特殊钢实物钢牌 1:1 对齐） ==');
+const sample = B.find(b => b.cardNo === 'T42000120');
+check('样例捆存在（卡片号 T42000120）', !!sample);
+check('样例捆字段对齐实物钢牌（牌号/炉号/规格/长度/支数/重量/标准/供应商/PO/合同/生产日期）',
+  !!sample && sample.grade === 'S690G5QL' && sample.heat === '25031750Z' && sample.len === 4.468
+    && sample.rods === 1 && Math.round(sample.wt * 1000) === 1424
+    && sample.standard === 'EN10297-1' && sample.supplier === '大冶特殊钢有限公司'
+    && sample.poNo === '4501689907889501801' && sample.contractNo === 'YTDEU25226 MON-01-001'
+    && sample.produceDate === '2026/02/13'
+    && SPECS[sample.specIdx].name === '管材 Φ436×32');
 check('垛格坐标有限且落在库区范围内（含合并库位）',
   (() => {
     for (const s of dbg.slotList) for (let si = 0; si < s.stacks.length; si++) {
@@ -135,7 +146,7 @@ const st = dbg.stats;
 check('统计口径一致（捆数 = 明细长度）', st.bundles === B.length);
 check('支数/吨位累计为正', st.rods > 0 && st.tons > 0, `${st.rods} 支 · ${st.tons.toFixed(0)} t`);
 check('有料库位/垛位在区间内', st.slotsOcc >= 30 && st.slotsOcc <= 91 && st.stacksOcc >= st.slotsOcc);
-check('规格分布含全部 5 个规格名', SPECS_NAMES.every(n => dbg.specBarsHTML.includes(n)));
+check('规格分布含全部 6 个规格名', SPECS_NAMES.every(n => dbg.specBarsHTML.includes(n)));
 check('KPI 六项均已渲染', dbg.kpis.every(x => x && x !== '–'), dbg.kpis.join(' | '));
 
 console.log('== 阶段四：筛选与列表 ==');
@@ -166,8 +177,8 @@ const first = B.find(b => b.stackIdx >= 0);
 dbg.gotoBundle(first.id);
 check('下钻到捆视图', dbg.view.level === 'bundle' && dbg.view.bundleId === first.id);
 check('面包屑含 库位/垛/捆号', dbg.crumbHTML.includes('库位') && dbg.crumbHTML.includes('垛') && dbg.crumbHTML.includes(first.id));
-check('捆详情卡含钢种/直径/长度/支数/炉号',
-  ['钢种', '直径', '长度', '支数', '炉号'].every(k => dbg.detailHTML.includes(k)));
+check('捆详情卡含卡片号/牌号/直径/长度/支数/炉号',
+  ['卡片号', '牌号', '直径', '长度', '支数', '炉号'].every(k => dbg.detailHTML.includes(k)));
 dbg.back();
 check('Esc/返回 -> 垛视图', dbg.view.level === 'stack' && dbg.view.stackIdx === first.stackIdx);
 check('垛详情卡含捆数/支数/吨位/炉号',

@@ -399,7 +399,7 @@
   }
   #invRoot .frow2 button:hover { border-color: var(--cyan); color: var(--text); }
   #invRoot .ilhead, #invRoot .irow {
-    display: grid; grid-template-columns: 62px 84px 96px 68px 34px 34px 48px 62px;
+    display: grid; grid-template-columns: 48px 66px 62px 86px 58px 36px 18px 30px 42px;
     gap: 2px; align-items: center; font-size: 11.5px;
   }
   #invRoot .ilhead { color: var(--dim); font-size: 10.5px; padding: 2px 6px 6px; border-bottom: 1px solid var(--line); }
@@ -414,6 +414,7 @@
   #invListRows .c-id { color: var(--cyan); }
   #invListRows .c-id .pd { color: var(--amber); font-size: 10px; margin-right: 3px; }
   #invListRows .c-slot { color: var(--text); }
+  #invListRows .c-card { color: var(--amber); }
   #invListRows .c-spec i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
   #invListRows .c-ton { color: var(--amber); }
   #invListRows .c-day { color: var(--dim); }
@@ -645,7 +646,7 @@
     <div class="panel" style="flex:1">
       <h2>库存明细（捆级 · 实时）<span class="cnt" id="invListCnt">–</span></h2>
       <div class="ilhead">
-        <span>捆号</span><span>库位·垛</span><span>规格</span><span>钢种</span>
+        <span>捆号</span><span>卡片号</span><span>库位·垛</span><span>规格</span><span>钢种</span>
         <span>长m</span><span>支</span><span>吨</span><span>入账</span>
       </div>
       <div id="invListScroll"><div id="invListPad"><div id="invListRows"></div></div><div id="invListEmpty">当前筛选无匹配捆</div></div>
@@ -920,7 +921,7 @@ const CFG = {
     dayHours: 24,                        // 一个仿真日 = 24 仿真小时
     inPerDay: 150,                       // 每日进厂车辆数（入库卸货）
     outPerDay: 100,                      // 每日出厂车辆数（出库取货）
-    operatorPlanWaitMin: 15,             // 平板规划等待窗口（分钟）：窗口内未收到操作端推送的入库/出库规划才本地自主排产（0 = 关闭等待，始终本地排产）
+    operatorPlanWaitMin: 2,              // 平板规划等待窗口（分钟）：窗口内未收到操作端推送的入库/出库规划才本地自主排产（0 = 关闭等待，始终本地排产）
   },
   abnormal: {                            // 异常注入概率（0 = 关闭，「调度参数」页可调）
     scanFailPct: 4,                      // 机器狗扫码失败率 %（失败原地重扫，超限按 scanHoldPct 挂起人工处置或转人工介入放行）
@@ -1118,6 +1119,8 @@ const SPECS = [
   { name: '管材 Φ200', rods: 1, color: '#4ade80', weight: 1.1 },
   { name: '管材 Φ400', rods: 1, color: '#a3e635', weight: 0.9 },
   { name: '管材 Φ600', rods: 1, color: '#16a34a', weight: 1.8 },
+  // 大口径厚壁管（EN10297-1，对齐大冶特殊钢实物标签：Φ436×32 · 4.468m · 单支 1424kg ≈ 318.8kg/m）
+  { name: '管材 Φ436×32', rods: 1, color: '#059669', weight: 2.87 },
 ];
 
 const STAGE_NAMES = ['任务下发', '调度分配', '路径规划', '导航执行', '扫码确认', '状态回传', '库存更新'];
@@ -1564,18 +1567,20 @@ const SPEC_META = {   // 规格展示元数据（直径/形状/可选长度/可�
   '圆钢 Φ50':  { dia: 50, shape: 'round',  lengths: [6, 9],  grades: ['45#', '40Cr'] },
   '圆钢 Φ60':  { dia: 60, shape: 'round',  lengths: [6, 9],  grades: ['45#', 'GCr15'] },
   '方钢 40×40': { dia: 40, shape: 'square', lengths: [6, 9],  grades: ['Q235B', 'Q345B'] },
-  '管材 Φ50':  { dia: 50,  shape: 'pipe',  lengths: [6, 9],  grades: ['20#', '45#'] },
-  '管材 Φ100': { dia: 100, shape: 'pipe',  lengths: [6, 9],  grades: ['20#', 'Q345B'] },
-  '管材 Φ200': { dia: 200, shape: 'pipe',  lengths: [9, 12], grades: ['Q345B', '27SiMn'] },
-  '管材 Φ400': { dia: 400, shape: 'pipe',  lengths: [9, 12], grades: ['Q345B', '20G'] },
-  '管材 Φ600': { dia: 600, shape: 'pipe',  lengths: [9, 12], grades: ['Q345B', '20G'] },
+  '管材 Φ50':  { dia: 50,  shape: 'pipe',  lengths: [6, 9],  grades: ['20#', '45#', 'S690G5QL'] },
+  '管材 Φ100': { dia: 100, shape: 'pipe',  lengths: [6, 9],  grades: ['20#', 'Q345B', 'S690G5QL'] },
+  '管材 Φ200': { dia: 200, shape: 'pipe',  lengths: [9, 12], grades: ['Q345B', '27SiMn', 'S690G5QL'] },
+  '管材 Φ400': { dia: 400, shape: 'pipe',  lengths: [9, 12], grades: ['Q345B', '20G', 'S690G5QL'] },
+  '管材 Φ600': { dia: 600, shape: 'pipe',  lengths: [9, 12], grades: ['Q345B', '20G', 'S690G5QL'] },
+  // 大口径厚壁管（真实标签规格：外径 436mm × 壁厚 32mm，单支长 4.468m，S690G5QL 高强钢）
+  '管材 Φ436×32': { dia: 436, shape: 'pipe', lengths: [4.468], grades: ['S690G5QL'] },
 };
 let _invSeed = 20260824;
 const invRnd = () => { _invSeed = (_invSeed * 1103515245 + 12345) % 2147483648; return _invSeed / 2147483648; };
 /* 捆标签元数据取值域（钢材台账 steel_ledger，与 Excel「钢材入库数据」+ 实物标签口径一致）：
  * 标准按规格族取值，供应商 = 标签抬头钢厂，采购商随出库提货订单回填（BUYERS） */
 const SPEC_STANDARDS = { rebar: ['GB/T 1499.2'], round: ['GB/T 702', 'GB/T 699'], square: ['GB/T 702'], pipe: ['GB/T 8162', 'EN10297-1'] };
-const SUPPLIERS = ['大冶特殊钢', '承德建龙', '新兴铸管', '唐山瑞丰', '敬业集团', '首钢迁安'];
+const SUPPLIERS = ['大冶特殊钢有限公司', '承德建龙', '新兴铸管', '唐山瑞丰', '敬业集团', '首钢迁安'];
 const BUYERS = ['中建三局', '中铁物贸', '上海钢联', '浙江物产', '五矿发展', '华南物资'];
 /* 同垛同批次：首捆定垛时滚出合同号/标准/供应商/PO号/材料号/生产日期（标签字段），
  * 垛清空复位（resetStackMeta）、空垛接收首捆继承（inheritStackMeta，倒垛随迁） */
@@ -1595,7 +1600,24 @@ function inheritStackMeta(k, b) {
   k.standard = b.standard; k.supplier = b.supplier; k.contractNo = b.contractNo;
   k.poNo = b.poNo; k.materialNo = b.materialNo; k.produceDate = b.produceDate;
 }
-let bundleSeq = 0;
+let bundleSeq = 0;   // 全局捆序号：捆号 B-xxxx 与卡片号 cardNo 均由它确定性推导（期初 DB 重建时复位归零）
+
+/* 车载卡号池（实物捆标签随车进厂）：进厂车辆视图（loads[].cardNos，服务端登记时分配）首次见到即存入，
+ * 以「车牌|运单」为键；卸货落料逐捆取一张复用为该捆卡号（卡随捆入台账）。登记时未学到卡号
+ * （旧服务端/离线兜底）则不留队列，落料回退按捆序号本地取号。随世界重置一并清空。 */
+const vehicleCardQueues = new Map();   // 'plate|waybill' -> cardNo[]（按装载组顺序扁平化 = 卸捆顺序）
+function learnVehicleCards(v) {        // 学入某车卡号队列（幂等：首见为准；无卡号视图不占队列）
+  if (!v || !v.plate || !Array.isArray(v.loads)) return;
+  const key = v.plate + '|' + (v.waybill || '');
+  if (vehicleCardQueues.has(key)) return;
+  const cards = [];
+  for (const l of v.loads) for (const c of (Array.isArray(l.cardNos) ? l.cardNos : [])) if (c) cards.push(c);
+  if (cards.length) vehicleCardQueues.set(key, cards);
+}
+function takeVehicleCard(plate, waybill) {   // 卸货落料时取本车下一张车载卡号（空池返回 null = 本地取号兜底）
+  const q = plate ? vehicleCardQueues.get(plate + '|' + (waybill || '')) : null;
+  return q && q.length ? q.shift() : null;
+}
 window.__invVer = 0;                    // 库存版本号：库存三维视图据此增量刷新
 function invBump() { window.__invVer++; }
 
@@ -1681,7 +1703,7 @@ function pileLoc(count, sp, idx) {                // 捆序号 -> 层号/层内�
   const layer = Math.min(Math.max(0, Math.floor(idx / across)), Math.max(0, Math.ceil(count / across) - 1));
   return { layer, row: idx % across, n: Math.min(across, count - layer * across), rows: pileRows(count, sp) };
 }
-function mkBundleRec(st, stackIdx, spec, pending, inTime) {   // 捆落垛时登记明细（含三维落位坐标）
+function mkBundleRec(st, stackIdx, spec, pending, inTime, cardNo = null) {   // 捆落垛时登记明细（含三维落位坐标）；cardNo = 车载标签卡号（随车进厂，卸货落料传入复用），缺省按捆序号本地取号（期初重建/离线兜底）
   const k = st.stacks[stackIdx];
   if (!k) return null;
   if (k.bundles.length === 0) {         // 垛内首捆：定钢种/长度/炉号（同垛同质）+ 批次标签元数据（同垛同批次）
@@ -1693,6 +1715,9 @@ function mkBundleRec(st, stackIdx, spec, pending, inTime) {   // 捆落垛时登
   }
   const rec = {
     id: 'B-' + String(++bundleSeq).padStart(4, '0'),
+    // 卡片号（实物钢牌，T + 8 位数字）：传入用车载标签（落料复用随车卡号，卡随捆入台账）；
+    // 缺省按捆序号推导（期初 DB 重建与离线兜底口径，自 T42000001 起），捆号仍按 bundleSeq 照常生成
+    cardNo: cardNo || 'T' + String(42000000 + bundleSeq).padStart(8, '0'),
     slotId: st.id, stackIdx, specIdx: SPECS.indexOf(spec),
     grade: k.grade, len: k.len, heat: k.heat, rods: spec.rods,
     standard: k.standard, supplier: k.supplier, contractNo: k.contractNo,
@@ -2360,6 +2385,7 @@ class Robot {
     } else if (t.type === 'restack') { // 倒垛确认：库存在天车落位时已迁移，源/目标双点核验一致后留痕闭环（不改动库存）
       t.state = 'done'; t.stage = 6; t.ended = simTime;
       ledgerPush(t);
+      if (t.discoverPayload) emitSimEvent('restack.done', t.discoverPayload);   // 扫描完成才算"发现倒垛"：操作端倒垛单闭环 + 出库任务子卡片归集（orderNo/plate/forBundle 按车辆订单归属）
       logEvent('robot', `${this.name} 状态回传：${t.id} 倒垛确认完成（源垛 ${t.slot.code} 第${t.stackIdx + 1}垛 + 目标垛 ${t.destSlot.code} 第${t.destStack + 1}垛 双点核验一致），耗时 ${fmtDur(simTime - t.created)}`);
     } else { // 出库：物料已由天车吊走（装车），机器狗随后到垛位前扫码确认核销，账物一致后任务闭环
       t.dogDone = true; t.robot = null;
@@ -2912,6 +2938,14 @@ function spawnRestackScanTask(j) { // 倒垛落位即下发确认任务（继承
     forBundle: p.bundleId || '',                  // 本吊倒垛让位的出库目标捆（生成时刻定格；场次捆级明细双向追溯）
     materialReadyAt: simTime, scanStartAt: 0, scanDoneAt: 0,   // 延时起点 = 倒垛落位时刻
   };
+  // 扫描发现载荷：restack.done 事件延迟到机器狗双点核验完成（或免检直通判定）时才发出——
+  // 操作端"发现倒垛"以扫描完成为准（扫描之前天车工平板/出库卡片不体现），字段口径与旧落位即发一致
+  task.discoverPayload = {
+    refId: p.refId || null, from: j.slot.code, fromStack: j.fromStack + 1,
+    to: j.dest.code, toStack: j.destStack + 1, bundleId: j.bundleId || '',
+    orderNo: p.order ? p.order.id : null, plate: p.truck ? p.truck.plate : null,
+    forBundle: p.bundleId || null,   // 本吊倒垛让位的出库目标捆：出库子卡片按捆归集的依据
+  };
   tasks.push(task);
   logEvent('task', `WMS 下发倒垛确认 ${task.id}：${j.slot.code} 第${j.fromStack + 1}垛 -> ${j.dest.code} 第${j.destStack + 1}垛（${j.spec.name} · 机器狗先后扫描源垛与目标垛核验）`);
   return task;
@@ -2925,6 +2959,7 @@ function restackScopeCheck(t) { // 倒垛确认监测范围判定：源/目标�
   t.state = 'done'; t.stage = 6; t.ended = simTime;
   t.scanDoneAt = simTime; t.scanSkipped = true; t.scanManual = manual;
   ledgerPush(t);
+  if (t.discoverPayload) emitSimEvent('restack.done', t.discoverPayload);   // 免检直通/人工核对：无狗核验，落位后即时入账（操作端倒垛单闭环/出库子卡片归集）
   window.__restackScopeSkip = (window.__restackScopeSkip || 0) + 1;   // 探针：范围外直通计数（自检用，不受日志窗口 260 条挤出影响）
   logEvent('robot', manual
     ? `${t.id} 位于 ${where}（扫描范围外：${monitoredRegionText()}），倒垛确认转人工核对（机器狗不进扫描区外区域）`
@@ -3245,7 +3280,7 @@ function updateCranes(dt) {
               if (k.count === 0) { k.spec = j.spec; k.inTime = simTime; } // 垛内首捆记入库时间（FIFO）
               k.count++; k.pending++;                                    // 刚落料待扫码（计数制：同车多吊集中落同垛时逐捆累计）
               if (k.reserved > 0) k.reserved--;                          // 组车预占转实落
-              drop = mkBundleRec(st, j.task.stackIdx, j.spec, true, simTime);   // 捆级明细：按垛内实际堆放落位（含坐标）
+              drop = mkBundleRec(st, j.task.stackIdx, j.spec, true, simTime, takeVehicleCard(j.task.plate, j.task.waybill));   // 捆级明细：按垛内实际堆放落位（含坐标）；卡号复用车上标签（登记时分配的 cardNos，空池回退本地取号）
               if (drop) pushPositionsToDb({ upserts: [bundlePosRow(st, j.task.stackIdx, drop, { plate: j.task.plate ?? null })] });   // 落位坐标写库（随行进厂车牌 -> 台账）
               if (drop) { j.task.bundleId = drop.id; j.task.dropLayer = drop.pos.layer + 1; j.task.dropSeat = drop.pos.seat + 1; }   // 场次留档：本吊捆号 + 落位层/位（1 起）
             }
@@ -3255,7 +3290,7 @@ function updateCranes(dt) {
             j.task.materialReadyAt = simTime;             // 时效埋点：天车放货放好时刻（扫码延时统计起点）
             pushStackToDb(st, j.task.stackIdx);                // 写回库存数据库（垛新增待扫码捆）
             logEvent('crane', `天车吊放完成：${j.spec.name} 落位库位 ${st.code} 第${j.task.stackIdx + 1}垛${drop ? ` 第${drop.pos.layer + 1}层第${drop.pos.seat + 1}位` : ''}（${cr.name}）`);
-            emitSimEvent('inbound.lift', { vehId: j.task.vehId ?? null, plate: j.task.plate ?? null, slot: st.code, stackNo: j.task.stackIdx + 1, bundleId: drop ? drop.id : null, remaining: j.task.truck ? Math.max(0, j.task.truck.remaining) : null });   // 操作端任务进度
+            emitSimEvent('inbound.lift', { vehId: j.task.vehId ?? null, plate: j.task.plate ?? null, slot: st.code, stackNo: j.task.stackIdx + 1, bundleId: drop ? drop.id : null, cardNo: drop ? drop.cardNo : null, remaining: j.task.truck ? Math.max(0, j.task.truck.remaining) : null });   // 操作端任务进度（cardNo：任务卡标题按实物卡片号展示）
             logEvent('inventory', `库位 ${st.code} 第${j.task.stackIdx + 1}垛 落料 ${j.spec.name}（物理库存 ${occupiedCount}/${TOTAL_BUNDLE_CAP} · 待机器狗扫码入账）`);
           } else if (j.kind === 'restack') { // 倒垛落位：上层压货自源垛移入目标垛空座位（台账总数不变，仅位置迁移）
             const st = j.slot, t = j.task;
@@ -3284,8 +3319,7 @@ function updateCranes(dt) {
             logEvent('crane', `倒垛完成：${j.spec.name} 库位 ${st.code} 第${j.fromStack + 1}垛 -> ${j.dest.code} 第${j.destStack + 1}垛（${cr.name} · ${t.id} 剩 ${t.restackLeft} 吊）`);
             logEvent('inventory', `倒垛更新：${st.code} 第${j.fromStack + 1}垛 压货一捆移至 ${j.dest.code} 第${j.destStack + 1}垛（库存总量不变 ${occupiedCount}/${TOTAL_BUNDLE_CAP}）`);
             j.bundleId = top ? top.id : '';
-            spawnRestackScanTask(j);   // 倒垛确认：机器狗随后扫描源垛 + 目标垛（事后核验，不阻塞该车装车吊）
-            emitSimEvent('restack.done', { refId: t.refId || null, from: st.code, fromStack: j.fromStack + 1, to: j.dest.code, toStack: j.destStack + 1, bundleId: j.bundleId, orderNo: t.order ? t.order.id : null, plate: t.truck ? t.truck.plate : null, forBundle: t.bundleId || null });   // 操作端倒垛单闭环（orderNo/plate/forBundle：出库装车引发的倒垛按车辆订单归集，P10 已出场可追溯）
+            spawnRestackScanTask(j);   // 倒垛确认：机器狗随后扫描源垛 + 目标垛（事后核验，不阻塞该车装车吊）；restack.done 由该任务携带，扫描完成后才发出——操作端"扫描之后才发现倒垛"
           } else { // 装车完成：订单履约推进；任务待机器狗扫码确认核销后闭环（免检/已确认即时闭环），最后一吊装毕后货车转出场复验
             const tk = j.task.truck;
             tk.remaining--;
@@ -3494,7 +3528,8 @@ function outboundOrderItems(o) {   // 出库订单捆明细（事件负载：操
     const b = t.slot.stacks[t.stackIdx].bundles.find(x => x.id === t.bundleId);
     // stackNo 随事件直发（垛位级定位的源头）：操作端锁定捆不依赖捆级明细到达时序，
     // 取货垛位/高亮直接落到具体垛（"库位#垛号"），不再整库位高亮
-    return { qrCode: t.bundleId, stackId: t.slot.code, stackNo: t.stackIdx + 1, layer: (b && b.pos ? b.pos.layer : (t.dropLayer || 0)) + 1 };
+    // cardNo：实物钢牌卡号（T+8位）——操作端任务卡标题按卡片号展示
+    return { qrCode: t.bundleId, cardNo: (b && b.cardNo) || null, stackId: t.slot.code, stackNo: t.stackIdx + 1, layer: (b && b.pos ? b.pos.layer : (t.dropLayer || 0)) + 1 };
   });
 }
 function routeToBatch(type, task) { // 挂入待组车次：出库按「同订单 + 同跨」组车（一单一车），入库按「同类型 + 同跨」凑车
@@ -3945,7 +3980,7 @@ function toast(msg) {
  * 入库 = 随车运单批次（一车 6-10 吊）；出厂 = 提货订单（合同号 + 需求捆数，凑捆履约）。
  * 库满暂缓的随车吊进入补配队列 inDebt，容量释放后自动续配（与物流源模式挂起续接同语义，不丢吊）。
  * 平板规划优先：操作端（管理工平板）推送的入库/出库规划（dispatch-inbound / dispatch-outbound 命令）
- * 是现场执行的唯一依据；本地排产仅是等待窗口（production.operatorPlanWaitMin 分钟，默认 15，0 = 关闭）
+ * 是现场执行的唯一依据；本地排产仅是等待窗口（production.operatorPlanWaitMin 分钟，默认 2，0 = 关闭）
  * 内未收到任何平板规划的自主兜底——窗口过后恢复排产，平板再度推送即回到平板优先并重新计时。 */
 let inDebt = [];   // [{spec}] 本地排产：暂未落下的入库吊（重置仿真时清空）
 let lastOperatorPlanAt = 0;    // 最近一次收到平板规划的仿真时刻（初值 0：自仿真启动起算等待）
@@ -4032,6 +4067,7 @@ function registerLocalVehicle(veh, { main, second, mainN, made }) {
     body: JSON.stringify({ plate: veh.plate, waybill: veh.waybill, mill: veh.mill, groups }),
   }).then(r => (r.ok ? r.json() : null)).then(v => {
     if (!v || v.id == null) return;
+    learnVehicleCards(v);               // 车载卡号池：登记回传视图（loads[].cardNos）首见学入，卸货落料逐捆复用
     localRegisteredVehIds.push(v.id);   // 登记留痕：重置/关页时据此取消未执行车辆（防台账幽灵车）
     for (const t of tasks) if (t.plate === veh.plate && t.vehId == null) t.vehId = v.id;
     for (const b of batches) if (b.plate === veh.plate && b.vehId == null) b.vehId = v.id;
@@ -4119,6 +4155,7 @@ async function fetchConfirmedPlan(ev) {
     if (res.ok) {
       const v = await res.json();
       if (v && v.id != null && Array.isArray(v.loads) && v.loads.length) {
+        learnVehicleCards(v);         // 车载卡号池：确认单视图（loads[].cardNos）首见学入，卸货落料逐捆复用
         confirmedPlanCache.set(key, v);
         return v;
       }
@@ -6428,6 +6465,7 @@ function init() {
     resumed: false, invLoaded: false,
     epoch: feed.epoch + 1 });   // 世代 +1：在途旧轮询作废，防其向重置后的新世界写入游标/任务
   confirmedPlanCache.clear();   // 确认单缓存随重置清空（台账可能已变）
+  vehicleCardQueues.clear();    // 车载卡号池随重置清空（卡号队列属于本场世界，重开沙盘按新登记重新学入）
   inDebt = [];
   tasks = []; trucks = []; craneJobs = [];
   batches = []; batchSeq = 0; trucksDone = 0;
@@ -6494,6 +6532,7 @@ function init() {
 function applyDbInventory(slots, isSeed = false) {
   const byCode = new Map(storages.map(s => [s.code, s]));
   _invSeed = 20260824;   // 复位捆明细随机流：钢种/长度/炉号可复现（与期初兜底库存一致）
+  bundleSeq = 0;         // 复位捆序号：捆号与卡片号（cardNo，捆序号推导）期初重建可复现
   let total = 0;
   for (const row of slots) {
     const st = byCode.get(row.code);
@@ -6588,7 +6627,7 @@ function pushStackToDb(st, stackIdx) {
 /* ---------------- 捆级三维落位写回（bundle_positions 表） ----------------
  * 天车落料/倒垛落位时 upsert 该捆坐标，出库吊走时删除；期初加载后 replace 全量对齐。
  * 坐标含义见 seatPos：layer/seat 层号与座位号，dx/dz 相对垛格中心（米），y 捆底标高（米），yaw 弧度。
- * 行内同时携带捆标签元数据（牌号/炉号/支数/重量/合同号/标准/供应商/PO号/材料号/生产日期），
+ * 行内同时携带捆标签元数据（卡片号/牌号/炉号/支数/重量/合同号/标准/供应商/PO号/材料号/生产日期），
  * 服务端透视进钢材台账 steel_ledger（Excel「钢材入库数据」字段 + 标签附加字段）；
  * extra.plate = 进厂车牌（入库落料传入，台账「进厂车牌」列；倒垛迁移不带，保留原值）。 */
 function bundlePosRow(st, stackIdx, b, extra = {}) {
@@ -6600,6 +6639,7 @@ function bundlePosRow(st, stackIdx, b, extra = {}) {
     dx: b.pos.dx, y: b.pos.y, dz: b.pos.dz, yaw: b.pos.yaw,
     spec: SPECS[b.specIdx].name, len: b.len, putTime: b.inTime,
     grade: b.grade, heatNo: b.heat, rods: b.rods, weightKg: Math.round(b.wt * 1000),
+    cardNo: b.cardNo || null,                    // 卡片号（T+8位，实物钢牌；旧数据/测试桩缺失时置空透写）
     contractNo: b.contractNo, standard: b.standard, supplier: b.supplier,
     poNo: b.poNo, materialNo: b.materialNo, produceDate: b.produceDate,
     plate: extra.plate ?? null,
@@ -6637,6 +6677,10 @@ function pushPositionsToDb(payload) {
 /*@@core-seg-46@@*/
   });
   const invSpanName = s => s.merged ? '整跨合并' : SPANS[spanOfSlot(s)];
+  function stackCardRange(k) {   // 垛内卡片号首尾范围（卡片号为捆级属性，垛级按 min~max 段展示）
+    const cs = k.bundles.map(b => b.cardNo).filter(Boolean);
+    return cs.length ? `${cs.reduce((a, c) => c < a ? c : a)} ~ ${cs.reduce((a, c) => c > a ? c : a)}` : '–';
+  }
   function stackCell(s, i) {   // 垛在库位内的网格：1 列(宽向) × N 排(深向，竖着排列，与主视图一致)
     const g = slotGeo(s), dEff = Math.min(g.d, 40);
     return {
@@ -6692,7 +6736,7 @@ function pushPositionsToDb(payload) {
     if (filt.stat === 'pend' && !b.pending) return false;
     if (filt.q) {
       const q = filt.q.toLowerCase();
-      if (!b.id.toLowerCase().includes(q) && !s.code.toLowerCase().includes(q)) return false;
+      if (!b.id.toLowerCase().includes(q) && !(b.cardNo || '').toLowerCase().includes(q) && !s.code.toLowerCase().includes(q)) return false;
     }
     return true;
   }
@@ -6708,7 +6752,7 @@ function pushPositionsToDb(payload) {
     if (filt.stat === 'pend' && k.bundles.every(b => !b.pending)) return false;
     if (filt.q) {
       const q = filt.q.toLowerCase();
-      if (!s.code.toLowerCase().includes(q) && !k.bundles.some(b => b.id.toLowerCase().includes(q))) return false;
+      if (!s.code.toLowerCase().includes(q) && !k.bundles.some(b => b.id.toLowerCase().includes(q) || (b.cardNo || '').toLowerCase().includes(q))) return false;
     }
     return true;
   }
@@ -6792,6 +6836,7 @@ function pushPositionsToDb(payload) {
           <span class="dl">当前堆高</span><span class="dv">${curH.toFixed(2)} m <i>/ 立柱 3.0 m</i></span>
           <span class="dl">限高核算</span><span class="dv">3.0m ÷ ${Hb.toFixed(2)}m = 最多 ${maxL} 层 × 每层 ${pileAcross(sp)} 捆 <i>（垛上限 ${stackCap(sp)} 捆）</i></span>
           <span class="dl">炉号</span><span class="dv">${k.heat}</span>
+          <span class="dl">卡片号</span><span class="dv">${stackCardRange(k)}</span>
         </div>
         <div class="sub">单捆高 = ${rowsOf(sp.rods).length} 排 × Φ${SPEC_META[sp.name].dia} + 垫木 ≈ ${Hb.toFixed(2)}m · 层间垫木、底层坐料架垫梁 · 最早入库 ${k.inTime < 0 ? '期初' : fmtClock(k.inTime)} · 点击捆查看单捆明细</div>
         <div class="ops"><button data-act="back">← 返回库位</button></div>`;
@@ -6808,18 +6853,24 @@ function pushPositionsToDb(payload) {
       invDetail.innerHTML = `
         <h3>捆 ${b.id} <span class="tag${b.pending ? ' pend' : ''}">${b.pending ? '待核验' : '在库'}</span></h3>
         <div class="dgrid">
+          <span class="dl">卡片号</span><span class="dv">${b.cardNo || '–'}</span>
           <span class="dl">规格</span><span class="dv">${sp.name}（${{ rebar: '螺纹钢', round: '圆钢', square: '方钢', pipe: '管材' }[SPEC_META[sp.name].shape]}）</span>
-          <span class="dl">钢种</span><span class="dv">${b.grade}</span>
+          <span class="dl">牌号</span><span class="dv">${b.grade}</span>
           <span class="dl">直径</span><span class="dv">Φ${SPEC_META[sp.name].dia} mm</span>
           <span class="dl">长度</span><span class="dv">${b.len} m</span>
           <span class="dl">支数</span><span class="dv">${b.rods} 支 <i>（${rowsOf(b.rods).join('+')} 排布）</i></span>
-          <span class="dl">单捆重</span><span class="dv">${b.wt.toFixed(2)} t</span>
+          <span class="dl">单捆重</span><span class="dv">${b.wt.toFixed(2)} t <i>（${Math.round(b.wt * 1000)} kg）</i></span>
           <span class="dl">炉号</span><span class="dv">${b.heat}</span>
+          <span class="dl">标准</span><span class="dv">${b.standard || '–'}</span>
+          <span class="dl">合同号</span><span class="dv">${b.contractNo || '–'}</span>
+          <span class="dl">PO号</span><span class="dv">${b.poNo || '–'}</span>
+          <span class="dl">生产企业</span><span class="dv">${b.supplier || '–'}</span>
+          <span class="dl">生产日期</span><span class="dv">${b.produceDate || '–'}</span>
           <span class="dl">位置</span><span class="dv">${s.code} 第 ${b.stackIdx + 1} 垛 ${seatTxt} <i>（本层 ${loc.n} 捆）</i></span>
           <span class="dl">坐标</span><span class="dv">${b.pos ? `偏移 ${b.pos.dx >= 0 ? '+' : ''}${b.pos.dx.toFixed(2)} / ${b.pos.dz >= 0 ? '+' : ''}${b.pos.dz.toFixed(2)} m · 捆底 ${b.pos.y.toFixed(2)} m` : '–'}</span>
           <span class="dl">入账</span><span class="dv">${fmtIn(b.inTime)}</span>
         </div>
-        <div class="sub">捆标签（二维码绑定）：${b.id}|${sp.name}|${b.grade}|${b.len}m×${b.rods}支${b.pending ? ' · 等待机器狗扫码核验' : ''}</div>
+        <div class="sub">捆标签（二维码绑定，对齐实物钢牌）：${b.cardNo || '–'}|${sp.name}|${b.grade}|${b.heat}|${b.len}m×${b.rods}支|${Math.round(b.wt * 1000)}kg|${b.standard || '–'}|${b.supplier || '–'}${b.pending ? ' · 等待机器狗扫码核验' : ''}</div>
         <div class="ops">
           <button data-act="back">← 返回垛</button>
           <label style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--dim);cursor:pointer">
@@ -6868,7 +6919,7 @@ function pushPositionsToDb(payload) {
   function rowHTML(w, i) {
     const { b, s } = w, sp = SPECS[b.specIdx];
     return `<div class="irow" data-id="${b.id}" style="top:${i * ILROW}px">
-      <span class="c-id">${b.pending ? '<span class="pd">●</span>' : ''}${b.id}</span><span class="c-slot">${s.code}·${b.stackIdx + 1}垛</span>
+      <span class="c-id">${b.pending ? '<span class="pd">●</span>' : ''}${b.id}</span><span class="c-card">${b.cardNo || '–'}</span><span class="c-slot">${s.code}·${b.stackIdx + 1}垛</span>
       <span class="c-spec"><i style="background:${sp.color}"></i>${sp.name.replace(' ', '')}</span>
       <span>${b.grade}</span><span>${b.len}</span><span>${b.rods}</span>
       <span class="c-ton">${b.wt.toFixed(1)}</span><span class="c-day">${fmtIn(b.inTime)}</span>
@@ -7219,10 +7270,11 @@ function pushPositionsToDb(payload) {
       c.width = 256; c.height = 128;
       const g2 = c.getContext('2d');
       g2.fillStyle = '#e8eefc'; g2.fillRect(0, 0, 256, 128);
-      g2.fillStyle = '#0b1730'; g2.font = '700 34px Consolas,monospace';
-      g2.textAlign = 'center'; g2.fillText(b.id, 128, 44);
-      g2.font = '24px "Microsoft YaHei",sans-serif'; g2.fillText(`${sp.name} ${b.grade}`, 128, 82);
-      g2.fillText(`${b.len}m × ${b.rods}支${b.pending ? ' 待核验' : ''}`, 128, 112);
+      g2.fillStyle = '#0b1730'; g2.font = '700 32px Consolas,monospace';
+      g2.textAlign = 'center'; g2.fillText(b.cardNo || b.id, 128, 36);   // 卡片号（对齐实物钢牌主标识）
+      g2.font = '700 20px Consolas,monospace'; g2.fillText(b.id, 128, 62);
+      g2.font = '22px "Microsoft YaHei",sans-serif'; g2.fillText(`${sp.name} ${b.grade}`, 128, 90);
+      g2.font = '20px "Microsoft YaHei",sans-serif'; g2.fillText(`${b.len}m × ${b.rods}支${b.pending ? ' 待核验' : ''}`, 128, 114);
       const tex = new THREE.CanvasTexture(c);
       tex.colorSpace = THREE.SRGBColorSpace;
       const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex }));
@@ -7537,13 +7589,13 @@ function pushPositionsToDb(payload) {
       return {
         html: `<b>${s.code} · 第 ${si + 1} 垛</b><br>${sp.name} · ${k.grade} · ${k.len}m<br>` +
           `${k.count} 捆 / 20 · ${k.count * sp.rods} 支${np ? ` · <span class="tt-dim">${np} 捆待核验</span>` : ''}<br>` +
-          `<span class="tt-dim">${pileRows(k.count, sp).length} 层 × 每层 ≤ ${pileAcross(sp)} 捆 · 堆高 ${h.toFixed(2)}m / 立柱 3.0m<br>炉号 ${k.heat} · 点击下钻</span>`,
+          `<span class="tt-dim">${pileRows(k.count, sp).length} 层 × 每层 ≤ ${pileAcross(sp)} 捆 · 堆高 ${h.toFixed(2)}m / 立柱 3.0m<br>炉号 ${k.heat} · 卡片号 ${stackCardRange(k)} · 点击下钻</span>`,
         box: [WX(cell.x), h / 2 + .4, WZ(cell.z), Math.min(cell.cw, k.len + 1), h + .8, cell.cd],
       };
     }
     const b = res.b, sp = SPECS[b.specIdx], s = storages[b.slotId];
     return {
-      html: `<b>捆 ${b.id}</b>${b.pending ? ' <span class="tt-dim">（待核验）</span>' : ''}<br>${sp.name} · ${b.grade}<br>Φ${SPEC_META[sp.name].dia} · ${b.len}m · ${b.rods}支 · ${b.wt.toFixed(2)}t<br>` +
+      html: `<b>捆 ${b.id}</b>${b.pending ? ' <span class="tt-dim">（待核验）</span>' : ''}<br>卡片号 ${b.cardNo || '–'} · ${sp.name} · ${b.grade}<br>Φ${SPEC_META[sp.name].dia} · ${b.len}m · ${b.rods}支 · ${b.wt.toFixed(2)}t<br>` +
         `<span class="tt-dim">${s.code} 第${b.stackIdx + 1}垛 · 入账 ${fmtIn(b.inTime)} · 点击查看</span>`,
       box: null,
     };
@@ -7777,8 +7829,13 @@ if (_integOn) {
   /** 遥测回推（帧即驾驶租约心跳）：供 _teleTimer 周期推送与 setSimMode('drive') 切驾驶即时补发共用。
    *  暂停中也照常推遥测：暂停=同一世界停帧（数据保留，操作端会话数据不清空）；位姿冻结无闪烁
    *  （世界不动，帧与帧相同）。只有观景/关页/失联才停止推送（数据源下线）。 */
-  /** 天车任务简报（操作端天车工平板的任务源——仿真端作为任务后端推送）：
-   *  入库 = 目标垛（toCode#toStack）；出库 = 源垛（fromCode#fromStack）；倒垛 = 源垛→目标垛。 */
+  /** 天车任务简报（操作端天车工平板的任务源——仅限实际下发任务）：
+   *  入库 = 目标垛（toCode#toStack）；出库 = 源垛（fromCode#fromStack）；倒垛 = 源垛→目标垛。
+   *  出库任务自动排产的倒垛吊不推送：仿真倒垛规划只是推演，不是实际下发任务——
+   *  实际倒垛由机器狗双点扫描后在操作端以出库任务子卡片发现（restack.done 事件按订单归集）。 */
+  function isAutoRestack(j) {
+    return j.kind === 'restack' && !!(j.task && j.task.order);   // 出库任务触发的倒垛吊；手工下发倒垛单（CMD-，order 为空）不受此限
+  }
   function craneJobBrief(j, current) {
     const t = j.task || {};
     const tk = t.truck || (t.batch && t.batch.truck) || null;
@@ -7786,9 +7843,22 @@ if (_integOn) {
     const vehId = t.vehId != null ? t.vehId : (t.batch && t.batch.vehId != null ? t.batch.vehId : null);
     const orderId = t.order ? t.order.id : (t.refId || null);
     const tStack = t.stackIdx != null ? t.stackIdx + 1 : null;
+    const bid = j.bundleId || (j.kind === 'out' || j.kind === 'in' ? t.bundleId : null) || null;
+    // 卡片号（实物钢牌 T+8 位）：按捆号从所在垛的捆记录解析——出库/倒垛吊 = 源垛（下吊前即知，
+    // 天车工吊装前核对实物钢牌）；入库捆落位时才建捆记录（inbound.lift 事件同步携带 cardNo），未落位暂无
+    let cardNo = null;
+    if (bid && j.slot && j.slot.stacks) {
+      const si = j.kind === 'in' ? t.stackIdx : (j.fromStack != null ? j.fromStack : t.stackIdx);
+      const stack = si != null ? j.slot.stacks[si] : null;
+      const rec = stack && stack.bundles ? stack.bundles.find(x => x.id === bid) : null;
+      if (rec) cardNo = rec.cardNo || null;
+    }
     return {
       taskId: j.taskId, kind: j.kind, plate, vehId, orderId,
-      bundleId: j.bundleId || null, spec: j.spec ? j.spec.name : (t.spec ? t.spec.name : null),
+      // 捆号：倒垛吊取被倒捆；入库吊落位后由 task 补记；出库吊 = 出库单配好的目标捆（task.bundleId，下吊即取它）
+      bundleId: bid,
+      cardNo,
+      spec: j.spec ? j.spec.name : (t.spec ? t.spec.name : null),
       fromCode: j.kind === 'in' ? null : (j.slot ? j.slot.code : null),
       fromStack: j.fromStack != null ? j.fromStack + 1 : (j.kind === 'in' ? null : tStack),
       toCode: j.kind === 'out' ? null : (j.dest ? j.dest.code : (j.slot ? j.slot.code : null)),
@@ -7796,7 +7866,8 @@ if (_integOn) {
       ...(current ? { current: true } : {}),
     };
   }
-  /** 本机天车的任务队列（按排队序）：当前执行吊 + 本车认领车辆的排队吊 + 本跨未认领/倒垛吊（待接） */
+  /** 本机天车的任务队列（按排队序）：当前执行吊 + 本车认领车辆的排队吊 + 本跨未认领/倒垛吊（待接）。
+   *  自动倒垛吊（出库排产）除外——物理世界照常执行，但不作为任务出现在天车工平板队列。 */
   function craneJobsFor(c) {
     const mine = (j) => {
       const tk = j.task && (j.task.truck || (j.task.batch && j.task.batch.truck));
@@ -7804,7 +7875,8 @@ if (_integOn) {
       if (owner) return owner === c;        // 一车一天车：他车认领的吊不进本车列表
       return j.span === c.span;             // 未认领/无车（倒垛）：本跨待接（显示层按跨归属）
     };
-    return [...(c.job ? [craneJobBrief(c.job, true)] : []), ...craneJobs.filter(mine).map(j => craneJobBrief(j, false))];
+    const cur = c.job && !isAutoRestack(c.job) ? [craneJobBrief(c.job, true)] : [];
+    return [...cur, ...craneJobs.filter(j => mine(j) && !isAutoRestack(j)).map(j => craneJobBrief(j, false))];
   }
   function sendTelemetry() {
     if (simMode !== 'drive') return;
@@ -7972,7 +8044,7 @@ if (_integOn) {
         let realigned = 'match';
         try {
           const r0 = await fetch(`${DB_API}/api/vehicles/${vehId}`);
-          if (r0.ok) realigned = realignVehicleByConfirm(await r0.json(), '操作端确认进厂');
+          if (r0.ok) { const v0 = await r0.json(); learnVehicleCards(v0); realigned = realignVehicleByConfirm(v0, '操作端确认进厂'); }
         } catch { /* 车辆视图拉取失败：保持现有任务落位仅放行（降级为旧行为，下轮轮询兜底） */ }
         for (const b of batches) if (b.vehId === vehId) releaseAwaitConfirm(b, realigned === 'rebuild' ? '平板确认单已校正落位，放行吊运' : '规划已推送执行');   // 确认闸门即时放行
         noteOperatorPlan('入库规划推送');
@@ -7982,6 +8054,7 @@ if (_integOn) {
         const r = await fetch(`${DB_API}/api/vehicles/${vehId}`);
         if (!r.ok) return finishSimCommand(cmd, false, { error: `车辆 #${vehId} 不存在` });
         const v = await r.json();
+        learnVehicleCards(v);   // 车载卡号池：确认单视图（loads[].cardNos）首见学入，卸货落料逐捆复用
         if (v.state !== 'confirmed') return finishSimCommand(cmd, false, { error: `车辆 #${vehId} 尚未确认或已完成（state=${v.state}）` });
         const made = makeTasksFromConfirmed(v);
         if (!made) return finishSimCommand(cmd, false, { error: '确认单规格不在契约内或库区无可用落点' });
@@ -8153,6 +8226,7 @@ if (_integOn) {
       const byId = new Map(list.map(v => [v.id, v]));
       for (const b of pending) {
         const v = b.vehId != null ? byId.get(b.vehId) : null;
+        if (v) learnVehicleCards(v);   // 车载卡号池：车辆清单视图（loads[].cardNos）首见学入
         if (v && (v.state === 'confirmed' || v.state === 'completed')) {
           realignVehicleByConfirm(v, '确认状态轮询');   // 服务器已确认（平板推送确认 / 超时自动确认）：按确认单最终落位校正未开吊的吊，再放行——现场执行与平板规划保持一致
           releaseAwaitConfirm(b, v.state === 'completed' ? '该单已完成' : '确认超时自动下发');

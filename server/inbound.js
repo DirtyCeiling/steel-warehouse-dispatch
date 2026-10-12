@@ -9,7 +9,7 @@
 // 推荐引擎（评分/整组分配/候选列表/学习方向）与监测范围判定均在垛位推荐算法包
 // （StackAlloc，经 ./stack-alloc.js 接入），本文件只做 DB 台账与视图适配。
 import {
-  getSimParams, setSimParams, SPEC_FAMILY, stackCap, getGeoCfg, getSpecRules,
+  getSimParams, setSimParams, SPEC_FAMILY, stackCap, getGeoCfg, getSpecRules, nextCardNoFactory,
 } from './database.js';
 import { PARAM_SCHEMA } from './params.js';
 import {
@@ -20,7 +20,7 @@ import {
 import { releaseClaimByRef } from './frontend.js';
 
 export const SPAN_LABELS = ['A跨', 'B跨', 'C跨', 'A跨·整宽合并'];
-const MILLS = ['承德建龙', '新兴铸管', '唐山瑞丰', '敬业集团', '首钢迁安', '石钢京诚'];
+const MILLS = ['承德建龙', '新兴铸管', '唐山瑞丰', '敬业集团', '首钢迁安', '石钢京诚', '大冶特殊钢'];
 const PROVINCES = ['冀', '京', '津', '鲁', '豫', '晋', '辽', '陕', '蒙'];
 
 function scopeWarnText(ms) {
@@ -185,16 +185,21 @@ function spawnLocalVehicle(db) {
 
 /** 按识别结果（车牌/运单/逐组配载）落库并生成垛位分配推荐
  *  整车单跨约束：货车单跨装卸（一车一天车），全部装载须落同一跨——
- *  首组（配载主组）推荐定跨，后续组限同跨推荐；同跨容量不足时回退全库（保证可登记）。 */
+ *  首组（配载主组）推荐定跨，后续组限同跨推荐；同跨容量不足时回退全库（保证可登记）。
+ *  卡片号（实物捆标签随车进厂）：登记时为每捆分配并在装载行持久化（card_nos JSON 数组，
+ *  长度 = 该装载捆数），沙盘落料复用车上卡号入台账——全局唯一：起步序号取台账与在途
+ *  装载已发卡号的最大数字部分 +1（期初台账自 T42000001 起，故新号恒大于既有号），本次内递增。 */
 function insertVehicleWithLoads(db, v) {
   const insVeh = db.prepare(
     'INSERT INTO inbound_vehicles (plate, waybill, mill, arrive_time, state) VALUES (?, ?, ?, ?, \'pending\')');
   const insLoad = db.prepare(`
     INSERT INTO inbound_loads
-      (vehicle_id, spec, bundles, rec_slot_id, rec_stack_no, rec_score, rec_parts)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`);
+      (vehicle_id, spec, bundles, card_nos, rec_slot_id, rec_stack_no, rec_score, rec_parts)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
   return db.transaction(() => {
     const id = insVeh.run(v.plate, v.waybill, v.mill, nowIso()).lastInsertRowid;
+    // 卡号发号器（与迁移存量补发共用唯一口径）：扫台账与在途车取最大卡号，防跨进程重复发号
+    const nextCard = nextCardNoFactory(db);
     // 首组干跑一次推荐确定本车停靠跨（组内垛满拆垛也可能跨跨，故以首组首个落点定跨后统一限跨重荐）；
     // 跨外推荐会把一车拆进两个车次，凑不齐最少吊数导致货车永不出车、台账无法闭环。
     let vehSpan = null;
@@ -214,7 +219,8 @@ function insertVehicleWithLoads(db, v) {
         r = recommendAllocation(db, g.spec, g.bundles);   // 同跨容量不足：回退全库兜底（保证可登记）
       }
       for (const a of r.allocations) {
-        insLoad.run(id, g.spec, a.bundles, a.slotId, a.stackNo, a.score, JSON.stringify(a.parts));
+        const cards = Array.from({ length: a.bundles }, nextCard);   // 装载行逐捆发卡（垛满拆垛时按行序连续发号）
+        insLoad.run(id, g.spec, a.bundles, JSON.stringify(cards), a.slotId, a.stackNo, a.score, JSON.stringify(a.parts));
         const key = a.slotId + ':' + a.stackNo;           // 本车跨组已计划量：后续组推荐时并入占用
         claims.set(key, (claims.get(key) || 0) + a.bundles);
       }
@@ -315,6 +321,7 @@ export function getVehicleView(db, id, codes = slotCodeMap(db)) {
       recSlotId: l.rec_slot_id, recStackNo: l.rec_stack_no,
       recCode: codes.get(l.rec_slot_id) || String(l.rec_slot_id),
       recScore: l.rec_score, recParts: safeParse(l.rec_parts),
+      cardNos: safeParse(l.card_nos, []),   // 卡片号（随车实物捆标签，登记时分配；空/损坏 JSON 回退 []）
       ...(l.pinned ? { pinned: true, pinnedBundle: l.pinned } : {}),   // pinned = 该装载内第 N 捆置顶（1-based 组内捆号）
       ...(l.slot_id != null
         ? { slotId: l.slot_id, stackNo: l.stack_no, code: codes.get(l.slot_id) || String(l.slot_id) }

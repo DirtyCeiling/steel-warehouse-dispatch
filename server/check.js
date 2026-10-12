@@ -11,6 +11,7 @@ import {
   getSlotRacks, applySlotRacks, effectiveRacks, setSimParams,
   STACKS_PER_SLOT,
 } from './database.js';
+import { spawnIncomingVehicle, getVehicleView } from './inbound.js';
 import { SPECS, physicalRacksOf } from './layout.js';
 
 let failed = 0;
@@ -210,21 +211,43 @@ check('炉号/合同号/规格/供应商查询', getSteelLedger(db2, { heatNo: '
   && getSteelLedger(db2, { supplier: '大冶' }).total === 1, '');
 check('采购商查询（出库回填后命中）', getSteelLedger(db2, { buyer: '中建三局' }).total === 1, '');
 
+// 真实捆标签全字段样例（大冶特殊钢 管材 Φ436×32，EN10297-1）：卡片号为全系统新增字段（T + 8 位数字）
+syncBundlePositions(db2, { upserts: [
+  { bundleId: 'B-9001', slotId, stackNo: 2, layer: 0, seat: 7, spec: '管材 Φ436×32', len: 4.468,
+    cardNo: 'T42000120', grade: 'S690G5QL', heatNo: '25031750Z', rods: 1, weightKg: 1424,
+    produceDate: '2026/02/13', contractNo: 'YTDEU25226 MON-01-001', standard: 'EN10297-1',
+    supplier: '大冶特殊钢有限公司', poNo: '4501689907889501801', putTime: 300 },
+] });
+const e9 = getSteelLedgerEntry(db2, 'B-9001');
+check('真实标签全字段入账（卡片号/牌号/炉号/规格/长度/支数/重量/生产日期/合同号/标准/供应商/PO号）',
+  e9 && e9.cardNo === 'T42000120' && e9.steelType === '管材' && e9.grade === 'S690G5QL'
+  && e9.heatNo === '25031750Z' && e9.spec === '管材 Φ436×32' && e9.len === 4.468 && e9.rods === 1
+  && e9.weightKg === 1424 && e9.produceDate === '2026/02/13'
+  && e9.contractNo === 'YTDEU25226 MON-01-001' && e9.standard === 'EN10297-1'
+  && e9.supplier === '大冶特殊钢有限公司' && e9.poNo === '4501689907889501801',
+  JSON.stringify({ cardNo: e9?.cardNo, supplier: e9?.supplier }));
+check('卡片号精确查询（cardNo 过滤，非前缀/模糊匹配）',
+  getSteelLedger(db2, { cardNo: 'T42000120' }).total === 1
+  && getSteelLedger(db2, { cardNo: 'T4200012' }).total === 0, '');
+
 // 扫码补录：在库行更新 / 未知捆立未落位新行 / 缺 bundleId 拒绝
 const m1 = upsertSteelLedgerMeta(db2, { bundleId: 'B-T002', grade: 'GCr15', poNo: '4500000001/89000001' });
 check('扫码补录：在库行字段更新（其余字段不动）', m1.grade === 'GCr15' && m1.poNo === '4500000001/89000001' && m1.spec === '圆钢 Φ50', '');
 const m2 = upsertSteelLedgerMeta(db2, { bundleId: 'B-X999', heatNo: 'HT999999', spec: '螺纹钢 Φ20' });
 check('扫码补录：未知捆立未落位新行（钢材类型随规格推导，无库位）', m2.slotId === null && m2.steelType === '螺纹钢' && m2.heatNo === 'HT999999', '');
 check('补录缺 bundleId 返回 null', upsertSteelLedgerMeta(db2, {}) === null, '');
+const m3 = upsertSteelLedgerMeta(db2, { bundleId: 'B-T003', cardNo: 'T42000121' });
+check('扫码补录：卡片号可补录/修正', m3.cardNo === 'T42000121' && m3.spec === '圆钢 Φ50', m3.cardNo ?? '');
 
 // CSV 导出：列序与 Excel 模板一致，期初捆入库时间标注「期初」
 const csv = steelLedgerCsv(getSteelLedger(db2, { limit: 5000 }).rows);
-check('CSV 表头列序与 Excel 模板一致（前置捆号，后置供应商/PO号/材料号）',
-  csv.split('\r\n')[0] === '捆号,钢材类型,钢材材质,炉号,长度,支数,重量,日期,采购商,合同号,规格/直径,标准,库位,垛位,垛位层,入库时间,进厂车牌,出库时间,出厂车牌,供应商,PO号,材料号',
+check('CSV 表头列序与 Excel 模板一致（前置捆号/卡片号，后置供应商/PO号/材料号）',
+  csv.split('\r\n')[0] === '捆号,卡片号,钢材类型,钢材材质,炉号,长度,支数,重量,日期,采购商,合同号,规格/直径,标准,库位,垛位,垛位层,入库时间,进厂车牌,出库时间,出厂车牌,供应商,PO号,材料号',
   csv.split('\r\n')[0]);
-check('CSV 含标签数据行，期初捆入库时间标注「期初」',
+check('CSV 含标签数据行（含真实标签卡片号行），期初捆入库时间标注「期初」',
   csv.split('\r\n').some(l => l.startsWith('B-L100') && l.includes('YTDEU25226MON-01-001') && l.includes('豫A·88888'))
-  && csv.split('\r\n').some(l => l.startsWith('B-L101') && l.includes('期初')), '');
+  && csv.split('\r\n').some(l => l.startsWith('B-L101') && l.includes('期初'))
+  && csv.split('\r\n').some(l => l.startsWith('B-9001') && l.includes('T42000120') && l.includes('S690G5QL') && l.includes('EN10297-1')), '');
 
 // 期初全量对齐（replace）：已落位在库行清除（捆号随沙盘重启复用，身份重建非出库）；
 // 未落位扫码补录行与已出库历史保留
@@ -235,6 +258,44 @@ check('replace 对齐：已落位在库行清除、未落位补录行保留、�
   inAfter.rows.some(r => r.bundleId === 'B-L200') && inAfter.rows.some(r => r.bundleId === 'B-X999')
   && !inAfter.rows.some(r => /^B-T/.test(r.bundleId) || r.bundleId === 'B-L101'), inAfter.rows.map(r => r.bundleId).join(','));
 check('replace 对齐不影响已出库历史', getSteelLedger(db2, { state: 'out' }).total === outBefore, String(outBefore));
+console.log('== 进厂车辆卡片号（登记随车发卡 -> 车辆视图 cardNos -> 沙盘落料复用入台账） ==');
+// 物流源离线（check 环境无 LogisticsData_Sim）自动回退本地随机模拟登记 —— 与 spawnIncomingVehicle 页面入口同一路径
+const veh = await spawnIncomingVehicle(db2);
+check('spawn 登记返回车辆视图（装载组 + 推荐垛位齐全）',
+  veh && veh.id > 0 && Array.isArray(veh.loads) && veh.loads.length > 0 && veh.loads.every(l => l.recSlotId > 0),
+  veh ? `${veh.plate} / ${veh.waybill} · ${veh.loads.length} 组` : String(veh));
+check('每个装载 cardNos 长度 = bundles 且格式 T+8位数字',
+  veh.loads.every(l => Array.isArray(l.cardNos) && l.cardNos.length === l.bundles
+    && l.cardNos.every(c => /^T\d{8}$/.test(c))),
+  JSON.stringify(veh.loads.map(l => `×${l.bundles}=${l.cardNos.length}`)));
+const allCards = veh.loads.flatMap(l => l.cardNos);
+const ledMaxBefore = getSteelLedger(db2, { limit: 50000 }).rows
+  .reduce((m, r) => (r.cardNo && /^T\d{8}$/.test(r.cardNo) ? Math.max(m, Number(r.cardNo.slice(1))) : m), 0);
+check('整车卡号唯一且全部大于台账既有最大卡号（接续发号，不从期初 42000000 重来）',
+  allCards.length > 0 && new Set(allCards).size === allCards.length
+  && allCards.every(c => Number(c.slice(1)) > ledMaxBefore),
+  `台账最大 ${ledMaxBefore} -> 新卡 ${Math.min(...allCards.map(c => Number(c.slice(1))))} 起`);
+const vehView = getVehicleView(db2, veh.id);
+check('getVehicleView 重取 cardNos 与登记回传一致（card_nos 持久化生效）',
+  JSON.stringify(vehView.loads.map(l => l.cardNos)) === JSON.stringify(veh.loads.map(l => l.cardNos)), '');
+// 模拟沙盘卸货落位（syncBundlePositions 携带上车 cardNo）：台账 card_no 须与车上卡号逐捆一致
+const load0 = veh.loads[0];
+syncBundlePositions(db2, { upserts: load0.cardNos.map((c, i) => ({
+  bundleId: `B-VEH${String(i).padStart(3, '0')}`, slotId: load0.recSlotId, stackNo: load0.recStackNo,
+  layer: 0, seat: i + 2, spec: load0.spec, len: 6, putTime: 400 + i, cardNo: c, plate: veh.plate,
+})) });
+const landed = load0.cardNos.map((_, i) => getSteelLedgerEntry(db2, `B-VEH${String(i).padStart(3, '0')}`));
+check('落料复用车上卡号：台账 card_no 与车载 cardNos 逐捆一致（随进厂车牌入账）',
+  landed.every((e, i) => e && e.cardNo === load0.cardNos[i] && e.inboundPlate === veh.plate),
+  landed.map(e => e && e.cardNo).join(','));
+const veh2 = await spawnIncomingVehicle(db2);
+const all2 = veh2.loads.flatMap(l => l.cardNos);
+check('第二辆车卡号接续递增、跨车不重叠',
+  veh2.loads.every(l => Array.isArray(l.cardNos) && l.cardNos.length === l.bundles
+    && l.cardNos.every(c => /^T\d{8}$/.test(c)))
+  && all2.length > 0 && new Set([...allCards, ...all2]).size === allCards.length + all2.length,
+  `第二车 ${Math.min(...all2.map(c => Number(c.slice(1))))} 起（首车止于 ${Math.max(...allCards.map(c => Number(c.slice(1))))}）`);
+
 db2.close();
 rmSync(dir, { recursive: true, force: true });
 

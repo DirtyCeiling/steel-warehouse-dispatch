@@ -103,7 +103,7 @@ function stackDetailHtml(st, si) {   // 垛内钢材基本信息（悬停提示�
     <div>钢种 <b>${k.grade || '—'}</b> · 捆长 ${k.len || '—'} m · 炉号 ${heat || '—'}</div>
     <div>捆数 <b>${k.count}</b>${k.pending ? `（待扫码 ${k.pending}）` : ''} · 支数 ≈ ${(k.count * sp.rods).toLocaleString()} · 吨位 ≈ ${(k.count * sp.weight).toFixed(1)} t</div>
     <div class="tt-dim">码放 ${layers} 层 × 每层 ≤ ${pileAcross(sp)} 捆 · 垛容 ${k.count}/${stackCap(sp)} 捆</div>
-    ${b0 && bN ? `<div class="tt-dim">捆号 ${b0.id} ~ ${bN.id}${k.inTime != null ? ` · ${k.inTime < 0 ? '期初在库' : '仿真 ' + Math.round(k.inTime) + 's 入账'}` : ''}</div>` : ''}
+    ${b0 && bN ? `<div class="tt-dim">卡片号 ${b0.cardNo || '—'} ~ ${bN.cardNo || '—'} · 捆号 ${b0.id} ~ ${bN.id}${k.inTime != null ? ` · ${k.inTime < 0 ? '期初在库' : '仿真 ' + Math.round(k.inTime) + 's 入账'}` : ''}</div>` : ''}
   </div>`;
 }
 /*@@core-seg-34@@*/

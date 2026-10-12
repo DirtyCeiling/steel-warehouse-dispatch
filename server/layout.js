@@ -18,6 +18,7 @@ export const SPECS = [
   { name: '管材 Φ100', weight: 0.8, color: '#34d399' },
   { name: '管材 Φ200', weight: 1.1, color: '#4ade80' },
   { name: '管材 Φ400', weight: 0.9, color: '#a3e635' },
+  { name: '管材 Φ436×32', weight: 1.424, color: '#22c55e' },   // 大口径厚壁管（真实标签：外径 436×壁厚 32，单支吊运）
   { name: '管材 Φ600', weight: 1.8, color: '#16a34a' },
 ];
 

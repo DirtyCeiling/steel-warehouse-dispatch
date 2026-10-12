@@ -82,6 +82,22 @@ function computeWeekTrend(db) {
   return rows;
 }
 
+/** 捆级明细补齐标签元数据（cardNo 卡片号 / heatNo 炉号 / grade 牌号）：台账该捆在库行优先，
+ *  无在库行回落最近一条历史行（捆号随沙盘重启复用）；台账无记录输出 null（沙盘端稍后写入） */
+function withLedgerMeta(db, positions) {
+  if (!positions.length) return positions;
+  const meta = new Map();
+  for (const r of db.prepare(`SELECT bundle_id, card_no, heat_no, grade, (outbound_time IS NULL) AS in_stock
+      FROM steel_ledger ORDER BY id`).all()) {
+    const cur = meta.get(r.bundle_id);
+    if (r.in_stock || !cur || !cur.in_stock) meta.set(r.bundle_id, r);
+  }
+  return positions.map(p => {
+    const m = meta.get(p.bundleId);
+    return { ...p, cardNo: m?.card_no ?? null, heatNo: m?.heat_no ?? null, grade: m?.grade ?? null };
+  });
+}
+
 /** 轻量快照（不含捆级明细）；withBundles=true 时附带 bundle_positions 全量 */
 export function getFrontendSnapshot(db, { withBundles = false } = {}) {
   ensureIntegrTables(db);   // kpiToday/weekTrend 查 sim_events：新库首次快照前须先建表
@@ -133,7 +149,7 @@ export function getFrontendSnapshot(db, { withBundles = false } = {}) {
     claims: listClaims(db),
     // 沙盘作业锁定中的库位（遥测随帧携带）：操作端「作业中」视觉的服务端权威来源
     ...(Array.isArray(tele?.lockedSlots) ? { lockedSlots: tele.lockedSlots } : {}),
-    ...(withBundles ? { bundles: getBundlePositions(db) } : {}),
+    ...(withBundles ? { bundles: withLedgerMeta(db, getBundlePositions(db)) } : {}),
   };
 }
 

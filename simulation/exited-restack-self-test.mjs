@@ -1,6 +1,8 @@
 // 无头逻辑自检：验证「已出场车辆追溯」数据链——出库装车引发的倒垛事件（restack.done）
 // 携带订单号/车牌/让位捆号（P10 已出场按车辆归集倒垛史的数据源头），以及出库订单事件、
 // 车辆离场事件可被服务端事件保留窗口保护（不被日志洪流挤出，平板刷新重放可重建已出场留痕）。
+// 另验证倒垛「扫描发现」语义：restack.done 不再在天车落位时即发，而是机器狗双点核验完成
+// （或免检直通判定）后才发出——天车工平板不收自动倒垛任务，操作端以扫描完成作为发现时刻。
 // 桩掉 DOM/Canvas，在 Node VM 中运行"调度仿真沙盘.html"完整脚本，手动泵 rAF 帧驱动仿真。
 // 用法：node simulation/exited-restack-self-test.mjs
 import { readFileSync } from 'node:fs';
@@ -76,7 +78,16 @@ sandbox.setPaused(false);   // 沙盘默认暂停：无头自检载入后立即�
 const captured = [];
 const origEmit = sandbox.emitSimEvent;
 if (typeof origEmit !== 'function') { console.log('FAIL emitSimEvent 不在全局作用域'); process.exit(1); }
-sandbox.emitSimEvent = (type, payload) => { captured.push({ type, payload }); origEmit(type, payload); };
+sandbox.emitSimEvent = (type, payload) => { captured.push({ type, payload, at: sandbox.__dbg.simTime }); origEmit(type, payload); };
+/* 倒垛落位埋点：记录每吊倒垛的落位时刻与扫描发现载荷（发现语义断言的基准） */
+const restackLandings = [];
+const origSpawn = sandbox.spawnRestackScanTask;
+if (typeof origSpawn !== 'function') { console.log('FAIL spawnRestackScanTask 不在全局作用域'); process.exit(1); }
+sandbox.spawnRestackScanTask = (j) => {
+  const t = origSpawn(j);
+  restackLandings.push({ at: sandbox.__dbg.simTime, payload: t.discoverPayload });
+  return t;
+};
 
 async function pump(realSeconds, fps = 30) {
   const frames = Math.round(realSeconds * fps);
@@ -133,13 +144,23 @@ check('被压目标捆出库任务可排产（上方整层 2 捆先倒，再 1 �
   })(),
   `restackTotal=${task.restackTotal}`);
 
-console.log('== 泵帧执行：倒垛落位 -> restack.done 事件（按车追溯字段） ==');
+console.log('== 泵帧执行：倒垛落位 -> 机器狗扫描核验 -> restack.done（扫描发现语义） ==');
 let restackEvents = [];
-for (let i = 0; i < 60 && restackEvents.length < 2; i++) {
+for (let i = 0; i < 90 && restackEvents.length < 2; i++) {
   await pump(5);
   restackEvents = captured.filter(e => e.type === 'restack.done');
 }
-check('倒垛完成事件已发出（2 吊压货各一条）', restackEvents.length >= 2, `${restackEvents.length} 条`);
+check('倒垛发现事件已发出（2 吊压货各一条）', restackEvents.length >= 2, `${restackEvents.length} 条`);
+check('发现事件与落位一一对应（每吊倒垛恰好发出一条，不丢不重）',
+  restackEvents.length === restackLandings.length &&
+  restackEvents.every(e => restackLandings.some(l => JSON.stringify(l.payload) === JSON.stringify(e.payload))),
+  `落位 ${restackLandings.length} 吊 / 事件 ${restackEvents.length} 条`);
+check('扫描发现语义：事件严格晚于落位发出（旧口径为落位同一时刻即发）',
+  restackEvents.length > 0 && restackEvents.every(e => {
+    const l = restackLandings.find(x => x.payload === e.payload);   // discoverPayload 以对象引用直传事件
+    return l && e.at > l.at;
+  }),
+  restackEvents.map(e => `at=${e.at}`).join(' | '));
 const r1 = restackEvents[0] && restackEvents[0].payload;
 check('restack.done 携带订单号 orderNo（P10 已出场按订单归集）', r1 && r1.orderNo === ORDER_NO, `orderNo=${r1 && r1.orderNo}`);
 check('restack.done 携带车牌 plate（一单多车/按车牌归集）', r1 && r1.plate === PLATE, `plate=${r1 && r1.plate}`);

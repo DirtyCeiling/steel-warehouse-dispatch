@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import {
   openDb, seed, getInventory, getSlots, getSlot, getSpecs, setStack,
-  syncBundlePositions, getBundlePositions, getSeedSlots,
+  syncBundlePositions, getBundlePositions, getSeedSlots, getStackBundles,
   getAppData, seedAppData, createTask, updateTaskStatus, getSimParams, setSimParams, DB_PATH,
   getBundleRules, applyBundleRules, getSlotRacks, applySlotRacks, globalStacksPerSlot,
   getSteelLedger, getSteelLedgerEntry, upsertSteelLedgerMeta, steelLedgerCsv,
@@ -448,6 +448,16 @@ export function startServer({ host = HOST, port = PORT } = {}) {
           stackNo: stackNo != null && stackNo !== '' ? +stackNo : undefined,
         }) });
       }
+      // 垛位钢材明细（地图点垛位弹窗）：捆清单 JOIN 台账标签（卡片号/牌号/炉号/重量/入库信息）
+      if (req.method === 'GET' && p === '/api/stack-bundles') {
+        const slotId = url.searchParams.get('slotId');
+        const stackNo = url.searchParams.get('stackNo');
+        if (slotId == null || slotId === '') return json(res, 400, { error: 'slotId 必填' });
+        return json(res, 200, { bundles: getStackBundles(db, {
+          slotId: +slotId,
+          stackNo: stackNo != null && stackNo !== '' ? +stackNo : undefined,
+        }) });
+      }
       if (req.method === 'POST' && p === '/api/positions') {
         const body = await readBody(req);
         if (!guardDrive(req, res, url, body)) return;   // 捆级落位写回须持驾驶租约
@@ -461,7 +471,7 @@ export function startServer({ host = HOST, port = PORT } = {}) {
       // 落位写库自动建账/倒垛随迁/出库闭环（见 syncBundlePositions），此处为查询/导出/扫码补录。
       const ledgerFilters = () => {
         const q = url.searchParams, f = {};
-        for (const k of ['bundleId', 'heatNo', 'contractNo', 'plate', 'spec', 'grade', 'buyer', 'supplier', 'state', 'from', 'to']) {
+        for (const k of ['bundleId', 'cardNo', 'heatNo', 'contractNo', 'plate', 'spec', 'grade', 'buyer', 'supplier', 'state', 'from', 'to']) {
           const v = q.get(k); if (v) f[k] = v;
         }
         return f;

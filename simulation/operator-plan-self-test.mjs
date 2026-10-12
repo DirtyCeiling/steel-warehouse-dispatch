@@ -1,6 +1,6 @@
-// 无头自检：平板规划优先（simulation/shared/sandbox-core.mjs 生产节奏段 operatorPlanWaitMin，默认 15 分钟）。
+// 无头自检：平板规划优先（simulation/shared/sandbox-core.mjs 生产节奏段 operatorPlanWaitMin，默认 2 分钟）。
 // 验证闭环语义：
-//   1) 等待窗口内（默认 15 分钟）沙盘不本地排产，静候操作端（平板）推送；
+//   1) 等待窗口内（默认 2 分钟）沙盘不本地排产，静候操作端（平板）推送；
 //   2) 平板入库规划推送（spawn -> 改垛 -> 确认 -> dispatch-inbound）：现场任务落位 = 确认单最终垛位；
 //   3) 平板出库下发（dispatch-outbound）：提货订单注入并按 FIFO 配捆；
 //   4) 等待窗口超时：沙盘降级本地自主排产（车辆照常登记进厂确认队列）；
@@ -158,12 +158,12 @@ async function tabletAdjustAndConfirm(vehId, avoidCodes = []) {
   return { adjustedCode, confirmed: !conf.body.error && confirmedView.state === 'confirmed', view: confirmedView };
 }
 
-console.log('== 阶段一：平板规划优先（默认 15 分钟等待窗口内不本地排产） ==');
+console.log('== 阶段一：平板规划优先（默认 2 分钟等待窗口内不本地排产） ==');
 {
   const reset = await j('/api/reset', { method: 'POST' });
   check('临时库灌期初库存', reset.body.slotCount === 91, String(reset.body.slotCount));
   const params = (await j('/api/params')).body;
-  check('服务器调度参数默认平板规划等待 15 分钟', params.values?.production?.operatorPlanWaitMin === 15,
+  check('服务器调度参数默认平板规划等待 2 分钟', params.values?.production?.operatorPlanWaitMin === 2,
     String(params.values?.production?.operatorPlanWaitMin));
   await pump(3);
   vm.runInContext('loadInventoryFromDb()', sandbox);   // 防首拉竞态：reset 后显式重拉一次期初（两侧库存同源是本测断言前提）
@@ -174,9 +174,9 @@ console.log('== 阶段一：平板规划优先（默认 15 分钟等待窗口内
   }
   check('沙盘期初库存已从数据库加载（非随机兜底）', invTotal > 1000, String(invTotal));
   const op = sandbox.__dbg.operatorPlan;
-  check('沙盘初始等待状态（自启动起算，未降级）', op.lastAt === 0 && op.degraded === false && op.waitMin === 15,
+  check('沙盘初始等待状态（自启动起算，未降级）', op.lastAt === 0 && op.degraded === false && op.waitMin === 2,
     JSON.stringify(op));
-  await pump(25);   // 仿真 25s << 15min：等待窗口内
+  await pump(25);   // 仿真 25s << 2min：等待窗口内
   check('等待窗口内无本地排产车（无批次/无排产留痕）',
     sandbox.__dbg.batches.length === 0 && !(sandbox.__spawnLog || []).some(x => x.type === 'in'),
     `batches=${sandbox.__dbg.batches.length} spawnIn=${(sandbox.__spawnLog || []).filter(x => x.type === 'in').length}`);
@@ -287,4 +287,4 @@ if (failed) {
   console.log(`\n失败 ${failed} 项（#${failIdx.join(' #')}）—— 平板规划优先自检未通过`);
   process.exit(1);
 }
-console.log(`\n全部通过：${checkIdx} 项断言（平板规划优先 + 15 分钟降级兜底 + 确认单校正闭环）`);
+console.log(`\n全部通过：${checkIdx} 项断言（平板规划优先 + 2 分钟降级兜底 + 确认单校正闭环）`);

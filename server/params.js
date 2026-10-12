@@ -9,7 +9,7 @@ export const PARAM_SCHEMA = [
     defs: [
       { key: 'inPerDay',  label: '每日进厂车辆', min: 1, max: 600, step: 1, unit: '辆/日', def: 150 },
       { key: 'outPerDay', label: '每日出厂车辆', min: 1, max: 600, step: 1, unit: '辆/日', def: 100 },
-      { key: 'operatorPlanWaitMin', label: '平板规划等待', min: 0, max: 60, step: 1, unit: '分钟', def: 15 },
+      { key: 'operatorPlanWaitMin', label: '平板规划等待', min: 0, max: 60, step: 1, unit: '分钟', def: 2 },
       { key: 'autoConfirmMin', label: '确认超时自动下发', min: 0, max: 60, step: 1, unit: '分钟', def: 5 },
     ],
   },

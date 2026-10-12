@@ -124,7 +124,7 @@
   #detail .blist::-webkit-scrollbar { width: 6px; }
   #detail .blist::-webkit-scrollbar-thumb { background: #1c3260; border-radius: 3px; }
   #detail .blist .bh, #detail .blist .brow {
-    display: grid; grid-template-columns: 56px 44px 38px 50px 1fr;
+    display: grid; grid-template-columns: 52px 70px 40px 34px 46px 1fr;
     gap: 4px; align-items: center; font-family: var(--mono); font-size: 10.5px;
   }
   #detail .blist .bh { color: var(--dim); font-size: 10px; padding: 0 5px 3px; }
@@ -197,7 +197,7 @@
   .frow2 button:hover { border-color: var(--cyan); color: var(--text); }
   /* 库存列表 */
   .lhead, .row {
-    display: grid; grid-template-columns: 62px 84px 96px 68px 34px 34px 48px 62px;
+    display: grid; grid-template-columns: 48px 66px 62px 86px 58px 36px 18px 30px 42px;
     gap: 2px; align-items: center; font-size: 11.5px;
   }
   .lhead { color: var(--dim); font-size: 10.5px; padding: 2px 6px 6px; border-bottom: 1px solid var(--line); }
@@ -214,6 +214,7 @@
   #listRows .row.sel { background: rgba(56, 189, 248, .16); outline: 1px solid rgba(56, 189, 248, .4); }
   #listRows .c-id { color: var(--cyan); }
   #listRows .c-slot { color: var(--text); }
+  #listRows .c-card { color: var(--amber); }
   #listRows .c-spec i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
   #listRows .c-ton { color: var(--amber); }
   #listRows .c-day { color: var(--dim); }
@@ -280,7 +281,7 @@
     <div class="panel listp">
       <h2>库存明细（捆级）<span class="cnt" id="listCnt">–</span></h2>
       <div class="lhead">
-        <span>捆号</span><span>库位·垛</span><span>规格</span><span>钢种</span>
+        <span>捆号</span><span>卡片号</span><span>库位·垛</span><span>规格</span><span>钢种</span>
         <span>长m</span><span>支</span><span>吨</span><span>入库</span>
       </div>
       <div id="listScroll"><div id="listPad"><div id="listRows"></div></div><div id="listEmpty">当前筛选无匹配捆</div></div>
@@ -388,6 +389,8 @@ const SPECS = [
   { name: '圆钢 Φ50',  shape: 'round',  dia: 50, rods: 4, color: '#38bdf8', w9: 0.56, lengths: [6, 9],  grades: ['45#', '40Cr'] },
   { name: '圆钢 Φ60',  shape: 'round',  dia: 60, rods: 3, color: '#7dd3fc', w9: 0.6, lengths: [6, 9],  grades: ['45#', 'GCr15'] },
   { name: '方钢 40×40', shape: 'square', dia: 40, rods: 5, color: '#a78bfa', w9: 0.57, lengths: [6, 9],  grades: ['Q235B', 'Q345B'] },
+  // 大口径厚壁管（EN10297-1，对齐大冶特殊钢实物标签：Φ436×32 · 4.468m · 单支 1424kg ≈ 318.8kg/m）
+  { name: '管材 Φ436×32', shape: 'pipe', dia: 436, rods: 1, color: '#059669', w9: 2.87, lengths: [4.468], grades: ['S690G5QL'] },
 ];
 /*
  * 捆内支数排布（类圆形打捆）：圆钢/螺纹钢按六方密排——上排嵌进下排凹槽、杆杆相切，
@@ -397,9 +400,10 @@ const SQRT3 = Math.sqrt(3);
 const ROD_ROWS = {
   round: { 3: [2, 1], 4: [1, 2, 1], 5: [2, 1, 2], 6: [3, 2, 1], 15: [5, 4, 3, 2, 1], 21: [6, 5, 4, 3, 2, 1] },   // 圆截面（圆钢/螺纹钢）
   square: { 5: [3, 2] },                                            // 方钢：平铺
+  pipe: { 1: [1] },                                                 // 大口径管：单支吊运（Φ436×32，不打捆带）
 };
-const rodRowsOf = sp => ROD_ROWS[sp.shape === 'square' ? 'square' : 'round'][sp.rods];
-const rodR = dia => 0.09 + dia * 0.0022;              // 视觉杆半径（示意，非真实毫米）
+const rodRowsOf = sp => ROD_ROWS[sp.shape === 'square' ? 'square' : sp.shape === 'pipe' ? 'pipe' : 'round'][sp.rods];
+const rodR = dia => dia >= 300 ? 0.32 : 0.09 + dia * 0.0022;   // 视觉杆半径（示意；Φ300 以上大口径管压平半径，单支长管比例接近实物）
 const rodDy = sp => (sp.shape === 'square' ? 2 : SQRT3) * rodR(sp.dia) * 1.02;   // 排距（六方密排 = √3·r）
 const bundleW = sp => Math.max(...rodRowsOf(sp)) * 2 * rodR(sp.dia) * 1.02 + 0.04;
 const bundleH = sp => 2 * rodR(sp.dia) + (rodRowsOf(sp).length - 1) * rodDy(sp) + 0.04;
@@ -467,6 +471,15 @@ const stackCount = st => st ? st.bundles.length : 0;
 const slotBundles = s => s.stacks.reduce((n, st) => n + stackCount(st), 0);
 
 /* ---------------- 库存快照生成（捆级明细） ---------------- */
+/* 捆标签元数据取值池（与沙盘 shared/sandbox-core.mjs 及实物钢牌口径一致） */
+const SPEC_STANDARDS = { rebar: ['GB/T 1499.2'], round: ['GB/T 702', 'GB/T 699'], square: ['GB/T 702'], pipe: ['GB/T 8162', 'EN10297-1'] };
+const SUPPLIERS = ['大冶特殊钢有限公司', '承德建龙', '新兴铸管', '唐山瑞丰', '敬业集团', '首钢迁安'];
+/* 真实标签样例（大冶特殊钢实物钢牌 1:1 对齐）：首个有料库位的首垛整垛使用 */
+const REAL_LABEL = {
+  specName: '管材 Φ436×32', grade: 'S690G5QL', heat: '25031750Z', len: 4.468,
+  cardNo: 'T42000120', standard: 'EN10297-1', supplier: '大冶特殊钢有限公司',
+  contractNo: 'YTDEU25226 MON-01-001', poNo: '4501689907889501801', produceDate: '2026/02/13',
+};
 const bundles = [];
 const bundleById = new Map();
 (function genInventory() {
@@ -477,10 +490,18 @@ const bundleById = new Map();
     const nSt = Math.min(s.stacks.length, ri(2, 6));
     const idxs = shuffle(Array.from({ length: s.stacks.length }, (_, i) => i)).slice(0, nSt);
     for (const si of idxs) {
-      const specIdx = ri(0, SPECS.length - 1), sp = SPECS[specIdx];
-      const grade = rp(sp.grades), len = rp(sp.lengths);
-      const heat = 'HT' + ri(200000, 899999);        // 炉号（同垛同炉）
-      const n = ri(3, BUNDLES_PER_STACK);
+      // 垛级标签元数据：首捆滚出（同垛同质同批次）；首库位首垛 = 真实标签样例（单支厚壁管独占一垛）
+      const real = s === occ[0] && si === idxs[0];
+      const specIdx = real ? SPECS.findIndex(x => x.name === REAL_LABEL.specName) : ri(0, SPECS.length - 1), sp = SPECS[specIdx];
+      const grade = real ? REAL_LABEL.grade : rp(sp.grades);
+      const len = real ? REAL_LABEL.len : rp(sp.lengths);
+      const heat = real ? REAL_LABEL.heat : 'HT' + ri(200000, 899999);        // 炉号（同垛同炉）
+      const standard = real ? REAL_LABEL.standard : rp(SPEC_STANDARDS[sp.shape]);
+      const supplier = real ? REAL_LABEL.supplier : rp(SUPPLIERS);
+      const contractNo = real ? REAL_LABEL.contractNo : 'CT26-' + (10000 + ri(0, 89999));
+      const poNo = real ? REAL_LABEL.poNo : '45' + String(10000000 + ri(0, 89999999)) + '/' + String(10000000 + ri(0, 89999999));
+      const produceDate = real ? REAL_LABEL.produceDate : `2026-0${ri(6, 9)}-${String(ri(10, 28)).padStart(2, '0')}`;
+      const n = real ? 1 : ri(3, BUNDLES_PER_STACK);
       const day = String(ri(8, 23)).padStart(2, '0');
       let mins = ri(8 * 60, 18 * 60);
       const st = { specIdx, grade, len, heat, bundles: [],
@@ -488,16 +509,21 @@ const bundleById = new Map();
       let acc = 0, pr = 0;                                       // 排/列游标：捆按自下而上、排内自左而右落位
       for (let k = 0; k < n; k++) {
         while (k >= acc + st.rows[pr]) { acc += st.rows[pr]; pr++; }
+        const seqNo = ++seq;
         const b = {
-          id: 'B-' + String(++seq).padStart(4, '0'),
+          id: 'B-' + String(seqNo).padStart(4, '0'),
+          // 卡片号（实物钢牌，T + 8 位数字，从 T42000001 起）：按捆序号确定性生成，与捆号同源同序
+          cardNo: real ? REAL_LABEL.cardNo : 'T' + String(42000000 + seqNo).padStart(8, '0'),
           slotId: s.id, stackIdx: si, layer: k, prow: pr, pcol: k - acc,
           specIdx, grade, len, rods: sp.rods,
-          wt: +(sp.w9 * len / 9).toFixed(2),          // 吨（按长度折算）
+          heat, standard, supplier, contractNo, poNo, produceDate,   // 捆标签字段（随捆携带）
+          wt: real ? 1.424 : +(sp.w9 * len / 9).toFixed(2),          // 吨（按长度折算；样例捆对齐实物 1424kg）
           inDay: `08-${day}`,
           inTime: `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`,
           qr: '',
         };
-        b.qr = `${b.id}|${sp.name}|${grade}|${len}m×${sp.rods}支`;
+        // 捆标签串（对齐实物钢牌核心字段）：卡片号|规格|牌号|炉号|长度×支数|重量|标准|生产企业
+        b.qr = `${b.cardNo}|${sp.name}|${grade}|${heat}|${len}m×${sp.rods}支|${Math.round(b.wt * 1000)}kg|${standard}|${supplier}`;
         mins += ri(3, 25);
         st.bundles.push(b);
         bundles.push(b);
@@ -546,7 +572,7 @@ function matchB(b) {
   if (filt.occ && s.state !== 'occupied') return false;
   if (filt.q) {
     const q = filt.q.toLowerCase();
-    if (!b.id.toLowerCase().includes(q) && !s.code.toLowerCase().includes(q)) return false;
+    if (!b.id.toLowerCase().includes(q) && !(b.cardNo || '').toLowerCase().includes(q) && !s.code.toLowerCase().includes(q)) return false;
   }
   return true;
 }
@@ -561,7 +587,7 @@ function stackMatch(s, si) {                          // 垛内捆同规格/钢�
   if (filt.len && st.len !== filt.len) return false;
   if (filt.q) {
     const q = filt.q.toLowerCase();
-    if (!s.code.toLowerCase().includes(q) && !st.bundles.some(b => b.id.toLowerCase().includes(q))) return false;
+    if (!s.code.toLowerCase().includes(q) && !st.bundles.some(b => b.id.toLowerCase().includes(q) || (b.cardNo || '').toLowerCase().includes(q))) return false;
   }
   return true;
 }
@@ -616,6 +642,10 @@ function specMix(s) {   // 库位内规格构成
     return `${SPECS[+si].name} ${g} ${l}m ×${n}`;
   });
 }
+const stackCardRange = st => {   // 垛内卡片号首尾范围（卡片号为捆级属性，垛级按 min~max 段展示）
+  const cs = st.bundles.map(b => b.cardNo).filter(Boolean);
+  return cs.length ? `${cs.reduce((a, c) => c < a ? c : a)} ~ ${cs.reduce((a, c) => c > a ? c : a)}` : '–';
+};
 function renderDetail() {
   if (view.level === 'yard') { elDetail.style.display = 'none'; return; }
   elDetail.style.display = 'block';
@@ -636,7 +666,7 @@ function renderDetail() {
     const sp = SPECS[st.specIdx];
     const browRows = st.bundles.map(b => `
       <div class="brow" data-bid="${b.id}" title="点击查看单捆明细">
-        <span class="bid">${b.id}</span><span class="bdim">第${b.prow + 1}排</span>
+        <span class="bid">${b.id}</span><span class="bdim">${b.cardNo || '–'}</span><span class="bdim">第${b.prow + 1}排</span>
         <span>${b.rods}支</span><span class="bton">${b.wt.toFixed(2)}t</span>
         <span class="bdim">${b.inDay} ${b.inTime}</span>
       </div>`).join('');
@@ -652,9 +682,10 @@ function renderDetail() {
         <span class="dl">支数</span><span class="dv">${st.bundles.length * sp.rods} 支</span>
         <span class="dl">吨位</span><span class="dv">${(st.bundles.length * sp.w9 * st.len / 9).toFixed(1)} t</span>
         <span class="dl">炉号</span><span class="dv">${st.heat}</span>
+        <span class="dl">卡片号</span><span class="dv">${stackCardRange(st)}</span>
       </div>
       <div class="blist">
-        <div class="bh"><span>捆号</span><span>排</span><span>支数</span><span>吨位</span><span>入库时间</span></div>
+        <div class="bh"><span>捆号</span><span>卡片号</span><span>排</span><span>支数</span><span>吨位</span><span>入库时间</span></div>
         ${browRows}
       </div>
       <div class="sub">本垛全部 ${st.bundles.length} 捆见上表（点击行下钻单捆）· 最早入库 ${st.bundles[0].inDay} ${st.bundles[0].inTime}</div>
@@ -664,17 +695,23 @@ function renderDetail() {
     elDetail.innerHTML = `
       <h3>捆 ${b.id} <span class="tag">在库</span></h3>
       <div class="dgrid">
-        <span class="dl">规格</span><span class="dv">${sp.name}（${sp.shape === 'rebar' ? '螺纹钢' : sp.shape === 'round' ? '圆钢' : '方钢'}）</span>
-        <span class="dl">钢种</span><span class="dv">${b.grade}</span>
+        <span class="dl">卡片号</span><span class="dv">${b.cardNo || '–'}</span>
+        <span class="dl">规格</span><span class="dv">${sp.name}（${sp.shape === 'rebar' ? '螺纹钢' : sp.shape === 'round' ? '圆钢' : sp.shape === 'pipe' ? '管材' : '方钢'}）</span>
+        <span class="dl">牌号</span><span class="dv">${b.grade}</span>
         <span class="dl">直径</span><span class="dv">Φ${sp.dia} mm</span>
         <span class="dl">长度</span><span class="dv">${b.len} m</span>
-        <span class="dl">支数</span><span class="dv">${b.rods} 支 <i>（${rodRowsOf(sp).join('+')} ${sp.shape === 'square' ? '平铺' : '六方密排'}）</i></span>
-        <span class="dl">单捆重</span><span class="dv">${b.wt.toFixed(2)} t</span>
-        <span class="dl">炉号</span><span class="dv">${st.heat}</span>
+        <span class="dl">支数</span><span class="dv">${b.rods} 支 <i>（${rodRowsOf(sp).join('+')} ${sp.shape === 'square' ? '平铺' : sp.shape === 'pipe' ? '单支吊运' : '六方密排'}）</i></span>
+        <span class="dl">单捆重</span><span class="dv">${b.wt.toFixed(2)} t <i>（${Math.round(b.wt * 1000)} kg）</i></span>
+        <span class="dl">炉号</span><span class="dv">${b.heat || st.heat}</span>
+        <span class="dl">标准</span><span class="dv">${b.standard || '–'}</span>
+        <span class="dl">合同号</span><span class="dv">${b.contractNo || '–'}</span>
+        <span class="dl">PO号</span><span class="dv">${b.poNo || '–'}</span>
+        <span class="dl">生产企业</span><span class="dv">${b.supplier || '–'}</span>
+        <span class="dl">生产日期</span><span class="dv">${b.produceDate || '–'}</span>
         <span class="dl">位置</span><span class="dv">${s.code} 第 ${b.stackIdx + 1} 垛 第 ${b.prow + 1} 排</span>
         <span class="dl">入库</span><span class="dv">${b.inDay} ${b.inTime}</span>
       </div>
-      <div class="sub">捆标签（二维码绑定）：${b.qr}</div>
+      <div class="sub">捆标签（二维码绑定，对齐实物钢牌）：${b.qr}</div>
       <div class="ops">
         <button data-act="back">← 返回垛</button>
         <label style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--dim);cursor:pointer">
@@ -718,7 +755,7 @@ const listScroll = $('listScroll'), listPad = $('listPad'), listRows = $('listRo
 function rowHTML(b, i) {
   const sp = SPECS[b.specIdx], s = slots[b.slotId];
   return `<div class="row" data-id="${b.id}" style="top:${i * LIST_ROW_H}px">
-    <span class="c-id">${b.id}</span><span class="c-slot">${s.code}·${b.stackIdx + 1}垛</span>
+    <span class="c-id">${b.id}</span><span class="c-card">${b.cardNo || '–'}</span><span class="c-slot">${s.code}·${b.stackIdx + 1}垛</span>
     <span class="c-spec"><i style="background:${sp.color}"></i>${sp.name.replace(' ', '')}</span>
     <span>${b.grade}</span><span>${b.len}</span><span>${b.rods}</span>
     <span class="c-ton">${b.wt.toFixed(1)}</span><span class="c-day">${b.inDay.slice(3)} ${b.inTime}</span>
@@ -1061,23 +1098,24 @@ function buildBundleMesh(b, { tag = false } = {}) {
   const W = bundleW(sp), H = bundleH(sp);
   const strapGeo = T.geo(`st${H}:${W}`, () => new THREE.BoxGeometry(.14, H + .07, W + .07));
   const strapMat = T.mat('strap', () => new THREE.MeshStandardMaterial({ color: 0xc9a24e, metalness: .8, roughness: .3 }));
-  for (const dx of [-b.len * .28, b.len * .28]) {
+  if (sp.rods > 1) for (const dx of [-b.len * .28, b.len * .28]) {   // 单支大口径管不打捆带
     const st = new THREE.Mesh(strapGeo, strapMat);
     st.position.set(dx, H / 2, 0);
     st.castShadow = true;
     st.userData = { kind: 'bundle', b };
     g.add(st);
   }
-  if (tag) {   // 捆标签（二维码牌，示意）
+  if (tag) {   // 捆标签（二维码牌，对齐实物钢牌：卡片号为主标识）
     const key = 'tag' + b.id;
     const c = document.createElement('canvas');
     c.width = 256; c.height = 128;
     const g2 = c.getContext('2d');
     g2.fillStyle = '#e8eefc'; g2.fillRect(0, 0, 256, 128);
-    g2.fillStyle = '#0b1730'; g2.font = '700 34px Consolas,monospace';
-    g2.textAlign = 'center'; g2.fillText(b.id, 128, 44);
-    g2.font = '24px "Microsoft YaHei",sans-serif'; g2.fillText(`${sp.name} ${b.grade}`, 128, 82);
-    g2.fillText(`${b.len}m × ${b.rods}支`, 128, 112);
+    g2.fillStyle = '#0b1730'; g2.font = '700 32px Consolas,monospace';
+    g2.textAlign = 'center'; g2.fillText(b.cardNo || b.id, 128, 36);   // 卡片号（实物钢牌主标识）
+    g2.font = '700 20px Consolas,monospace'; g2.fillText(b.id, 128, 62);
+    g2.font = '22px "Microsoft YaHei",sans-serif'; g2.fillText(`${sp.name} ${b.grade}`, 128, 90);
+    g2.font = '20px "Microsoft YaHei",sans-serif'; g2.fillText(`${b.len}m × ${b.rods}支`, 128, 114);
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
     const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex }));
@@ -1307,13 +1345,13 @@ function hoverInfo(res, hitPoint) {   // -> { lines: [[label,value]…], box:[x,
     const h = pileGeom(st).h;
     return {
       html: `<b>${s.code} · 第 ${si + 1} 垛</b><br>${sp.name} · ${st.grade} · ${st.len}m<br>` +
-        `${st.bundles.length} 捆 / 20 · ${st.rows.length} 排 · ${st.bundles.length * sp.rods} 支<br><span class="tt-dim">炉号 ${st.heat} · 点击查看全部 ${st.bundles.length} 捆明细</span>`,
+        `${st.bundles.length} 捆 / 20 · ${st.rows.length} 排 · ${st.bundles.length * sp.rods} 支<br><span class="tt-dim">炉号 ${st.heat} · 卡片号 ${stackCardRange(st)} · 点击查看全部 ${st.bundles.length} 捆明细</span>`,
       box: [WX(cell.x), h / 2 + .4, WZ(cell.z), Math.min(cell.cw, st.len + 1), h + .8, cell.cd],
     };
   }
   const b = res.b, sp = SPECS[b.specIdx], s = slots[b.slotId];
   return {
-    html: `<b>捆 ${b.id}</b><br>${sp.name} · ${b.grade}<br>Φ${sp.dia} · ${b.len}m · ${b.rods}支 · ${b.wt.toFixed(2)}t<br>` +
+    html: `<b>捆 ${b.id}</b><br>卡片号 ${b.cardNo || '–'} · ${sp.name} · ${b.grade}<br>Φ${sp.dia} · ${b.len}m · ${b.rods}支 · ${b.wt.toFixed(2)}t<br>` +
       `<span class="tt-dim">${s.code} 第${b.stackIdx + 1}垛 第${b.layer + 1}层 · 点击查看</span>`,
     box: [hitPoint ? 0 : 0, 0, 0, 1, 1, 1],   // 由调用方按捆包围盒计算
   };
